@@ -1,0 +1,30 @@
+[package]
+name = "ylong_http"
+version = "1.9.0"
+edition = "2018"
+description = "HTTP implementation"
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://open.codehub.huawei.com/innersource/Ylong_Rust/ylong_rs/files?ref=master&filePath=src%2Fweb%2Fylong_http"
+keywords = ["ylong", "http"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["http1_1"]
+full = [
+    "http1_1",
+    "http2",
+    "http3",
+    "huffman",
+]
+http1_1 = []        # Uses HTTP/1.1.
+http2 = []          # Uses HTTP/2.
+http3 = []          # Uses HTTP/3.
+huffman = []        # Uses Huffman encoding in `Hpack` and `Qpack`.
+
+[dependencies]
+tokio = { version = "1.20.1", features = ["io-util"] }
+
+[dev-dependencies]
+tokio = { version = "1.20.1", features = ["io-util", "rt-multi-thread", "macros"] }

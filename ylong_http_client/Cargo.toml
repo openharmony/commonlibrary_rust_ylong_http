@@ -1,0 +1,100 @@
+[package]
+name = "ylong_http_client"
+version = "1.9.0"
+edition = "2018"
+description = "http client"
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://open.codehub.huawei.com/innersource/Ylong_Rust/ylong_rs/files?ref=master&filePath=src%2Fweb%2Fylong_http_client"
+keywords = ["ylong", "http", "client"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ylong_http = { path = "../ylong_http", version = "1.9.0", features = ["full"] }
+tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"] }
+libc = { version = "0.2.134", optional = true }
+
+[dev-dependencies]
+hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }
+openssl = { version = "0.10.29" }
+tokio-openssl = { version = "0.6.3" }
+
+[features]
+default = []
+full = [
+    "sync",
+    "async",
+    "http1_1",
+    "tls_default",
+]
+
+sync = []                                                    # Uses sync interfaces.
+async = []                                                   # Uses async interfaces.
+http1_1 = ["ylong_http/http1_1"]                             # Uses HTTP/1.1.
+http2 = ["ylong_http/http2"]                                 # Uses HTTP/2.
+http3 = []                                                   # Uses HTTP/3.
+tokio_rt = ["tokio/rt", "tokio/rt-multi-thread"]             # Uses tokio runtime.
+# ylong_rt = ["ylong_sched"]                                 # Uses ylong runtime.
+
+tls_default = ["c_openssl_3_0"]
+__tls = []                                                   # Not open to user, only mark to use tls for developer.
+__c_openssl = ["__tls", "libc"]                              # Not open to user, only mark to use tls by C-openssl for developer.
+c_openssl_1_1 = ["__c_openssl"]                              # Uses TLS by FFI of C-openssl 1.1.
+c_openssl_3_0 = ["__c_openssl"]                              # Uses TLS by FFI of C-openssl 3.0.
+
+[[example]]
+name = "async_http"
+path = "examples/async_http.rs"
+required-features = ["async", "http1_1"]
+
+[[example]]
+name = "sync_http"
+path = "examples/sync_http.rs"
+required-features = ["sync", "http1_1"]
+
+[[example]]
+name = "async_redirect_http"
+path = "examples/async_redirect_http.rs"
+required-features = ["async", "http1_1"]
+
+[[example]]
+name = "sync_redirect_http"
+path = "examples/sync_redirect_http.rs"
+required-features = ["sync", "http1_1"]
+
+[[example]]
+name = "async_proxy_http"
+path = "examples/async_proxy_http.rs"
+required-features = ["async", "http1_1"]
+
+[[example]]
+name = "sync_proxy_http"
+path = "examples/sync_proxy_http.rs"
+required-features = ["sync", "http1_1"]
+
+[[example]]
+name = "sync_http2"
+path = "./examples/async_http2.rs"
+required-features = ["async", "http2"]
+
+[[example]]
+name = "sync_http2_multi"
+path = "./examples/async_http2_multi.rs"
+required-features = ["async", "http2"]
+
+[[test]]
+name = "sdv_client"
+path = "./tests/sdv_client.rs"
+required-features = ["sync", "async", "http1_1"]
+
+[[test]]
+name = "sdv_https_c_ssl"
+path = "./tests/sdv_https_c_ssl.rs"
+required-features = ["sync", "async", "http1_1", "c_openssl_1_1"]
+
+[[example]]
+name = "async_https_outside"
+path = "./examples/async_https_outside.rs"
+required-features = ["async", "http1_1", "c_openssl_3_0"]
+
