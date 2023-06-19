@@ -42,7 +42,7 @@
 
 use crate::error::{ErrorKind, HttpError};
 use core::convert::TryFrom;
-use core::{slice, str};
+use core::{fmt, slice, str};
 use std::collections::hash_map::Entry;
 use std::collections::{hash_map, HashMap};
 
@@ -552,6 +552,21 @@ pub type HeaderValueIterMut<'a> = slice::IterMut<'a, Vec<u8>>;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Headers {
     map: HashMap<HeaderName, HeaderValue>,
+}
+
+impl fmt::Display for Headers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (k, v) in self.iter() {
+            writeln!(
+                f,
+                "{}: {}",
+                k.to_string(),
+                v.to_str()
+                    .unwrap_or("<non-visible header value>".to_string())
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl Headers {

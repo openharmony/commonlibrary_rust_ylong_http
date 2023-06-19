@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-use libc::{c_char, c_long, c_uchar};
+use libc::{c_char, c_int, c_long, c_uchar, c_uint, size_t};
 
 pub(crate) enum C_X509 {}
 
@@ -43,4 +43,32 @@ extern "C" {
 
     /// Frees up a single `X509_STORE` object.
     pub(crate) fn X509_STORE_free(store: *mut X509_STORE);
+
+    /// Adds the respective object to the X509_STORE's local storage.
+    pub(crate) fn X509_STORE_add_cert(store: *mut X509_STORE, x: *mut C_X509) -> c_int;
 }
+
+pub(crate) enum X509_STORE_CTX {}
+
+pub(crate) enum X509_VERIFY_PARAM {}
+
+// for `X509_VERIFY_PARAM`
+extern "C" {
+    pub(crate) fn X509_VERIFY_PARAM_free(param: *mut X509_VERIFY_PARAM);
+
+    pub(crate) fn X509_VERIFY_PARAM_set_hostflags(param: *mut X509_VERIFY_PARAM, flags: c_uint);
+
+    pub(crate) fn X509_VERIFY_PARAM_set1_host(
+        param: *mut X509_VERIFY_PARAM,
+        name: *const c_char,
+        namelen: size_t,
+    ) -> c_int;
+
+    pub(crate) fn X509_VERIFY_PARAM_set1_ip(
+        param: *mut X509_VERIFY_PARAM,
+        ip: *const c_uchar,
+        iplen: size_t,
+    ) -> c_int;
+}
+
+pub(crate) enum STACK_X509 {}

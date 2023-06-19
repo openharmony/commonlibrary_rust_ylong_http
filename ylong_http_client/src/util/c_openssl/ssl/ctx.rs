@@ -15,15 +15,21 @@
 
 use super::{filetype::SslFiletype, method::SslMethod, version::SslVersion};
 use crate::{
-    c_openssl::x509::X509Store,
+    c_openssl::{
+        ffi::ssl::{
+            SSL_CTX_free, SSL_CTX_get_cert_store, SSL_CTX_set_default_verify_paths,
+            SSL_CTX_set_verify,
+        },
+        x509::{X509Store, X509StoreRef},
+    },
     util::c_openssl::{
         check_ptr, check_ret,
         error::ErrorStack,
         ffi::ssl::{
-            SSL_CTX_ctrl, SSL_CTX_free, SSL_CTX_load_verify_locations, SSL_CTX_new,
-            SSL_CTX_set_alpn_protos, SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list,
-            SSL_CTX_set_ciphersuites, SSL_CTX_up_ref, SSL_CTX_use_certificate,
-            SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file, SSL_CTX,
+            SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
+            SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list, SSL_CTX_set_ciphersuites,
+            SSL_CTX_up_ref, SSL_CTX_use_certificate, SSL_CTX_use_certificate_chain_file,
+            SSL_CTX_use_certificate_file, SSL_CTX,
         },
         foreign::{Foreign, ForeignRef},
         ssl_init,
@@ -76,16 +82,29 @@ impl ToOwned for SslContextRef {
     }
 }
 
+const SSL_VERIFY_PEER: c_int = 1;
+
 /// A builder for `SslContext`.
 pub(crate) struct SslContextBuilder(Result<SslContext, ErrorStack>);
 
 impl SslContextBuilder {
     pub(crate) fn new(method: SslMethod) -> Self {
         ssl_init();
-        match check_ptr(unsafe { SSL_CTX_new(method.as_ptr()) }) {
-            Ok(ptr) => SslContextBuilder::from_ptr(ptr),
-            Err(e) => SslContextBuilder(Err(e)),
+        let ptr = match check_ptr(unsafe { SSL_CTX_new(method.as_ptr()) }) {
+            Ok(ptr) => ptr,
+            Err(e) => return SslContextBuilder(Err(e)),
+        };
+        if let Err(e) = check_ret(unsafe { SSL_CTX_set_default_verify_paths(ptr) }) {
+            return SslContextBuilder(Err(e));
+        };
+
+        unsafe {
+            SSL_CTX_set_verify(ptr, SSL_VERIFY_PEER, None);
         }
+
+        SslContextBuilder::from_ptr(ptr).set_cipher_list(
+            "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+        )
     }
 
     /// Creates a `SslContextBuilder` from a `SSL_CTX`.
@@ -338,5 +357,13 @@ impl SslContextBuilder {
             mem::forget(cert_store);
         }
         self
+    }
+
+    pub(crate) fn cert_store_mut(&mut self) -> Result<&mut X509StoreRef, ErrorStack> {
+        let ptr = match self.as_ptr() {
+            Ok(ptr) => ptr,
+            Err(e) => return Err(e),
+        };
+        Ok(unsafe { X509StoreRef::from_ptr_mut(SSL_CTX_get_cert_store(ptr)) })
     }
 }

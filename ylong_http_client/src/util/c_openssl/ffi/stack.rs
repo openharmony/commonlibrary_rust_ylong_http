@@ -13,20 +13,16 @@
  * limitations under the License.
  */
 
-#![allow(clippy::upper_case_acronyms)]
-#![allow(non_camel_case_types)]
+use libc::{c_int, c_void};
 
-pub(crate) mod bio;
-pub(crate) mod err;
-pub(crate) mod pem;
-pub(crate) mod ssl;
-pub(crate) mod stack;
-pub(crate) mod x509;
-
-use libc::c_int;
-pub(crate) enum OPENSSL_INIT_SETTINGS {}
+pub(crate) enum OPENSSL_STACK {}
 
 extern "C" {
-    /// Calls this function will explicitly initialise BOTH libcrypto and libssl.
-    pub(crate) fn OPENSSL_init_ssl(opts: u64, settings: *const OPENSSL_INIT_SETTINGS) -> c_int;
+    pub(crate) fn OPENSSL_sk_free(st: *mut OPENSSL_STACK);
+
+    pub(crate) fn OPENSSL_sk_pop(st: *mut OPENSSL_STACK) -> *mut c_void;
+
+    pub(crate) fn OPENSSL_sk_value(stack: *const OPENSSL_STACK, idx: c_int) -> *mut c_void;
+
+    pub(crate) fn OPENSSL_sk_num(stack: *const OPENSSL_STACK) -> c_int;
 }

@@ -103,6 +103,12 @@ pub mod c_ssl {
                     .and_then(|v| v.to_str().ok());
                 is_proxy = true;
             }
+
+            let host_name = match uri.host() {
+                Some(host) => host.to_string(),
+                None => "no host in uri".to_string(),
+            };
+
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Ok(MixStream::Http(TcpStream::connect(addr).map_err(|e| {
                     HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
@@ -117,6 +123,14 @@ pub mod c_ssl {
                     } else {
                         tcp_stream
                     };
+
+                    let mut tls_ssl = config.ssl().map_err(|e| {
+                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
+                    })?;
+
+                    tls_ssl.set_sni_verify(&host_name).map_err(|e| {
+                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e));
+                    })?;
 
                     let stream = self
                         .config
@@ -150,7 +164,7 @@ pub mod c_ssl {
         .unwrap();
 
         if let Some(value) = auth {
-            write!(&mut req, "Proxy-Authorization: {value}\r\n").unwrap();
+            write!(&mut req, "Proxy-Authorization: Basic {value}\r\n").unwrap();
         }
 
         write!(&mut req, "\r\n").unwrap();

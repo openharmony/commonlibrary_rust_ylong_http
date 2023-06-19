@@ -16,8 +16,11 @@
 // TODO: Remove this file later.
 
 use crate::{ErrorKind, HttpClientError, Uri};
+use ylong_http::request::method::Method;
 use ylong_http::request::uri::Scheme;
 use ylong_http::request::Request;
+use ylong_http::response::status::StatusCode;
+use ylong_http::response::ResponsePart;
 
 pub(crate) struct RequestFormatter<'a, T> {
     part: &'a mut Request<T>,
@@ -106,4 +109,75 @@ impl UriFormatter {
 
         Ok(())
     }
+}
+
+pub(crate) struct BodyLengthParser<'a> {
+    req_method: &'a Method,
+    part: &'a ResponsePart,
+}
+
+impl<'a> BodyLengthParser<'a> {
+    pub(crate) fn new(req_method: &'a Method, part: &'a ResponsePart) -> Self {
+        Self { req_method, part }
+    }
+
+    pub(crate) fn parse(&self) -> Result<BodyLength, HttpClientError> {
+        if self.part.status.is_informational()
+            || self.part.status == StatusCode::NO_CONTENT
+            || self.part.status == StatusCode::NOT_MODIFIED
+        {
+            return Ok(BodyLength::Empty);
+        }
+
+        if (self.req_method == &Method::CONNECT && self.part.status.is_successful())
+            || self.req_method == &Method::HEAD
+        {
+            return Ok(BodyLength::Empty);
+        }
+
+        #[cfg(feature = "http1_1")]
+        {
+            let transfer_encoding = self.part.headers.get("Transfer-Encoding");
+
+            if transfer_encoding.is_some() {
+                let transfer_encoding_contains_chunk = transfer_encoding
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|str| str.find("chunked"))
+                    .is_some();
+
+                return if transfer_encoding_contains_chunk {
+                    Ok(BodyLength::Chunk)
+                } else {
+                    Ok(BodyLength::UntilClose)
+                };
+            }
+        }
+
+        let content_length = self.part.headers.get("Content-Length");
+
+        if content_length.is_some() {
+            let content_length_valid = content_length
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<usize>().ok());
+
+            return if let Some(len) = content_length_valid {
+                Ok(BodyLength::Length(len))
+            } else {
+                Err(HttpClientError::new_with_message(
+                    ErrorKind::Request,
+                    "Invalid response content-length",
+                ))
+            };
+        }
+
+        Ok(BodyLength::UntilClose)
+    }
+}
+
+pub(crate) enum BodyLength {
+    #[cfg(feature = "http1_1")]
+    Chunk,
+    Length(usize),
+    Empty,
+    UntilClose,
 }

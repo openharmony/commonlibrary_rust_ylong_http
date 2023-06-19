@@ -24,6 +24,7 @@ mod ffi;
 
 pub(crate) mod error;
 pub(crate) mod ssl;
+pub(crate) mod stack;
 pub(crate) mod x509;
 
 pub mod adapter;
