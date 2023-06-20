@@ -1,40 +1,86 @@
-# ylong_http_client
+# ylong_http
 
-### 简介
+## Introduction
 
-ylong_http_client 支持用户构建 HTTP 客户端，支持用户使用该客户端向服务器发送请求，接收并解析服务器返回的响应。
+`ylong_http` has built a complete HTTP capability, supporting users to use HTTP
+capability to meet the needs of communication scenarios.
 
-##### Client
+`ylong_http` is written in Rust.
 
-ylong_http_client 支持用户创建同步或者异步 HTTP 客户端，用户可以使用 mod 区分两种客户端。
+### ylong_http_client crate
 
-- `sync_impl::Client`：同步 HTTP 客户端，整体流程使用同步接口。
+`ylong_http_client` crate supports HTTP client functionality and allows users
+to create HTTP clients to send HTTP requests to specified servers.
 
-- `async_impl::Client`：异步 HTTP 客户端，整体流程使用异步接口。
+Abilities supported by the current `ylong_http_client` crate:
 
-不论是同步还是异步客户端，都具有相同的功能，例如：连接复用、自动重定向、自动重试、设置代理等功能。
+- Synchronous and asynchronous HTTP clients.
+- HTTP/1.1 and HTTP/2 protocol versions.
+- Proxy.
+- Redirect.
+- Automatic retry.
+- Progress callback.
+- Connection management and reuse.
 
-ylong_http_client 创建的客户端支持以下 HTTP 版本：
+### ylong_http crate
 
-- `HTTP/1.1`
+`ylong_http` crate provides various basic components of the HTTP protocol, such
+as serialization components, compression components, etc. 
 
-- `HTTP/2`
+Abilities supported by the current `ylong_http` crate:
 
-- `HTTP/3`
+- Serializer and deserializer of `HTTP/1.1` and `HTTP/2`.
+- HPACK implementation.
+- Basic types of HTTP Request and HTTP Response.
+- Body trait and implementations of bodies.
 
-##### Request 和 Response
+## Build
 
-ylong_http_client 使用 ylong_http 库提供的 `Request` 结构，支持用户自定义请求内容。
+`GN` is supported. User should add dependencies in `deps` of `BUILD.GN` to build this crate.
 
-在使用客户端发送完请求后，接收到的响应会以 ylong_http 库提供的 `Response` + `HttpBody` 的结构返回。
+```gn
+deps += ["//example_path/ylong_http_client:ylong_http_client"]
+```
 
-用户可以使用 `Response` 提供的接口来获取请求信息，并且可以使用 ylong_http 提供的 `Body` trait 读取响应的内容。用户也可以使用 ylong_http_client 提供的 `BodyReader` 读取内容。
-
-### 编译构建
-
-在 ```Cargo.toml``` 下添加依赖。添加后使用 ```cargo``` 进行编译和构建：
+`Cargo` is supported. User should add dependencies in ```Cargo.toml``` to build this crate.
 
 ```toml
 [dependencies]
-ylong_http_client = "1.9.0"
+ylong_http_client = { path = "/example_path/ylong_http_client" }
+```
+
+## Directory
+
+```text
+ylong_http
+├── ylong_http
+│   ├── examples                # Examples of ylong_http
+│   ├── src                     # Source code ylong_http
+│   │   ├── body                # Body trait and body types
+│   │   ├── h1                  # HTTP/1.1 components
+│   │   ├── h2                  # HTTP/2 components
+│   │   ├── h3                  # HTTP/3 components
+│   │   ├── huffman             # Huffman
+│   │   ├── request             # Request type
+│   │   └── response            # Response type
+│   └── tests                   # Tests of ylong_http
+│
+└── ylong_http_client
+    ├── examples                # Examples of ylong_http_client
+    ├── src                     # Source code of ylong_http_client
+    │   ├── async_impl          # Asynchronous client implementation
+    │   │   ├── conn            # Asynchronous connection layer
+    │   │   ├── downloader      # Asynchronous downloader layer
+    │   │   ├── ssl_stream      # Asynchronous TLS layer
+    │   │   └── uploader        # Asynchronous uploader layer
+    │   ├── sync_impl           # Synchronous client implementation
+    │   │   └── conn            # Synchronous connection layer
+    │   └── util                # Components of ylong_http_client  
+    │       ├── c_openssl       # OpenSSL adapter
+    │       │   ├── ffi         # OpenSSL ffi adapter
+    │       │   └── ssl         # OpenSSL ssl adapter 
+    │       └── config          # Configures
+    │           └── tls         # TLS Configures
+    │               └── alpn    # ALPN Configures
+    └── tests                   # Tests of ylong_http_client
 ```

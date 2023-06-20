@@ -1,12 +1,12 @@
 # ylong_http
 
-### 简介
+## 简介
 
 ylong_http 提供了 HTTP 各个版本下的协议所需的各种基础组件和扩展组件，方便用户组织所需的 HTTP 结构。
 
 ylong_http 包含以下核心功能：
 
-##### Request 和 Response
+### Request 和 Response
 
 ylong_http 使用 `Request` 和 `Response` 结构来表示 HTTP 最基础的请求和响应：
 
@@ -18,7 +18,7 @@ ylong_http 使用 `Request` 和 `Response` 结构来表示 HTTP 最基础的请�
 
 
 
-##### Body
+### Body
 
 对于`Request`和`Response`的 Body 部分，ylong_http 提供了 `Body` trait，方便用户自定义想要的 Body 结构。
 
@@ -44,7 +44,7 @@ ylong_http 也提供默认的 Body 结构供用户使用：
 
 
 
-##### 其他组件
+### 其他组件
 
 ylong_http 提供了以下几个 HTTP 版本的相关组件：
 
@@ -54,18 +54,18 @@ ylong_http 提供了以下几个 HTTP 版本的相关组件：
 
 
 
-### 编译构建
+## 编译构建
 
 在 ```Cargo.toml``` 下添加依赖。添加后使用 ```cargo``` 进行编译和构建：
 
 ```toml
 [dependencies]
-ylong_http = "1.9.0"
+ylong_http = { path = "/example_path/ylong_http" } # 请使用路径依赖
 ```
 
 
 
-### 目录
+## 目录
 
 ```
 ylong_http
