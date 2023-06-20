@@ -22,7 +22,7 @@ use crate::{
     },
     ErrorKind,
 };
-use std::path::Path;
+use std::{net::IpAddr, path::Path};
 
 /// `TlsContextBuilder` implementation based on `SSL_CTX`.
 ///
@@ -239,14 +239,20 @@ impl TlsConfigBuilder {
 
     /// Adds custom root certificate.
     pub fn add_root_certificates(mut self, certs: Certificate) -> Self {
-        let v = certs.into_inner();
-        for (i, cert) in v.into_iter().enumerate() {
-            if i == 0 {
-                self.inner = self.inner.set_certificate(cert.0.as_ref());
-            } else {
-                self.inner = self.inner.add_extra_chain_cert(cert.0);
+        for cert in certs.inner {
+            let store = match self.inner.cert_store_mut() {
+                Ok(store) => store,
+                Err(e) => {
+                    self.inner = SslContextBuilder::from_error(e);
+                    return self;
+                }
+            };
+            if let Err(e) = store.add_cert(cert.0) {
+                self.inner = SslContextBuilder::from_error(e);
+                return self;
             }
         }
+
         self
     }
 
@@ -373,6 +379,14 @@ pub(crate) struct TlsSsl(Ssl);
 impl TlsSsl {
     pub(crate) fn into_inner(self) -> Ssl {
         self.0
+    }
+
+    pub(crate) fn set_sni_verify(&mut self, name: &str) -> Result<(), ErrorStack> {
+        let ssl = &mut self.0;
+        if name.parse::<IpAddr>().is_err() {
+            ssl.set_host_name(name)?;
+        }
+        Ok(())
     }
 }
 

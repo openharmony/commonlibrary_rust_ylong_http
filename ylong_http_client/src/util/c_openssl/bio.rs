@@ -62,6 +62,12 @@ impl<'a> BioSlice<'a> {
     }
 }
 
+impl<'a> Drop for BioSlice<'a> {
+    fn drop(&mut self) {
+        unsafe { BIO_free_all(self.0) }
+    }
+}
+
 const BIO_TYPE_NONE: c_int = 0;
 
 const BIO_CTRL_FLUSH: c_int = 11;

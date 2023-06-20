@@ -15,21 +15,26 @@
 
 use super::{
     bio::BioSlice,
-    check_ptr,
+    check_ptr, check_ret,
     error::{error_get_lib, error_get_reason, ErrorStack},
     ffi::{
         err::{ERR_clear_error, ERR_peek_last_error},
         pem::PEM_read_bio_X509,
         x509::{
-            d2i_X509, X509_STORE_free, X509_STORE_new, X509_verify_cert_error_string, X509_STORE,
+            d2i_X509, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new, X509_VERIFY_PARAM_free,
+            X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
+            X509_VERIFY_PARAM_set_hostflags, X509_verify_cert_error_string, STACK_X509, X509_STORE,
+            X509_VERIFY_PARAM,
         },
     },
-    foreign::Foreign,
+    foreign::{Foreign, ForeignRef},
     ssl_init,
+    stack::Stackof,
 };
 use crate::util::c_openssl::ffi::x509::{X509_free, C_X509};
 use core::{ffi, fmt, ptr, str};
-use libc::{c_int, c_long};
+use libc::{c_int, c_long, c_uint};
+use std::net::IpAddr;
 
 foreign_type!(
     type CStruct = C_X509;
@@ -87,6 +92,10 @@ impl X509 {
     }
 }
 
+impl Stackof for X509 {
+    type StackType = STACK_X509;
+}
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) struct X509VerifyResult(c_int);
 
@@ -128,6 +137,53 @@ foreign_type!(
 
 impl X509Store {
     pub(crate) fn new() -> Result<X509Store, ErrorStack> {
+        ssl_init();
         Ok(X509Store(check_ptr(unsafe { X509_STORE_new() })?))
+    }
+}
+
+impl X509StoreRef {
+    pub(crate) fn add_cert(&mut self, cert: X509) -> Result<(), ErrorStack> {
+        check_ret(unsafe { X509_STORE_add_cert(self.as_ptr(), cert.as_ptr()) }).map(|_| ())
+    }
+}
+
+foreign_type!(
+    type CStruct = X509_VERIFY_PARAM;
+    fn drop = X509_VERIFY_PARAM_free;
+    pub(crate) struct X509VerifyParam;
+    pub(crate) struct X509VerifyParamRef;
+);
+
+pub(crate) const X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS: c_uint = 0x4;
+
+impl X509VerifyParamRef {
+    pub(crate) fn set_hostflags(&mut self, hostflags: c_uint) {
+        unsafe {
+            X509_VERIFY_PARAM_set_hostflags(self.as_ptr(), hostflags);
+        }
+    }
+
+    pub(crate) fn set_host(&mut self, host: &str) -> Result<(), ErrorStack> {
+        check_ret(unsafe {
+            X509_VERIFY_PARAM_set1_host(self.as_ptr(), host.as_ptr() as *const _, host.len())
+        })
+        .map(|_| ())
+    }
+
+    pub(crate) fn set_ip(&mut self, ip_addr: IpAddr) -> Result<(), ErrorStack> {
+        let mut v = [0u8; 16];
+        let len = match ip_addr {
+            IpAddr::V4(addr) => {
+                v[..4].copy_from_slice(&addr.octets());
+                4
+            }
+            IpAddr::V6(addr) => {
+                v.copy_from_slice(&addr.octets());
+                16
+            }
+        };
+        check_ret(unsafe { X509_VERIFY_PARAM_set1_ip(self.as_ptr(), v.as_ptr() as *const _, len) })
+            .map(|_| ())
     }
 }

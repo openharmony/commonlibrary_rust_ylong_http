@@ -1319,51 +1319,25 @@ impl ChunkBodyDecoder {
                 &buf[buf.len()..],
             ));
         }
-        for (i, &b) in buf.iter().enumerate() {
-            match b {
-                b'\r' => {
-                    if self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
-
-                    if self.rest_size != i {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.rest_size = 0;
-                    return self.skip_last_crlf(&buf[..i], &buf[i + 1..]);
-                }
-                b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
-
-                    if self.rest_size != i {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.rest_size = 0;
-                    return self.skip_last_crlf(&buf[..i], &buf[i..]);
-                }
-                _ => {}
-            }
+        let rest = self.rest_size;
+        if buf.len() >= rest {
+            self.rest_size = 0;
+            self.cr_meet = false;
+            self.skip_last_crlf(&buf[..rest], &buf[rest..])
+        } else {
+            self.rest_size -= buf.len();
+            Ok((
+                Chunk {
+                    id: 0,
+                    state: ChunkState::Data,
+                    size: self.total_size,
+                    extension: ChunkExt::new(),
+                    data: buf,
+                    trailer: None,
+                },
+                &buf[buf.len()..],
+            ))
         }
-        if self.rest_size < buf.len() {
-            return Err(ErrorKind::InvalidInput.into());
-        }
-
-        self.rest_size -= buf.len();
-        Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::Data,
-                size: self.total_size,
-                extension: ChunkExt::new(),
-                data: buf,
-                trailer: None,
-            },
-            &buf[buf.len()..],
-        ))
     }
 
     fn skip_trailer_last_crlf<'a>(

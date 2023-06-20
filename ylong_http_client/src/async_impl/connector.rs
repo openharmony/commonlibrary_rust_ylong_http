@@ -122,6 +122,11 @@ pub(crate) mod c_ssl {
                 is_proxy = true;
             }
 
+            let host_name = match uri.host() {
+                Some(host) => host.to_string(),
+                None => "no host in uri".to_string(),
+            };
+
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
                     let stream = TcpStream::connect(addr)
@@ -154,9 +159,14 @@ pub(crate) mod c_ssl {
                             tcp_stream
                         };
 
-                        let tls_ssl = config.ssl().map_err(|e| {
+                        let mut tls_ssl = config.ssl().map_err(|e| {
                             HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
                         })?;
+
+                        tls_ssl.set_sni_verify(&host_name).map_err(|e| {
+                            HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
+                        })?;
+
                         let mut stream = AsyncSslStream::new(tls_ssl.into_inner(), tcp_stream)
                             .map_err(|e| {
                                 HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
@@ -187,7 +197,7 @@ pub(crate) mod c_ssl {
         .unwrap();
 
         if let Some(value) = auth {
-            write!(&mut req, "Proxy-Authorization: {value}\r\n").unwrap();
+            write!(&mut req, "Proxy-Authorization: Basic {value}\r\n").unwrap();
         }
 
         write!(&mut req, "\r\n").unwrap();

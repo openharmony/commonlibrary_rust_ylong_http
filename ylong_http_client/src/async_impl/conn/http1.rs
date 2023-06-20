@@ -16,6 +16,7 @@
 use crate::async_impl::{Body, HttpBody, StreamData};
 use crate::error::{ErrorKind, HttpClientError};
 use crate::util::dispatcher::http1::Http1Conn;
+use crate::util::normalizer::BodyLengthParser;
 use crate::Request;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -37,17 +38,21 @@ where
 
     // Encodes and sends Request-line and Headers(non-body fields).
     let mut non_body = RequestEncoder::new(request.part().clone());
+    non_body.set_proxy(true);
     loop {
         match non_body.encode(&mut buf[..]) {
             Ok(0) => break,
             Ok(written) => {
                 // RequestEncoder writes `buf` as much as possible.
-                conn.raw_mut()
-                    .write_all(&buf[..written])
-                    .await
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
+                    conn.shutdown();
+                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                }
             }
-            Err(e) => return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e))),
+            Err(e) => {
+                conn.shutdown();
+                return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+            }
         }
     }
 
@@ -61,18 +66,22 @@ where
                 Ok(0) => end_body = true,
                 Ok(size) => written += size,
                 Err(e) => {
+                    conn.shutdown();
                     return Err(HttpClientError::new_with_cause(
                         ErrorKind::BodyTransfer,
                         Some(e),
-                    ))
+                    ));
                 }
             }
         }
         if written == buf.len() || end_body {
-            conn.raw_mut()
-                .write_all(&buf[..written])
-                .await
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyTransfer, Some(e)))?;
+            if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
+                conn.shutdown();
+                return Err(HttpClientError::new_with_cause(
+                    ErrorKind::BodyTransfer,
+                    Some(e),
+                ));
+            }
             written = 0;
         }
     }
@@ -81,49 +90,41 @@ where
     let (part, pre) = {
         let mut decoder = ResponseDecoder::new();
         loop {
-            let size = conn
-                .raw_mut()
-                .read(buf.as_mut_slice())
-                .await
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+            let size = match conn.raw_mut().read(buf.as_mut_slice()).await {
+                Ok(0) => {
+                    conn.shutdown();
+                    return Err(HttpClientError::new_with_message(
+                        ErrorKind::Request,
+                        "Tcp Closed",
+                    ));
+                }
+                Ok(size) => size,
+                Err(e) => {
+                    conn.shutdown();
+                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                }
+            };
+
             match decoder.decode(&buf[..size]) {
                 Ok(None) => {}
                 Ok(Some((part, rem))) => break (part, rem),
-                Err(e) => return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e))),
+                Err(e) => {
+                    conn.shutdown();
+                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                }
             }
         }
     };
 
-    // Generates response body.
-    let body = {
-        let chunked = part
-            .headers
-            .get("Transfer-Encoding")
-            .map(|v| v.to_str().unwrap_or(String::new()))
-            .and_then(|s| s.find("chunked"))
-            .is_some();
-        let content_length = part
-            .headers
-            .get("Content-Length")
-            .map(|v| v.to_str().unwrap_or(String::new()))
-            .and_then(|s| s.parse::<usize>().ok());
-
-        let is_trailer = part.headers.get("Trailer").is_some();
-
-        match (chunked, content_length, pre.is_empty()) {
-            (true, None, _) => HttpBody::chunk(pre, Box::new(conn), is_trailer),
-            (false, Some(0), _) => HttpBody::empty(),
-            (false, Some(len), _) => HttpBody::text(len, pre, Box::new(conn)),
-            (false, None, true) => HttpBody::empty(),
-            // TODO: Need more information about this error.
-            _ => {
-                return Err(HttpClientError::new_with_message(
-                    ErrorKind::Request,
-                    "Invalid Response Format",
-                ))
-            }
+    let length = match BodyLengthParser::new(request.method(), &part).parse() {
+        Ok(length) => length,
+        Err(e) => {
+            conn.shutdown();
+            return Err(e);
         }
     };
+
+    let body = HttpBody::new(length, Box::new(conn), pre)?;
     Ok(Response::from_raw_parts(part, body))
 }
 

@@ -15,7 +15,7 @@
 
 use super::{
     bio::BIO,
-    x509::{C_X509, X509_STORE},
+    x509::{C_X509, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM},
 };
 use libc::{c_char, c_int, c_long, c_uchar, c_uint, c_void};
 
@@ -94,6 +94,29 @@ extern "C" {
     /// Sets/replaces the certificate verification storage of ctx to/with store.
     /// If another X509_STORE object is currently set in ctx, it will be X509_STORE_free()ed.
     pub(crate) fn SSL_CTX_set_cert_store(ctx: *mut SSL_CTX, store: *mut X509_STORE);
+
+    /// Returns a pointer to the current certificate verification storage.
+    pub(crate) fn SSL_CTX_get_cert_store(ctx: *const SSL_CTX) -> *mut X509_STORE;
+
+    /// Specifies that the default locations from which CA certificates are loaded
+    /// should be used. There is one default directory, one default file and one
+    /// default store. The default CA certificates directory is called certs in the
+    /// default OpenSSL directory, and this is also the default store.
+    /// Alternatively the SSL_CERT_DIR environment variable can be defined to
+    /// override this location. The default CA certificates file is called cert.pem
+    /// in the default OpenSSL directory. Alternatively the SSL_CERT_FILE environment
+    /// variable can be defined to override this location.
+    pub(crate) fn SSL_CTX_set_default_verify_paths(ctx: *mut SSL_CTX) -> c_int;
+
+    /// Sets the verification flags for ctx to be mode and specifies the verify_callback
+    /// function to be used.
+    /// If no callback function shall be specified, the NULL pointer can be use for verify_callback.
+    pub(crate) fn SSL_CTX_set_verify(
+        ctx: *mut SSL_CTX,
+        mode: c_int,
+        verify_callback: Option<extern "C" fn(c_int, *mut X509_STORE_CTX) -> c_int>,
+    );
+
 }
 
 /// This is the main SSL/TLS structure which is created by a server or client per
@@ -133,6 +156,12 @@ extern "C" {
     pub(crate) fn SSL_connect(ssl: *mut SSL) -> c_int;
 
     pub(crate) fn SSL_shutdown(ssl: *mut SSL) -> c_int;
+
+    pub(crate) fn SSL_ctrl(ssl: *mut SSL, cmd: c_int, larg: c_long, parg: *mut c_void) -> c_long;
+
+    /// Retrieve an internal pointer to the verification parameters for ssl respectively.
+    /// The returned pointer must not be freed by the calling application.
+    pub(crate) fn SSL_get0_param(ssl: *mut SSL) -> *mut X509_VERIFY_PARAM;
 }
 
 /// This is a dispatch structure describing the internal ssl library methods/functions

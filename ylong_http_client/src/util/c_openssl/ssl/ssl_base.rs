@@ -16,15 +16,16 @@
 use super::{error::HandshakeError, MidHandshakeSslStream, SslContext, SslErrorCode, SslStream};
 use crate::{
     c_openssl::{
+        check_ret,
         ffi::{
             bio::BIO,
             ssl::{
-                SSL_connect, SSL_get_error, SSL_get_rbio, SSL_get_verify_result, SSL_read,
-                SSL_state_string_long, SSL_write,
+                SSL_connect, SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio,
+                SSL_get_verify_result, SSL_read, SSL_state_string_long, SSL_write,
             },
         },
         foreign::ForeignRef,
-        x509::X509VerifyResult,
+        x509::{X509VerifyParamRef, X509VerifyResult, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS},
     },
     util::c_openssl::{
         check_ptr,
@@ -34,8 +35,11 @@ use crate::{
     },
 };
 use core::{cmp, ffi, fmt, str};
-use libc::{c_int, c_void};
-use std::io::{Read, Write};
+use libc::{c_char, c_int, c_long, c_void};
+use std::{
+    ffi::CString,
+    io::{Read, Write},
+};
 
 foreign_type!(
     type CStruct = SSL;
@@ -112,6 +116,30 @@ impl SslRef {
         let len = cmp::min(c_int::MAX as usize, buf.len()) as c_int;
         unsafe { SSL_write(self.as_ptr(), buf.as_ptr() as *const c_void, len) }
     }
+
+    pub(crate) fn set_host_name(&mut self, name: &str) -> Result<(), ErrorStack> {
+        let name = match CString::new(name) {
+            Ok(name) => name,
+            Err(_) => return Err(ErrorStack::get()),
+        };
+        check_ret(
+            unsafe { ssl_set_tlsext_host_name(self.as_ptr(), name.as_ptr() as *mut _) } as c_int,
+        )
+        .map(|_| ())
+    }
+
+    pub(crate) fn param_mut(&mut self) -> &mut X509VerifyParamRef {
+        unsafe { X509VerifyParamRef::from_ptr_mut(SSL_get0_param(self.as_ptr())) }
+    }
+
+    pub(crate) fn setup_verify_hostname(ssl: &mut SslRef, host: &str) -> Result<(), ErrorStack> {
+        let param = ssl.param_mut();
+        param.set_hostflags(X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+        match host.parse() {
+            Ok(ip) => param.set_ip(ip),
+            Err(_) => param.set_host(host),
+        }
+    }
 }
 
 impl fmt::Debug for SslRef {
@@ -123,4 +151,16 @@ impl fmt::Debug for SslRef {
             &self.verify_result()
         )
     }
+}
+
+const SSL_CTRL_SET_TLSEXT_HOSTNAME: c_int = 0x37;
+const TLSEXT_NAMETYPE_HOST_NAME: c_int = 0x0;
+
+unsafe fn ssl_set_tlsext_host_name(s: *mut SSL, name: *mut c_char) -> c_long {
+    SSL_ctrl(
+        s,
+        SSL_CTRL_SET_TLSEXT_HOSTNAME,
+        TLSEXT_NAMETYPE_HOST_NAME as c_long,
+        name as *mut c_void,
+    )
 }

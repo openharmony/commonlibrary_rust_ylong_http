@@ -28,6 +28,7 @@ use ylong_http::headers::Headers;
 #[cfg(feature = "http1_1")]
 use ylong_http::headers::{HeaderName, HeaderValue};
 
+use crate::util::normalizer::BodyLength;
 #[cfg(feature = "http1_1")]
 use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 
@@ -67,6 +68,33 @@ pub struct HttpBody {
 type BoxStreamData = Box<dyn StreamData + Sync + Send + Unpin>;
 
 impl HttpBody {
+    pub(crate) fn new(
+        body_length: BodyLength,
+        io: BoxStreamData,
+        pre: &[u8],
+    ) -> Result<Self, HttpClientError> {
+        let kind = match body_length {
+            BodyLength::Empty => {
+                if !pre.is_empty() {
+                    // TODO: Consider the case where BodyLength is empty but pre is not empty.
+                    io.shutdown();
+                    return Err(HttpClientError::new_with_message(
+                        ErrorKind::Request,
+                        "Body length is 0 but read extra data",
+                    ));
+                }
+                Kind::Empty
+            }
+            BodyLength::Length(len) => Kind::Text(Text::new(len, pre, io)),
+            BodyLength::UntilClose => Kind::UntilClose(UntilClose::new(pre, io)),
+
+            #[cfg(feature = "http1_1")]
+            BodyLength::Chunk => Kind::Chunk(Chunk::new(pre, io)),
+        };
+        Ok(Self { kind, sleep: None })
+    }
+
+    #[cfg(feature = "http2")]
     pub(crate) fn empty() -> Self {
         Self {
             kind: Kind::Empty,
@@ -74,17 +102,10 @@ impl HttpBody {
         }
     }
 
+    #[cfg(feature = "http2")]
     pub(crate) fn text(len: usize, pre: &[u8], io: BoxStreamData) -> Self {
         Self {
             kind: Kind::Text(Text::new(len, pre, io)),
-            sleep: None,
-        }
-    }
-
-    #[cfg(feature = "http1_1")]
-    pub(crate) fn chunk(pre: &[u8], io: BoxStreamData, is_trailer: bool) -> Self {
-        Self {
-            kind: Kind::Chunk(Chunk::new(pre, io, is_trailer)),
             sleep: None,
         }
     }
@@ -94,12 +115,136 @@ impl HttpBody {
     }
 }
 
+impl Body for HttpBody {
+    type Error = HttpClientError;
+
+    fn poll_data(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, Self::Error>> {
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+
+        if let Some(delay) = self.sleep.as_mut() {
+            if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
+                return Poll::Ready(Err(HttpClientError::new_with_message(
+                    ErrorKind::Timeout,
+                    "Request timeout",
+                )));
+            }
+        }
+        match self.kind {
+            Kind::Empty => Poll::Ready(Ok(0)),
+            Kind::Text(ref mut text) => text.data(cx, buf),
+            Kind::UntilClose(ref mut until_close) => until_close.data(cx, buf),
+            #[cfg(feature = "http1_1")]
+            Kind::Chunk(ref mut chunk) => chunk.data(cx, buf),
+        }
+    }
+
+    fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
+        match self.kind {
+            #[cfg(feature = "http1_1")]
+            Kind::Chunk(ref mut chunk) => chunk.get_trailer(),
+            _ => Ok(None),
+        }
+    }
+}
+
+impl Drop for HttpBody {
+    fn drop(&mut self) {
+        let io = match self.kind {
+            Kind::Text(ref mut text) => text.io.as_mut(),
+            #[cfg(feature = "http1_1")]
+            Kind::Chunk(ref mut chunk) => chunk.io.as_mut(),
+            Kind::UntilClose(ref mut until_close) => until_close.io.as_mut(),
+            _ => None,
+        };
+        // If response body is not totally read, shutdown io.
+        if let Some(io) = io {
+            io.shutdown()
+        }
+    }
+}
+
 // TODO: `TextBodyDecoder` implementation and `ChunkBodyDecoder` implementation.
 enum Kind {
     Empty,
     Text(Text),
     #[cfg(feature = "http1_1")]
     Chunk(Chunk),
+    UntilClose(UntilClose),
+}
+
+struct UntilClose {
+    pre: Option<Cursor<Vec<u8>>>,
+    io: Option<BoxStreamData>,
+}
+
+impl UntilClose {
+    pub(crate) fn new(pre: &[u8], io: BoxStreamData) -> Self {
+        Self {
+            pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
+            io: Some(io),
+        }
+    }
+
+    fn data(
+        &mut self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, HttpClientError>> {
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+
+        let mut read = 0;
+
+        if let Some(pre) = self.pre.as_mut() {
+            // Here cursor read never failed.
+            let this_read = Read::read(pre, buf).unwrap();
+            if this_read == 0 {
+                self.pre = None;
+            } else {
+                read += this_read;
+            }
+        }
+
+        if !buf[read..].is_empty() {
+            if let Some(mut io) = self.io.take() {
+                let mut read_buf = ReadBuf::new(&mut buf[read..]);
+                match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
+                    // Disconnected.
+                    Poll::Ready(Ok(())) => {
+                        let filled = read_buf.filled().len();
+                        if filled == 0 {
+                            io.shutdown();
+                        } else {
+                            self.io = Some(io);
+                        }
+                        read += filled;
+                        return Poll::Ready(Ok(read));
+                    }
+                    Poll::Pending => {
+                        self.io = Some(io);
+                        if read != 0 {
+                            return Poll::Ready(Ok(read));
+                        }
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(Err(e)) => {
+                        return Poll::Ready(Err(HttpClientError::new_with_cause(
+                            ErrorKind::BodyTransfer,
+                            Some(e),
+                        )))
+                    }
+                }
+            }
+        }
+        Poll::Ready(Ok(read))
+    }
 }
 
 struct Text {
@@ -210,43 +355,6 @@ impl Text {
     }
 }
 
-impl Body for HttpBody {
-    type Error = HttpClientError;
-
-    fn poll_data(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
-        if buf.is_empty() {
-            return Poll::Ready(Ok(0));
-        }
-
-        if let Some(delay) = self.sleep.as_mut() {
-            if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
-                return Poll::Ready(Err(HttpClientError::new_with_message(
-                    ErrorKind::Timeout,
-                    "Request timeout",
-                )));
-            }
-        }
-        match self.kind {
-            Kind::Empty => Poll::Ready(Ok(0)),
-            Kind::Text(ref mut text) => text.data(cx, buf),
-            #[cfg(feature = "http1_1")]
-            Kind::Chunk(ref mut chunk) => chunk.data(cx, buf),
-        }
-    }
-
-    fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
-        match self.kind {
-            #[cfg(feature = "http1_1")]
-            Kind::Chunk(ref mut chunk) => chunk.get_trailer(),
-            _ => Ok(None),
-        }
-    }
-}
-
 #[cfg(feature = "http1_1")]
 struct Chunk {
     decoder: ChunkBodyDecoder,
@@ -257,9 +365,9 @@ struct Chunk {
 
 #[cfg(feature = "http1_1")]
 impl Chunk {
-    pub(crate) fn new(pre: &[u8], io: BoxStreamData, is_trailer: bool) -> Self {
+    pub(crate) fn new(pre: &[u8], io: BoxStreamData) -> Self {
         Self {
-            decoder: ChunkBodyDecoder::new().contains_trailer(is_trailer),
+            decoder: ChunkBodyDecoder::new().contains_trailer(false),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
             trailer: vec![],

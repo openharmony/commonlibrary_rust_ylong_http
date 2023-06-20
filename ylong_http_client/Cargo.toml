@@ -96,5 +96,5 @@ required-features = ["sync", "async", "http1_1", "c_openssl_1_1"]
 [[example]]
 name = "async_https_outside"
 path = "./examples/async_https_outside.rs"
-required-features = ["async", "http1_1", "c_openssl_3_0"]
+required-features = ["async", "http1_1", "tls_default"]
 

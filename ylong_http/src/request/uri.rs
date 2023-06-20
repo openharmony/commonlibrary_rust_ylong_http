@@ -280,8 +280,9 @@ impl Uri {
     /// assert_eq!(path.unwrap().as_str(), "/foo");
     /// assert_eq!(query.unwrap().as_str(), "a=1");
     /// ```
+    #[rustfmt::skip] // rust fmt check will add "," after `self`
     pub fn into_parts(
-        self,
+        self
     ) -> (
         Option<Scheme>,
         Option<Authority>,
@@ -721,6 +722,12 @@ impl Host {
     /// ```
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl ToString for Host {
+    fn to_string(&self) -> String {
+        self.0.to_owned()
     }
 }
 
