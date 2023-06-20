@@ -14,11 +14,11 @@
  */
 
 use crate::async_impl::HttpBody;
+use crate::Sleep;
 use crate::{ErrorKind, HttpClientError};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::time::Sleep;
 use ylong_http::response::Response;
 
 pub(crate) struct TimeoutFuture<T> {

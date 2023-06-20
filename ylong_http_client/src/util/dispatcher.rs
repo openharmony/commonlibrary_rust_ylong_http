@@ -151,6 +151,10 @@ pub(crate) mod http2 {
     use crate::error::HttpClientError;
     use crate::util::H2Config;
     use crate::ErrorKind;
+    use crate::MutexGuard;
+    use crate::TryRecvError;
+    use crate::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+    use crate::{AsyncMutex, AsyncRead, AsyncWrite, ReadBuf};
     use std::collections::{HashMap, VecDeque};
     use std::future::Future;
     use std::mem::take;
@@ -158,10 +162,6 @@ pub(crate) mod http2 {
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll, Waker};
-    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-    use tokio::sync::mpsc::error::TryRecvError;
-    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-    use tokio::sync::MutexGuard;
     use ylong_http::error::HttpError;
     use ylong_http::h2;
     use ylong_http::h2::Payload::Settings;
@@ -215,7 +215,7 @@ pub(crate) mod http2 {
         // Indicates that the dispatcher is occupied. At this time, a user coroutine is already acting as the dispatcher.
         pub(crate) occupied: AtomicU32,
         pub(crate) dispatcher_invalid: AtomicBool,
-        pub(crate) manager: tokio::sync::Mutex<IoManager<S>>,
+        pub(crate) manager: AsyncMutex<IoManager<S>>,
         pub(crate) stream_waker: Mutex<StreamWaker>,
     }
 
@@ -306,7 +306,7 @@ pub(crate) mod http2 {
                 // 0 means io is not occupied
                 occupied: AtomicU32::new(0),
                 dispatcher_invalid: AtomicBool::new(false),
-                manager: tokio::sync::Mutex::new(manager),
+                manager: AsyncMutex::new(manager),
                 stream_waker: Mutex::new(StreamWaker::new()),
             }
         }
@@ -544,7 +544,7 @@ pub(crate) mod http2 {
             };
 
             // For each stream to send the frame to the controller
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Send2Ctrl>();
+            let (tx, rx) = unbounded_channel::<Send2Ctrl>();
 
             let stream_controller = Arc::new(StreamController::new(inner, rx, connection_frames));
 
@@ -607,7 +607,7 @@ pub(crate) mod http2 {
             frame: Frame,
         ) -> Result<(), HttpClientError> {
             if self.stream_info.receiver.is_none() {
-                let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Frame>();
+                let (tx, rx) = unbounded_channel::<Frame>();
                 self.stream_info.receiver.set_receiver(rx);
                 self.sender.send((Some((self.id, tx)), frame)).map_err(|_| {
                     HttpClientError::new_with_cause(

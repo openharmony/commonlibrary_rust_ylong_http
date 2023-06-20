@@ -18,11 +18,11 @@ use crate::async_impl::conn::HttpBody;
 use crate::async_impl::StreamData;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::util::dispatcher::http2::Http2Conn;
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use std::cmp::min;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use ylong_http::body::async_impl::Body;
 use ylong_http::error::HttpError;
 use ylong_http::h2;
@@ -451,6 +451,7 @@ mod ut_http2 {
         );
     }
 
+    #[cfg(feature = "tokio_base")]
     #[test]
     fn ut_http2_build_data_frame() {
         let mut request = build_request!(

@@ -19,6 +19,7 @@ use crate::util::normalizer::{RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
 use crate::util::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Redirect};
+use crate::{sleep, timeout};
 use crate::{ErrorKind, HttpClientError, Proxy, Request, Timeout, Uri};
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::response::Response;
@@ -225,8 +226,8 @@ impl<C: Connector> Client<C> {
             #[cfg(feature = "http2")]
             HttpVersion::Http2PriorKnowledge => self.http2_request(uri, request).await,
             HttpVersion::Http11 => {
-                let conn = if let Some(timeout) = self.client_config.connect_timeout.inner() {
-                    match tokio::time::timeout(timeout, self.inner.connect_to(uri)).await {
+                let conn = if let Some(dur) = self.client_config.connect_timeout.inner() {
+                    match timeout(dur, self.inner.connect_to(uri)).await {
                         Err(_elapsed) => {
                             return Err(HttpClientError::new_with_message(
                                 ErrorKind::Timeout,
@@ -243,7 +244,7 @@ impl<C: Connector> Client<C> {
                 let mut retryable = Retryable::default();
                 if let Some(timeout) = self.client_config.request_timeout.inner() {
                     TimeoutFuture {
-                        timeout: Some(Box::pin(tokio::time::sleep(timeout))),
+                        timeout: Some(Box::pin(sleep(timeout))),
                         future: Box::pin(conn::request(conn, request, &mut retryable)),
                     }
                     .await

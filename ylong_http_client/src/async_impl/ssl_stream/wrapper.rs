@@ -13,13 +13,13 @@
  * limitations under the License.
  */
 
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use core::{
     fmt::Debug,
     pin::Pin,
     task::{Context, Poll},
 };
 use std::io::{self, Read, Write};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[derive(Debug)]
 pub(crate) struct Wrapper<S> {

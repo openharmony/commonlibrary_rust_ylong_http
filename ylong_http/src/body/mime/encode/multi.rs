@@ -543,6 +543,7 @@ mod ut_mime_multi_encoder {
     /// 3. Creates a main `MimeMulti`, adds parts.
     /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes asynchronously.
     /// 5. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mime_multi_encoder_data_many_parts_nesting_then_async_data() {
         let multi1 = MimeMulti::builder()

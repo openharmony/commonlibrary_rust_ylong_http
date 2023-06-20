@@ -18,6 +18,7 @@ use super::{async_impl, sync_impl};
 use crate::body::origin::FromAsyncBody;
 use crate::error::{ErrorKind, HttpError};
 use crate::headers::{Header, HeaderName, HeaderValue, Headers};
+use crate::{AsyncRead, AsyncReadExt, ReadBuf};
 use core::convert::Infallible;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
@@ -28,7 +29,6 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::future::Future;
 use std::io::{Error, Read};
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
 /// A chunk body is used to encode body to send message by chunk in `HTTP/1.1` format.
 ///
@@ -1555,6 +1555,7 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_bytes`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_asnyc_chunk_body_encode_0() {
         let content = data_message();
@@ -1578,6 +1579,7 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_async_reader`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_asnyc_chunk_body_encode_1() {
         let content = data_message();

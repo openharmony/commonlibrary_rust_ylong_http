@@ -18,9 +18,9 @@ use crate::error::{ErrorKind, HttpClientError};
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::util::normalizer::BodyLengthParser;
 use crate::Request;
+use crate::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
 use ylong_http::response::Response;
 

@@ -24,13 +24,13 @@ use crate::{
     },
     error::{ErrorKind, HttpError},
 };
+use crate::{AsyncRead, ReadBuf};
 use core::{
     convert::TryFrom,
     pin::Pin,
     task::{Context, Poll},
 };
 use std::io::Read;
-use tokio::io::{AsyncRead, ReadBuf};
 
 /// `MimePartEncoder` can get a [`MimePart`] to encode into data that can be transmitted.
 ///
@@ -389,6 +389,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_owned`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mime_part_encoder_body_from_owned_then_async_data() {
         part_encode_compare! (
@@ -409,6 +410,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_bytes`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mime_part_encoder_body_from_bytes_then_async_data() {
         part_encode_compare! (
@@ -429,6 +431,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets headers and sets body.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mime_part_encoder_common_then_async_data() {
         part_encode_compare! (
