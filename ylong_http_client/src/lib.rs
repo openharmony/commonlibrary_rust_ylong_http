@@ -60,3 +60,29 @@ pub mod util;
     any(feature = "http1_1", feature = "http2"),
 ))]
 pub use util::*;
+
+#[cfg(feature = "tokio_base")]
+pub(crate) use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    net::TcpStream,
+    time::{sleep, timeout, Sleep},
+};
+
+#[cfg(all(feature = "tokio_base", feature = "http2"))]
+pub(crate) use tokio::sync::{
+    mpsc::{error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender},
+    Mutex as AsyncMutex, MutexGuard,
+};
+
+#[cfg(feature = "ylong_base")]
+pub(crate) use ylong_runtime::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    net::TcpStream,
+    time::{sleep, timeout, Sleep},
+};
+
+#[cfg(all(feature = "ylong_base", feature = "http2"))]
+pub(crate) use ylong_runtime::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    Mutex as AsyncMutex, MutexGuard, RecvError as TryRecvError,
+};

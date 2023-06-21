@@ -14,6 +14,7 @@
  */
 
 use crate::headers::{HeaderName, HeaderValue};
+use crate::AsyncRead;
 use crate::{
     body::mime::{MixFrom, CR, LF},
     error::HttpError,
@@ -21,7 +22,6 @@ use crate::{
 };
 use core::{convert::TryFrom, mem::take};
 use std::io::Read;
-use tokio::io::AsyncRead;
 
 /// `MimePart` is a body part of a Composite MIME body which is defined in [`RFC2046`]: \
 /// The body must then contain one or more body parts, each preceded by a boundary

@@ -46,3 +46,9 @@ pub mod version;
 
 #[cfg(test)]
 pub(crate) mod test_util;
+
+#[cfg(feature = "tokio_base")]
+pub(crate) use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+
+#[cfg(feature = "ylong_base")]
+pub(crate) use ylong_runtime::io::{AsyncRead, AsyncReadExt, ReadBuf};

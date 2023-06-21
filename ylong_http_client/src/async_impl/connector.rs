@@ -14,8 +14,8 @@
  */
 
 use crate::util::ConnectorConfig;
+use crate::{AsyncRead, AsyncWrite};
 use core::future::Future;
-use tokio::io::{AsyncRead, AsyncWrite};
 use ylong_http::request::uri::Uri;
 
 /// `Connector` trait used by `async_impl::Client`. `Connector` provides
@@ -56,9 +56,9 @@ impl Default for HttpConnector {
 #[cfg(not(feature = "__tls"))]
 pub(crate) mod no_tls {
     use crate::async_impl::Connector;
+    use crate::TcpStream;
     use core::{future::Future, pin::Pin};
     use std::io::Error;
-    use tokio::net::TcpStream;
     use ylong_http::request::uri::Uri;
 
     impl Connector for super::HttpConnector {
@@ -91,10 +91,9 @@ pub(crate) mod c_ssl {
         async_impl::{AsyncSslStream, Connector, MixStream},
         ErrorKind, HttpClientError,
     };
+    use crate::{AsyncReadExt, AsyncWriteExt, TcpStream};
     use core::{future::Future, pin::Pin};
     use std::io::Write;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
     use ylong_http::request::uri::{Scheme, Uri};
 
     impl Connector for super::HttpConnector {

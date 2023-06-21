@@ -15,7 +15,7 @@
 
 use super::{Console, UploadConfig, UploadOperator, Uploader};
 use crate::async_impl::MultiPart;
-use tokio::io::AsyncRead;
+use crate::AsyncRead;
 
 /// A builder that can create a `Uploader`.
 ///
@@ -110,7 +110,6 @@ impl<R: AsyncRead> UploaderBuilder<WantsOperator<R>> {
     /// ```
     /// # use std::pin::Pin;
     /// # use std::task::{Context, Poll};
-    /// use tokio::io::ReadBuf;
     /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader, UploadOperator};
     /// # use ylong_http_client::{HttpClientError, Response};
     ///

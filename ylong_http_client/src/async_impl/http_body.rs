@@ -16,12 +16,11 @@
 use super::{Body, StreamData};
 
 use crate::error::{ErrorKind, HttpClientError};
+use crate::{AsyncRead, ReadBuf, Sleep};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::future::Future;
 use std::io::{Cursor, Read};
-use tokio::io::{AsyncRead, ReadBuf};
-use tokio::time::Sleep;
 use ylong_http::body::TextBodyDecoder;
 use ylong_http::headers::Headers;
 

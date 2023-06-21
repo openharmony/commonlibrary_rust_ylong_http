@@ -14,11 +14,11 @@
  */
 
 use crate::async_impl::AsyncSslStream;
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// A stream which may be wrapped with TLS.
 pub enum MixStream<T> {

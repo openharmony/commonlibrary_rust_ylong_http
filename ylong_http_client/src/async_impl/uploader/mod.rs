@@ -19,10 +19,10 @@ mod operator;
 pub use builder::{UploaderBuilder, WantsReader};
 pub use operator::{Console, UploadOperator};
 
+use crate::{AsyncRead, ReadBuf};
 use crate::{ErrorKind, HttpClientError};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, ReadBuf};
 use ylong_http::body::async_impl::Body;
 
 /// An uploader that can help you upload the request body.
@@ -59,7 +59,6 @@ use ylong_http::body::async_impl::Body;
 /// ```no_run
 /// # use std::pin::Pin;
 /// # use std::task::{Context, Poll};
-/// # use tokio::io::ReadBuf;
 /// # use ylong_http_client::async_impl::{Uploader, UploadOperator};
 /// # use ylong_http_client::{Response, SpeedLimit, Timeout};
 /// # use ylong_http_client::HttpClientError;

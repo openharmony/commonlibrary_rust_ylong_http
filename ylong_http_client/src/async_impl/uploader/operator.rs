@@ -29,7 +29,6 @@ use std::task::{Context, Poll};
 /// ```
 /// # use std::pin::Pin;
 /// # use std::task::{Context, Poll};
-/// # use tokio::io::ReadBuf;
 /// # use ylong_http_client::async_impl::UploadOperator;
 /// # use ylong_http_client::HttpClientError;
 ///

@@ -16,11 +16,11 @@
 use super::origin::{FromAsyncReader, FromBytes, FromReader};
 use super::{async_impl, sync_impl};
 use crate::body::origin::FromAsyncBody;
+use crate::{AsyncRead, ReadBuf};
 use core::cmp::min;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::io::{Error, Read};
-use tokio::io::{AsyncRead, ReadBuf};
 
 /// `TextBody` is used to represent the body of plain text type.
 ///
@@ -542,6 +542,7 @@ mod ut_text {
     /// # Brief
     /// 1. Creates a `TextBody<FromBytes<'_>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_text_body_from_bytes_asyn_data() {
         use crate::body::async_impl::Body;
@@ -594,6 +595,7 @@ mod ut_text {
     /// # Brief
     /// 1. Creates a `TextBody<FromAsyncReader<T>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_text_body_from_async_reader_asyn_data() {
         use crate::body::async_impl::Body;

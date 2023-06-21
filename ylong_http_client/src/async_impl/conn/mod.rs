@@ -16,7 +16,7 @@
 use crate::async_impl::HttpBody;
 use crate::error::HttpClientError;
 use crate::util::dispatcher::Conn;
-use tokio::io::{AsyncRead, AsyncWrite};
+use crate::{AsyncRead, AsyncWrite};
 use ylong_http::body::async_impl::Body;
 
 use crate::async_impl::client::Retryable;

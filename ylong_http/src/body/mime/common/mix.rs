@@ -18,13 +18,13 @@ use crate::body::{
     mime::common::{data_copy, SizeResult, TokenStatus},
     sync_impl,
 };
+use crate::{AsyncRead, ReadBuf};
 use core::{
     fmt::Debug,
     pin::Pin,
     task::{Context, Poll},
 };
 use std::io::Read;
-use tokio::io::{AsyncRead, ReadBuf};
 
 // Uses Box<dyn trait> so that it can be put into a list(like vec) with different T.
 pub(crate) enum MixFrom<'a> {
@@ -414,6 +414,7 @@ mod ut_mix {
     /// 1. Creates a `MixFrom` from asynchronous read content by `MixFrom::set_async_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mix_set_async_reader() {
         mix_encode_compare!(
@@ -431,6 +432,7 @@ mod ut_mix {
     /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mix_set_reader_then_async_data() {
         mix_encode_compare!(
@@ -448,6 +450,7 @@ mod ut_mix {
     /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_bytes`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mix_set_bytes_then_async_data() {
         mix_encode_compare!(
@@ -465,6 +468,7 @@ mod ut_mix {
     /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_owned`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_mix_set_owned_then_async_data() {
         mix_encode_compare!(

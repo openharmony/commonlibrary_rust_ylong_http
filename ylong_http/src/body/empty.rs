@@ -134,6 +134,7 @@ mod ut_empty {
     /// # Brief
     /// 1. Creates an `EmptyBody`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_empty_body_async_impl_data() {
         use crate::body::async_impl::Body;

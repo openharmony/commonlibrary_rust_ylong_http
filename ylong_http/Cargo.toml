@@ -11,7 +11,7 @@ keywords = ["ylong", "http"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http1_1"]
+default = ["http1_1", "tokio_base"]
 full = [
     "http1_1",
     "http2",
@@ -23,8 +23,22 @@ http2 = []          # Uses HTTP/2.
 http3 = []          # Uses HTTP/3.
 huffman = []        # Uses Huffman encoding in `Hpack` and `Qpack`.
 
+tokio_base = ["tokio"]     # Uses asynchronous components of `tokio`
+ylong_base = ["ylong_runtime"]     # Uses asynchronous components of `tokio`
+
 [dependencies]
-tokio = { version = "1.20.1", features = ["io-util"] }
+tokio = { version = "1.20.1", features = ["io-util"], optional = true }
+ylong_runtime = { path = "../runtime/ylong_runtime", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.20.1", features = ["io-util", "rt-multi-thread", "macros"] }
+
+[[example]]
+name = "mimebody_multi"
+path = "./examples/mimebody_multi.rs"
+required-features = ["tokio_base"]
+
+[[example]]
+name = "mimebody_multi_then_async_data"
+path = "./examples/mimebody_multi_then_async_data.rs"
+required-features = ["tokio_base"]

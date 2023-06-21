@@ -18,6 +18,7 @@ use crate::util::c_openssl::{
     error::ErrorStack,
     ssl::{self, ShutdownResult, Ssl, SslErrorCode},
 };
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use core::{
     future,
     pin::Pin,
@@ -25,7 +26,6 @@ use core::{
     task::{Context, Poll},
 };
 use std::io::{self, Read, Write};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// An asynchronous version of [`openssl::ssl::SslStream`].
 #[derive(Debug)]

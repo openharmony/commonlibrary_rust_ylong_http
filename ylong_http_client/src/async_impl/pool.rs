@@ -17,12 +17,12 @@ use crate::async_impl::Connector;
 use crate::error::HttpClientError;
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
 use crate::util::pool::{Pool, PoolKey};
+use crate::{AsyncRead, AsyncWrite};
 use crate::{ErrorKind, HttpConfig, HttpVersion, Uri};
 use std::error::Error;
 use std::future::Future;
 use std::mem::take;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 pub(crate) struct ConnPool<C, S> {
     pool: Pool<PoolKey, Conns<S>>,
@@ -56,7 +56,7 @@ pub(crate) struct Conns<S> {
     list: Arc<Mutex<Vec<ConnDispatcher<S>>>>,
 
     #[cfg(feature = "http2")]
-    h2_occupation: Arc<tokio::sync::Mutex<()>>,
+    h2_occupation: Arc<crate::AsyncMutex<()>>,
 }
 
 impl<S> Conns<S> {
@@ -65,7 +65,7 @@ impl<S> Conns<S> {
             list: Arc::new(Mutex::new(Vec::new())),
 
             #[cfg(feature = "http2")]
-            h2_occupation: Arc::new(tokio::sync::Mutex::new(())),
+            h2_occupation: Arc::new(crate::AsyncMutex::new(())),
         }
     }
 }

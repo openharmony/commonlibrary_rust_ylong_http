@@ -174,11 +174,11 @@ pub mod sync_impl {
 /// Asynchronous `Body` trait definition.
 pub mod async_impl {
     use crate::headers::Headers;
+    use crate::{AsyncRead, ReadBuf};
     use core::future::Future;
     use core::pin::Pin;
     use core::task::{Context, Poll};
     use std::error::Error;
-    use tokio::io::{AsyncRead, ReadBuf};
 
     /// The `async_impl::Body` trait allows for reading body data asynchronously.
     ///
@@ -408,9 +408,9 @@ pub mod async_impl {
 
 // Type definitions of the origin of the body data.
 pub(crate) mod origin {
+    use crate::AsyncRead;
     use core::ops::{Deref, DerefMut};
     use std::io::Read;
-    use tokio::io::AsyncRead;
 
     /// A type that represents the body data is from memory.
     pub struct FromBytes<'a> {
@@ -539,6 +539,7 @@ mod ut_mod {
     /// 1. Creates a `async_impl::Body` object.
     /// 2. Gets its mutable reference.
     /// 3. Calls its `async_impl::Body::data` method and then checks the results.
+    #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_asyn_body_mut_asyn_body_data() {
         use crate::body::async_impl::Body;

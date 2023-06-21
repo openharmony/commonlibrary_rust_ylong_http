@@ -39,11 +39,11 @@ pub(crate) use decode::MimePartDecoder;
 // TODO: Adapter, remove this later.
 use crate::body::async_impl::{poll_read, Body};
 
+use crate::{AsyncRead, ReadBuf};
 use std::io::Cursor;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
-use tokio::io::{AsyncRead, ReadBuf};
 
 /// A structure that helps you build a `multipart/form-data` message.
 ///
@@ -388,17 +388,6 @@ impl Part {
     /// Sets a stream body of this `Part`.
     ///
     /// The body message will be set to the body part.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use tokio::io::AsyncRead;
-    /// # use ylong_http::body::Part;
-    ///
-    /// # fn set_stream_body<R: AsyncRead + Send + Sync + 'static>(stream: R) {
-    /// let part = Part::new().stream(stream);
-    /// # }
-    /// ```
     pub fn stream<T: AsyncRead + Send + Sync + 'static>(mut self, body: T) -> Self {
         self.body = Some(MultiPartState::stream(Box::pin(body)));
         self
