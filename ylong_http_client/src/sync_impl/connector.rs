@@ -71,14 +71,16 @@ pub mod no_tls {
     }
 }
 
-#[cfg(feature = "__c_openssl")]
-pub mod c_ssl {
+#[cfg(feature = "__tls")]
+pub mod tls_conn {
     use crate::{
         sync_impl::{Connector, MixStream},
         ErrorKind, HttpClientError,
     };
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
+    use std::{
+        io::{Read, Write},
+        net::TcpStream,
+    };
     use ylong_http::request::uri::{Scheme, Uri};
 
     impl Connector for super::HttpConnector {
@@ -124,12 +126,12 @@ pub mod c_ssl {
                         tcp_stream
                     };
 
-                    let mut tls_ssl = config.ssl().map_err(|e| {
+                    let mut tls_ssl = self.config.tls.ssl().map_err(|e| {
                         HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
                     })?;
 
                     tls_ssl.set_sni_verify(&host_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e));
+                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
                     })?;
 
                     let stream = self

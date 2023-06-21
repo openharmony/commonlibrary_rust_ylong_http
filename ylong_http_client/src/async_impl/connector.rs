@@ -85,8 +85,8 @@ pub(crate) mod no_tls {
     }
 }
 
-#[cfg(feature = "__c_openssl")]
-pub(crate) mod c_ssl {
+#[cfg(feature = "__tls")]
+pub(crate) mod tls_conn {
     use crate::{
         async_impl::{AsyncSslStream, Connector, MixStream},
         ErrorKind, HttpClientError,
