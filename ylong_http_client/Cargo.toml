@@ -14,7 +14,7 @@ keywords = ["ylong", "http", "client"]
 ylong_http = { path = "../ylong_http", version = "1.9.0", features = ["full"] }
 libc = { version = "0.2.134", optional = true }
 tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"], optional = true }
-ylong_runtime = { path = "../runtime/ylong_runtime", features = ["net", "sync", "fs", "macros", "time"], optional = true }
+# ylong_runtime = { path = "../runtime/ylong_runtime", features = ["net", "sync", "fs", "macros", "time"], optional = true }
 
 [dev-dependencies]
 hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }
@@ -38,7 +38,7 @@ http2 = ["ylong_http/http2"]                                 # Uses HTTP/2.
 http3 = []                                                   # Uses HTTP/3.
 
 tokio_base = ["tokio"]                                       # Uses tokio runtime.
-ylong_base = ["ylong_runtime"]                               # Uses ylong runtime.
+ylong_base = []                                              # Uses ylong runtime.
 
 tls_default = ["c_openssl_3_0"]
 __tls = []                                                   # Not open to user, only mark to use tls for developer.
