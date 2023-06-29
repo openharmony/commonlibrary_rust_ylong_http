@@ -24,7 +24,7 @@ use std::io::{self, Read, Write};
 #[derive(Debug)]
 pub(crate) struct Wrapper<S> {
     pub(crate) stream: S,
-    pub(crate) context: usize, //
+    pub(crate) context: *mut (), // Context of stream.
 }
 
 impl<S> Wrapper<S> {
@@ -34,7 +34,7 @@ impl<S> Wrapper<S> {
     /// Must be called with `context` set to a valid pointer to a live `Context` object,
     /// and the wrapper must be pinned in memory.
     unsafe fn inner(&mut self) -> (Pin<&mut S>, &mut Context<'_>) {
-        debug_assert_ne!(self.context, 0);
+        debug_assert!(!self.context.is_null());
         let stream = Pin::new_unchecked(&mut self.stream);
         let context = &mut *(self.context as *mut _);
         (stream, context)
@@ -75,6 +75,10 @@ where
         }
     }
 }
+
+// *mut () is not impl Send or Sync.
+unsafe impl<S: Send> Send for Wrapper<S> {}
+unsafe impl<S: Sync> Sync for Wrapper<S> {}
 
 /// Checks `io::Result`.
 pub(crate) fn check_io_to_poll<T>(r: io::Result<T>) -> Poll<io::Result<T>> {

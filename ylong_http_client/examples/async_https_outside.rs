@@ -36,7 +36,7 @@ fn main() {
 }
 
 async fn req() {
-    let v = include_bytes!("./test.pem");
+    let v = "some certs".as_bytes();
     let cert = Certificate::from_pem(v);
     // Creates a `async_impl::Client`
     let client = Client::builder()

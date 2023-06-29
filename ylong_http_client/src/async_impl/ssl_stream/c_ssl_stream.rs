@@ -22,7 +22,7 @@ use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use core::{
     future,
     pin::Pin,
-    slice,
+    ptr, slice,
     task::{Context, Poll},
 };
 use std::io::{self, Read, Write};
@@ -41,9 +41,9 @@ impl<S> AsyncSslStream<S> {
         let this = unsafe { self.get_unchecked_mut() };
 
         // sets context, SslStream to R, reset 0.
-        this.0.get_mut().context = ctx as *mut _ as usize;
+        this.0.get_mut().context = ctx as *mut _ as *mut ();
         let r = f(&mut this.0);
-        this.0.get_mut().context = 0;
+        this.0.get_mut().context = ptr::null_mut();
         r
     }
 
@@ -61,7 +61,14 @@ where
     /// Like [`SslStream::new`](ssl::SslStream::new).
     pub(crate) fn new(ssl: Ssl, stream: S) -> Result<Self, ErrorStack> {
         // This corresponds to `SSL_set_bio`.
-        ssl::SslStream::new_base(ssl, Wrapper { stream, context: 0 }).map(AsyncSslStream)
+        ssl::SslStream::new_base(
+            ssl,
+            Wrapper {
+                stream,
+                context: ptr::null_mut(),
+            },
+        )
+        .map(AsyncSslStream)
     }
 
     /// Like [`SslStream::connect`](ssl::SslStream::connect).
