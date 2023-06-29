@@ -38,7 +38,6 @@ extern "C" {
     pub(crate) fn BIO_clear_flags(b: *mut BIO, flags: c_int);
 }
 
-#[derive(Debug)]
 pub(crate) enum BIO_METHOD {}
 
 // for `BIO_METHOD`

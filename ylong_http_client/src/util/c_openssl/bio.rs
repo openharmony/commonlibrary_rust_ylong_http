@@ -81,6 +81,7 @@ const BIO_FLAGS_RWS: c_int = BIO_FLAGS_READ | BIO_FLAGS_WRITE | BIO_FLAGS_IO_SPE
 
 #[derive(Debug)]
 pub struct BioMethodInner(*mut BIO_METHOD);
+
 impl BioMethodInner {
     fn new<S: Read + Write>() -> Result<BioMethodInner, ErrorStack> {
         unsafe {
@@ -114,6 +115,7 @@ impl Drop for BioMethodInner {
 
 #[derive(Debug)]
 pub struct BioMethod(BioMethodInner);
+
 impl BioMethod {
     fn new<S: Read + Write>() -> Result<BioMethod, ErrorStack> {
         let method = BioMethodInner::new::<S>()?;
