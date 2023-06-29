@@ -1,11 +1,10 @@
 [package]
 name = "ylong_http"
-version = "1.9.0"
-edition = "2018"
-description = "HTTP implementation"
-readme = "README.md"
+version = "1.0.0"
+edition = "2021"
+description = "HTTP utility implementation"
 license = "Apache-2.0"
-repository = "https://open.codehub.huawei.com/innersource/Ylong_Rust/ylong_rs/files?ref=master&filePath=src%2Fweb%2Fylong_http"
+repository = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_http"
 keywords = ["ylong", "http"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

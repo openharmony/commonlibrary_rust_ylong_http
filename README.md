@@ -5,7 +5,16 @@
 `ylong_http` has built a complete HTTP capability, supporting users to use HTTP
 capability to meet the needs of communication scenarios.
 
-`ylong_http` is written in Rust.
+`ylong_http` provides HTTP protocol support to the network subsystem in the
+`OpenHarmony` system service layer, and through the network subsystem, helps
+upper layer applications recommend HTTP communication capabilities.
+
+`ylong_http` is written in the Rust language to support OpenHarmony's Rust
+capability.
+
+## Structure
+
+![structure](./figures/structure.png)
 
 ### ylong_http_client crate
 
