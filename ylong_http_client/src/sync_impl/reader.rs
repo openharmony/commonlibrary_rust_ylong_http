@@ -231,7 +231,7 @@ mod ut_syn_reader {
     /// 3. Checks if the result is correct.
     #[test]
     fn ut_body_reader_read_timeout() {
-        let reader = BodyReader::new(DefaultBodyProcessor::default()).read_timeout(Timeout::none());
+        let reader = BodyReader::new(DefaultBodyProcessor).read_timeout(Timeout::none());
         assert_eq!(reader.read_timeout, Timeout::none());
     }
 
