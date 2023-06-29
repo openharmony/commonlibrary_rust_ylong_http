@@ -23,9 +23,9 @@ ohos_rust_static_library("lib") {
 
   sources = [ "src/lib.rs" ]
   deps = [ "//third_party/rust/crates/tokio/tokio:lib" ]
-  clippy_lints = "none"
   features = [
     "default",
     "http1_1",
+    "tokio_base",
   ]
 }

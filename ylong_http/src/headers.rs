@@ -562,7 +562,7 @@ impl fmt::Display for Headers {
                 "{}: {}",
                 k.to_string(),
                 v.to_str()
-                    .unwrap_or("<non-visible header value>".to_string())
+                    .unwrap_or_else(|_| "<non-visible header value>".to_string())
             )?;
         }
         Ok(())

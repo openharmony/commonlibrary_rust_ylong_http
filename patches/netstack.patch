@@ -1,0 +1,30 @@
+diff --git a/interfaces/innerkits/rust/ylong_http_client/BUILD.gn b/interfaces/innerkits/rust/ylong_http_client/BUILD.gn
+index d430831..8817685 100644
+--- a/interfaces/innerkits/rust/ylong_http_client/BUILD.gn
++++ b/interfaces/innerkits/rust/ylong_http_client/BUILD.gn
+@@ -26,12 +26,10 @@ ohos_rust_shared_library("ylong_http_client") {
+   edition = "2021"
+   clippy_lints = "none"
+   deps = [
+-    "//third_party/rust/crates/reqwest:lib",
+-    "//third_party/rust/crates/tokio/tokio:lib",
+-    "//third_party/rust/crates/tokio/tokio-util:lib",
++     "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_rlib"
+   ]
+   features = [
+     "default",
+-    "reqwest_impl",
++    "ylong_impl",
+   ]
+ }
+diff --git a/interfaces/innerkits/rust/ylong_http_client/src/lib.rs b/interfaces/innerkits/rust/ylong_http_client/src/lib.rs
+index 0b57b50..3759fdb 100644
+--- a/interfaces/innerkits/rust/ylong_http_client/src/lib.rs
++++ b/interfaces/innerkits/rust/ylong_http_client/src/lib.rs
+@@ -21,3 +21,6 @@ mod reqwest_impl;
+ 
+ #[cfg(feature = "reqwest_impl")]
+ pub use reqwest_impl::*;
++
++#[cfg(feature = "ylong_impl")]
++pub use ylong_http_client_inner::*;

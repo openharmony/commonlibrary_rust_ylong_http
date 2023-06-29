@@ -1,0 +1,21 @@
+diff --git a/compile_standard_whitelist.json b/compile_standard_whitelist.json
+index 48644d6..58e0d85 100644
+--- a/compile_standard_whitelist.json
++++ b/compile_standard_whitelist.json
+@@ -1054,7 +1054,8 @@
+         "//foundation/communication/netstack/frameworks/js/napi/http:http",
+         "//foundation/communication/netstack/utils/napi_utils:napi_utils",
+         "//foundation/communication/netstack/utils/napi_utils:napi_utils_static",
+-        "//foundation/communication/wifi/wifi/services/wifi_standard/ipc_framework/cRPC:crpc_client",
++        "//foundation/communication/netstack/interfaces/innerkits/rust/ylong_http_client:ylong_http_client",
++	"//foundation/communication/wifi/wifi/services/wifi_standard/ipc_framework/cRPC:crpc_client",
+         "//foundation/communication/wifi/wifi/services/wifi_standard/ipc_framework/cRPC:crpc_server",
+         "//foundation/communication/wifi/wifi/services/wifi_standard/wifi_framework/wifi_manage:wifi_manager_service",
+         "//foundation/communication/wifi/wifi/services/wifi_standard/wifi_framework/wifi_toolkit:wifi_toolkit",
+@@ -3248,4 +3249,4 @@
+         "//third_party/wpa_supplicant/wpa_supplicant-2.9_standard:wpa",
+         "//third_party/wpa_supplicant/wpa_supplicant-2.9_standard:wpa_updater"
+     ]
+-}
+\ No newline at end of file
++}
