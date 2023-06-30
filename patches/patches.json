@@ -1,0 +1,14 @@
+{
+    "patches": [
+        {
+            "project":"build",
+            "patch_file":"build.patch",
+            "path":"build"
+        },
+        {
+            "project":"netstack",
+            "patch_file":"netstack.patch",
+            "path":"foundation/communication/netstack"
+        }
+    ]
+}

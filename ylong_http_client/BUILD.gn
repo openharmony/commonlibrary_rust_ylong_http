@@ -14,6 +14,33 @@
 import("//build/ohos.gni")
 import("//build/test.gni")
 
+ohos_rust_static_library("ylong_http_client_rlib") {
+  crate_name = "ylong_http_client_inner"
+  crate_type = "rlib"
+  crate_root = "src/lib.rs"
+
+  subsystem_name = "commonlibrary"
+  part_name = "ylong_http"
+
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//commonlibrary/rust/ylong_http/ylong_http:lib",
+    "//third_party/openssl:libcrypto_shared",
+    "//third_party/openssl:libssl_shared",
+    "//third_party/rust/crates/libc:lib",
+    "//third_party/rust/crates/tokio/tokio:lib",
+  ]
+  features = [
+    "default",
+    "async",
+    "http1_1",
+    "c_openssl_3_0",
+    "__tls",
+    "__c_openssl",
+    "tokio_base",
+  ]
+}
+
 ohos_rust_shared_library("ylong_http_client") {
   crate_name = "ylong_http_client"
   crate_type = "dylib"
@@ -30,7 +57,6 @@ ohos_rust_shared_library("ylong_http_client") {
     "//third_party/rust/crates/libc:lib",
     "//third_party/rust/crates/tokio/tokio:lib",
   ]
-  clippy_lints = "none"
   features = [
     "default",
     "async",
@@ -53,7 +79,6 @@ ohos_rust_unittest("rust_ylong_http_client_unit_test") {
     "//third_party/rust/crates/libc:lib",
     "//third_party/rust/crates/tokio/tokio:lib",
   ]
-  clippy_lints = "none"
 
   rustflags = [
     "--cfg=feature=\"default\"",

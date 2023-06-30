@@ -145,7 +145,7 @@ impl Redirect {
             let origin_scheme = request
                 .uri()
                 .scheme()
-                .ok_or(HttpClientError::new_with_message(
+                .ok_or_else(|| HttpClientError::new_with_message(
                     ErrorKind::Connect,
                     "No uri scheme in request",
                 ))?
@@ -153,7 +153,7 @@ impl Redirect {
             let auth = request
                 .uri()
                 .authority()
-                .ok_or(HttpClientError::new_with_message(
+                .ok_or_else(|| HttpClientError::new_with_message(
                     ErrorKind::Connect,
                     "No uri authority in request",
                 ))?
@@ -166,7 +166,7 @@ impl Redirect {
                 .path(
                     loc_uri
                         .path()
-                        .ok_or(HttpClientError::new_with_message(
+                        .ok_or_else(|| HttpClientError::new_with_message(
                             ErrorKind::Connect,
                             "No loc_uri path in location",
                         ))?
@@ -175,7 +175,7 @@ impl Redirect {
                 .query(
                     loc_uri
                         .query()
-                        .ok_or(HttpClientError::new_with_message(
+                        .ok_or_else(|| HttpClientError::new_with_message(
                             ErrorKind::Connect,
                             "No loc_uri query in location",
                         ))?

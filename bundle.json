@@ -8,15 +8,20 @@
     "ram": "~200KB",
     "deps": {
         "third_party": [
-            "//third_party/rust/crates/tokio/tokio:lib",
-            "//third_party/rust/crates/libc:lib",
-            "//third_party/openssl:libcrypto_shared",
-            "//third_party/openssl:libssl_shared"
-        ]
+          "openssl",
+	  "rust_tokio"
+	]
     },
     "build": {
       "sub_component": [],
       "inner_kits": [
+        {
+          "header": {
+            "header_base": [],
+            "header_files": []
+          },
+          "name": "//commonlibrary/rust/ylong_http/ylong_http_client_inner:ylong_http_client_rlib"
+        },      
         {
           "header": {
             "header_base": [],
