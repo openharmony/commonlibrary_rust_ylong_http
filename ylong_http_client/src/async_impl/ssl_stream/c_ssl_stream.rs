@@ -100,9 +100,13 @@ where
             };
             match check_io_to_poll(s.read(slice))? {
                 Poll::Ready(len) => {
+                    #[cfg(feature = "tokio_base")]
                     unsafe {
                         buf.assume_init(len);
                     }
+                    #[cfg(feature = "ylong_base")]
+                    buf.assume_init(len);
+
                     buf.advance(len);
                     Poll::Ready(Ok(()))
                 }
