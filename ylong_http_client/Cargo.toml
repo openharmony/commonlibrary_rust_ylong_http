@@ -91,11 +91,21 @@ path = "examples/sync_proxy_http.rs"
 required-features = ["sync", "http1_1"]
 
 [[test]]
-name = "sdv_client"
-path = "./tests/sdv_client.rs"
-required-features = ["sync", "async", "http1_1", "tokio_base"]
+name = "sdv_async_http"
+path = "./tests/sdv_async_http.rs"
+required-features = ["async", "http1_1", "tokio_base"]
 
 [[test]]
-name = "sdv_https_c_ssl"
-path = "./tests/sdv_https_c_ssl.rs"
-required-features = ["sync", "async", "http1_1", "c_openssl_1_1", "tokio_base"]
+name = "sdv_sync_http"
+path = "./tests/sdv_sync_http.rs"
+required-features = ["sync", "http1_1", "tokio_base"]
+
+[[test]]
+name = "sdv_async_https_c_ssl"
+path = "./tests/sdv_async_https_c_ssl.rs"
+required-features = ["async", "http1_1", "c_openssl_1_1", "tokio_base"]
+
+[[test]]
+name = "sdv_sync_https_c_ssl"
+path = "./tests/sdv_sync_https_c_ssl.rs"
+required-features = ["sync", "http1_1", "c_openssl_1_1", "tokio_base"]

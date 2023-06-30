@@ -13,11 +13,16 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "async", feature = "c_openssl_1_1"))]
+
 #[macro_use]
 mod common;
 
-use common::Handle;
+use crate::common::async_build_https_client;
+use crate::common::init_test_work_runtime;
+use common::TlsHandle;
 use std::path::PathBuf;
+use ylong_http_client::Body;
 
 // TODO: Add doc for sdv tests.
 #[test]
@@ -27,14 +32,14 @@ fn sdv_async_client_send_request() {
     path.push("tests/file/root-ca.pem");
 
     // `GET` request
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "GET",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -47,14 +52,14 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "HEAD",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -66,14 +71,14 @@ fn sdv_async_client_send_request() {
     );
 
     // `Post` Request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "POST",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -86,14 +91,14 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request without body.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "HEAD",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Body: "",
         },
         Response: {
@@ -104,14 +109,14 @@ fn sdv_async_client_send_request() {
     );
 
     // `PUT` request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "PUT",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -130,14 +135,14 @@ fn sdv_client_send_request_repeatedly() {
     let mut path = PathBuf::from(dir);
     path.push("tests/file/root-ca.pem");
 
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
         Tls: path.to_str().unwrap(),
         RuntimeThreads: 2,
-        IsAsync: true,
         Request: {
             Method: "GET",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -150,7 +155,6 @@ fn sdv_client_send_request_repeatedly() {
         Request: {
             Method: "POST",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -169,15 +173,15 @@ fn sdv_client_making_multiple_connections() {
     let mut path = PathBuf::from(dir);
     path.push("tests/file/root-ca.pem");
 
-    ylong_client_test_case!(
-    Tls: path.to_str().unwrap(),
+    async_client_test_case!(
+        HTTPS;
+        ServeFnName: ylong_server_fn,
+        Tls: path.to_str().unwrap(),
         RuntimeThreads: 2,
         ClientNum: 5,
-        IsAsync: true,
         Request: {
             Method: "GET",
             Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -186,72 +190,6 @@ fn sdv_client_making_multiple_connections() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "11",
             Body: "METHOD GET!",
-        },
-    );
-}
-
-#[test]
-fn sdv_synchronized_client_send_request() {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(dir);
-    path.push("tests/file/root-ca.pem");
-
-    // `PUT` request.
-    ylong_client_test_case!(
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 2,
-        IsAsync: false,
-        Request: {
-            Method: "PUT",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 200,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "3",
-            Body: "Hi!",
-        },
-    );
-}
-
-#[test]
-fn sdv_synchronized_client_send_request_repeatedly() {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(dir);
-    path.push("tests/file/root-ca.pem");
-
-    ylong_client_test_case!(
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 2,
-        IsAsync: false,
-        Request: {
-            Method: "GET",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 201,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "11",
-            Body: "METHOD GET!",
-        },
-        Request: {
-            Method: "POST",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 201,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "12",
-            Body: "METHOD POST!",
         },
     );
 }

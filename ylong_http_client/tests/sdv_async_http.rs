@@ -13,17 +13,15 @@
  * limitations under the License.
  */
 
-#![cfg(not(feature = "__tls"))]
+#![cfg(all(feature = "async", not(feature = "c_openssl_1_1")))]
 
-use hyper::{Body, Request, Response};
-use std::convert::Infallible;
-use std::sync::Arc;
+#[macro_use]
+mod common;
+
+use crate::common::async_build_http_client;
+use crate::common::init_test_work_runtime;
+use crate::common::HttpHandle;
 use ylong_http::body::async_impl::Body as AsyncBody;
-use ylong_http_client::{RequestBuilder, TextBody};
-
-mod helper;
-use helper::Handle;
-use ylong_http::body::sync_impl::Body as SyncBody;
 
 /// SDV test cases for `async::Client`.
 ///
@@ -39,13 +37,13 @@ use ylong_http::body::sync_impl::Body as SyncBody;
 #[test]
 fn sdv_async_client_send_request() {
     // `GET` request
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -58,13 +56,13 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "HEAD",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -76,13 +74,13 @@ fn sdv_async_client_send_request() {
     );
 
     // `Post` Request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "POST",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -95,13 +93,13 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request without body.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "HEAD",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Body: "",
         },
         Response: {
@@ -112,13 +110,13 @@ fn sdv_async_client_send_request() {
     );
 
     // `PUT` request.
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 1,
-        IsAsync: true,
         Request: {
             Method: "PUT",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -141,13 +139,13 @@ fn sdv_async_client_send_request() {
 /// 5. Shuts down the server.
 #[test]
 fn sdv_client_send_request_repeatedly() {
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 2,
-        IsAsync: true,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -159,8 +157,7 @@ fn sdv_client_send_request_repeatedly() {
         },
         Request: {
             Method: "POST",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -183,14 +180,14 @@ fn sdv_client_send_request_repeatedly() {
 /// 5. Shuts down the servers.
 #[test]
 fn sdv_client_making_multiple_connections() {
-    ylong_client_test_case!(
+    async_client_test_case!(
+        HTTP;
+        ServeFnName: ylong_server_fn,
         RuntimeThreads: 2,
         ClientNum: 5,
-        IsAsync: true,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Host: "http://127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -199,80 +196,6 @@ fn sdv_client_making_multiple_connections() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "11",
             Body: "METHOD GET!",
-        },
-    );
-}
-
-/// SDV test cases for `sync::Client`.
-///
-/// # Brief
-/// 1. Creates a runtime to host the server.
-/// 2. Creates a server within the runtime coroutine.
-/// 3. Creates a sync::Client.
-/// 4. The client sends a request to the the server.
-/// 5. Verifies the response returned by the server.
-/// 6. Shuts down the server.
-#[test]
-fn sdv_synchronized_client_send_request() {
-    // `PUT` request.
-    ylong_client_test_case!(
-        RuntimeThreads: 2,
-        IsAsync: false,
-        Request: {
-            Method: "PUT",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 200,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "3",
-            Body: "Hi!",
-        },
-    );
-}
-
-/// SDV test cases for `sync::Client`.
-///
-/// # Brief
-/// 1. Creates a runtime to host the server.
-/// 2. Creates a server within the runtime coroutine.
-/// 3. Creates a sync::Client.
-/// 4. The client sends requests to the the server repeatedly.
-/// 5. Verifies each response returned by the server.
-/// 6. Shuts down the server.
-#[test]
-fn sdv_synchronized_client_send_request_repeatedly() {
-    ylong_client_test_case!(
-        RuntimeThreads: 2,
-        IsAsync: false,
-        Request: {
-            Method: "GET",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 201,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "11",
-            Body: "METHOD GET!",
-        },
-        Request: {
-            Method: "POST",
-            Host: "127.0.0.1",
-            Header: "Host", "127.0.0.1",
-            Header: "Content-Length", "6",
-            Body: "Hello!",
-        },
-        Response: {
-            Status: 201,
-            Version: "HTTP/1.1",
-            Header: "Content-Length", "12",
-            Body: "METHOD POST!",
         },
     );
 }

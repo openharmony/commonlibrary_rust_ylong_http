@@ -13,12 +13,105 @@
  * limitations under the License.
  */
 
+#[cfg(feature = "async")]
+mod async_utils;
+
+#[cfg(feature = "sync")]
+mod sync_utils;
+
+#[cfg(all(feature = "async", not(feature = "c_openssl_1_1")))]
+pub use async_utils::async_build_http_client;
+
+#[cfg(all(feature = "async", feature = "c_openssl_1_1"))]
+pub use async_utils::async_build_https_client;
+
+use tokio::runtime::Runtime;
+
+#[cfg(not(feature = "c_openssl_1_1"))]
+use tokio::sync::mpsc::{Receiver, Sender};
+
 /// Server handle.
-pub struct Handle {
+#[cfg(feature = "c_openssl_1_1")]
+pub struct TlsHandle {
     pub port: u16,
 }
 
+#[cfg(not(feature = "c_openssl_1_1"))]
+pub struct HttpHandle {
+    pub port: u16,
+
+    // This channel allows the server to notify the client when it is up and running.
+    pub server_start: Receiver<()>,
+
+    // This channel allows the client to notify the server when it is ready to shut down.
+    pub client_shutdown: Sender<()>,
+
+    // This channel allows the server to notify the client when it has shut down.
+    pub server_shutdown: Receiver<()>,
+}
+
+#[macro_export]
+macro_rules! start_http_server {
+    ($server_fn: ident) => {{
+        use hyper::service::{make_service_fn, service_fn};
+        use hyper::Server;
+        use std::convert::Infallible;
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+        use tokio::sync::mpsc::channel;
+
+        let (start_tx, start_rx) = channel::<()>(1);
+        let (client_tx, mut client_rx) = channel::<()>(1);
+        let (server_tx, server_rx) = channel::<()>(1);
+        let mut port = 10000;
+
+        let server = loop {
+            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+            match Server::try_bind(&addr) {
+                Ok(server) => break server,
+                Err(_) => {
+                    port += 1;
+                    if port == u16::MAX {
+                        port = 10000;
+                    }
+                    continue;
+                }
+            }
+        };
+
+        tokio::spawn(async move {
+            let make_svc =
+                make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn($server_fn)) });
+            server
+                .serve(make_svc)
+                .with_graceful_shutdown(async {
+                    start_tx
+                        .send(())
+                        .await
+                        .expect("Start channel (Client-Half) be closed unexpectedly");
+                    client_rx
+                        .recv()
+                        .await
+                        .expect("Client channel (Client-Half) be closed unexpectedly");
+                })
+                .await
+                .expect("Start server failed");
+            server_tx
+                .send(())
+                .await
+                .expect("Server channel (Client-Half) be closed unexpectedly");
+        });
+
+        HttpHandle {
+            port,
+            server_start: start_rx,
+            client_shutdown: client_tx,
+            server_shutdown: server_rx,
+        }
+    }};
+}
+
 /// Creates a `Request`.
+#[macro_export]
 macro_rules! ylong_request {
     (
         Request: {
@@ -31,7 +124,7 @@ macro_rules! ylong_request {
             Body: $req_body: expr,
         },
     ) => {
-        ylong_http_client::RequestBuilder::new()
+        ylong_http::request::RequestBuilder::new()
             .method($method)
             .url(format!("{}:{}", $host, $port).as_str())
             $(.header($req_n, $req_v))*
@@ -41,8 +134,74 @@ macro_rules! ylong_request {
 }
 
 /// Sets server async function.
+#[macro_export]
 macro_rules! set_server_fn {
     (
+        ASYNC;
+        $server_fn_name: ident,
+        $(Request: {
+            Method: $method: expr,
+            $(
+                Header: $req_n: expr, $req_v: expr,
+            )*
+            Body: $req_body: expr,
+        },
+        Response: {
+            Status: $status: expr,
+            Version: $version: expr,
+            $(
+                Header: $resp_n: expr, $resp_v: expr,
+            )*
+            Body: $resp_body: expr,
+        },)*
+    ) => {
+        async fn $server_fn_name(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, std::convert::Infallible> {
+            match request.method().as_str() {
+                // TODO If there are requests with the same Method, an error will be reported for creating two identical match branches.
+                $(
+                    $method => {
+                        assert_eq!($method, request.method().as_str(), "Assert request method failed");
+
+                        assert_eq!(
+                            "/",
+                            request.uri().to_string(),
+                            "Assert request host failed",
+                        );
+                        assert_eq!(
+                            $version,
+                            format!("{:?}", request.version()),
+                            "Assert request version failed",
+                        );
+                        $(assert_eq!(
+                            $req_v,
+                            request
+                                .headers()
+                                .get($req_n)
+                                .expect(format!("Get request header \"{}\" failed", $req_n).as_str())
+                                .to_str()
+                                .expect(format!("Convert request header \"{}\" into string failed", $req_n).as_str()),
+                            "Assert request header {} failed", $req_n,
+                        );)*
+                        let body = hyper::body::to_bytes(request.into_body()).await
+                            .expect("Get request body failed");
+                        assert_eq!($req_body.as_bytes(), body, "Assert request body failed");
+                        Ok(
+                            hyper::Response::builder()
+                                .version(hyper::Version::HTTP_11)
+                                .status($status)
+                                $(.header($resp_n, $resp_v))*
+                                .body($resp_body.into())
+                                .expect("Build response failed")
+                        )
+                    },
+                )*
+                _ => {panic!("Unrecognized METHOD !");},
+            }
+        }
+
+    };
+    (
+        SYNC;
         $server_fn_name: ident,
         $(Request: {
             Method: $method: expr,
@@ -63,9 +222,11 @@ macro_rules! set_server_fn {
     ) => {
         async fn $server_fn_name(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, std::convert::Infallible> {
             match request.method().as_str() {
+                // TODO If there are requests with the same Method, an error will be reported for creating two identical match branches.
                 $(
                     $method => {
                         assert_eq!($method, request.method().as_str(), "Assert request method failed");
+
                         assert_eq!(
                             $host,
                             request.uri().host().expect("Uri in request do not have a host."),
@@ -106,7 +267,8 @@ macro_rules! set_server_fn {
     };
 }
 
-macro_rules! get_handle {
+#[cfg(feature = "c_openssl_1_1")]
+macro_rules! start_tls_server {
     ($service_fn: ident) => {{
         let mut port = 10000;
         let listener = loop {
@@ -155,318 +317,87 @@ macro_rules! get_handle {
                 .await
         });
 
-        Handle {
+        TlsHandle {
             port,
         }
     }};
 }
 
-macro_rules! ylong_client_test_case {
+#[macro_export]
+macro_rules! start_server {
     (
-        Tls: $tls_config: expr,
-        RuntimeThreads: $thread_num: expr,
-        $(ClientNum: $client_num: expr,)?
-        IsAsync: $is_async: expr,
-        $(Request: {
-            Method: $method: expr,
-            Host: $host: expr,
-            $(
-                Header: $req_n: expr, $req_v: expr,
-            )*
-            Body: $req_body: expr,
-        },
-        Response: {
-            Status: $status: expr,
-            Version: $version: expr,
-            $(
-                Header: $resp_n: expr, $resp_v: expr,
-            )*
-            Body: $resp_body: expr,
-        },)*
+        HTTPS;
+        ServerNum: $server_num: expr,
+        Runtime: $runtime: expr,
+        Handles: $handle_vec: expr,
+        ServeFnName: $service_fn: ident,
     ) => {{
-        set_server_fn!(
-            ylong_server_fn,
-            $(Request: {
-                Method: $method,
-                Host: $host,
-                $(
-                    Header: $req_n, $req_v,
-                )*
-                Body: $req_body,
-            },
-            Response: {
-                Status: $status,
-                Version: $version,
-                $(
-                    Header: $resp_n, $resp_v,
-                )*
-                Body: $resp_body,
-            },)*
-        );
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads($thread_num)
-            .enable_all()
-            .build()
-            .expect("Build runtime failed.");
-
-        // The number of servers may be variable based on the number of servers set by the user.
-        // However, cliipy checks that the variable does not need to be variable.
-        #[allow(unused_mut, unused_assignments)]
-        let mut server_num = 1;
-        $(server_num = $client_num;)?
-
-        let mut handles_vec = vec![];
-        for _i in 0.. server_num {
+        for _i in 0..$server_num {
             let (tx, rx) = std::sync::mpsc::channel();
-            let server_handle = runtime.spawn(async move {
-                let handle = get_handle!(ylong_server_fn);
-                // handle
-                //     .server_start
-                //     .recv()
-                //     .await
-                //     .expect("Start channel (Server-Half) be closed unexpectedly");
+            let server_handle = $runtime.spawn(async move {
+                let handle = start_tls_server!($service_fn);
                 tx.send(handle)
                     .expect("Failed to send the handle to the test thread.");
             });
-            runtime
+            $runtime
                 .block_on(server_handle)
                 .expect("Runtime start server coroutine failed");
             let handle = rx
                 .recv()
                 .expect("Handle send channel (Server-Half) be closed unexpectedly");
-            handles_vec.push(handle);
-        }
-
-        let mut shut_downs = vec![];
-        if $is_async {
-            let client = ylong_http_client::async_impl::Client::builder()
-                .set_ca_file($tls_config)
-                .build()
-                .unwrap();
-            let client = std::sync::Arc::new(client);
-            for _i in 0..server_num {
-                let handle = handles_vec.pop().expect("No more handles !");
-
-                ylong_client_test_case!(
-                    Runtime: runtime,
-                    AsyncClient: client,
-                    ServerHandle: handle,
-                    ShutDownHandles: shut_downs,
-                    $(Request: {
-                        Method: $method,
-                        Host: $host,
-                        $(
-                            Header: $req_n, $req_v,
-                        )*
-                        Body: $req_body,
-                    },
-                    Response: {
-                        Status: $status,
-                        Version: $version,
-                        $(
-                            Header: $resp_n, $resp_v,
-                        )*
-                        Body: $resp_body,
-                    },)*
-                )
-            }
-        } else {
-            let client = ylong_http_client::sync_impl::Client::builder()
-                .set_ca_file($tls_config)
-                .build()
-                .unwrap();
-            let client = std::sync::Arc::new(client);
-            for _i in 0..server_num {
-                let handle = handles_vec.pop().expect("No more handles !");
-                ylong_client_test_case!(
-                    Runtime: runtime,
-                    SyncClient: client,
-                    ServerHandle: handle,
-                    ShutDownHandles: shut_downs,
-                    $(Request: {
-                        Method: $method,
-                        Host: $host,
-                        $(
-                            Header: $req_n, $req_v,
-                        )*
-                        Body: $req_body,
-                    },
-                    Response: {
-                        Status: $status,
-                        Version: $version,
-                        $(
-                            Header: $resp_n, $resp_v,
-                        )*
-                        Body: $resp_body,
-                    },)*
-                )
-            }
-        }
-        for shutdown_handle in shut_downs {
-            runtime.block_on(shutdown_handle).expect("Runtime wait for server shutdown failed");
+            $handle_vec.push(handle);
         }
     }};
     (
+        HTTP;
+        ServerNum: $server_num: expr,
         Runtime: $runtime: expr,
-        AsyncClient: $async_client: expr,
-        ServerHandle: $handle:expr,
-        ShutDownHandles: $shut_downs: expr,
-        $(Request: {
-            Method: $method: expr,
-            Host: $host: expr,
-            $(
-            Header: $req_n: expr, $req_v: expr,
-            )*
-            Body: $req_body: expr,
-        },
-        Response: {
-            Status: $status: expr,
-            Version: $version: expr,
-            $(
-            Header: $resp_n: expr, $resp_v: expr,
-            )*
-            Body: $resp_body: expr,
-        },)*
+        Handles: $handle_vec: expr,
+        ServeFnName: $service_fn: ident,
     ) => {{
-        use ylong_http_client::async_impl::Body;
-        let client = std::sync::Arc::clone(&$async_client);
-        let shutdown_handle = $runtime.spawn(async move {
-            $(
-                let request = ylong_request!(
-                    Request: {
-                        Method: $method,
-                        Host: $host,
-                        Port: $handle.port,
-                        $(
-                            Header: $req_n, $req_v,
-                        )*
-                        Body: $req_body,
-                    },
-                );
-
-                let mut response = client
-                    .request(request)
+        for _i in 0..$server_num {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let server_handle = $runtime.spawn(async move {
+                let mut handle = start_http_server!($service_fn);
+                handle
+                    .server_start
+                    .recv()
                     .await
-                    .expect("Request send failed");
-
-                assert_eq!(response.status().as_u16(), $status, "Assert response status code failed");
-                assert_eq!(response.version().as_str(), $version, "Assert response version failed");
-                $(assert_eq!(
-                    response
-                        .headers()
-                        .get($resp_n)
-                        .expect(format!("Get response header \"{}\" failed", $resp_n).as_str())
-                        .to_str()
-                        .expect(format!("Convert response header \"{}\"into string failed", $resp_n).as_str()),
-                    $resp_v,
-                    "Assert response header \"{}\" failed", $resp_n,
-                );)*
-                let mut buf = [0u8; 4096];
-                let mut size = 0;
-                loop {
-                    let read = response
-                        .body_mut()
-                        .data(&mut buf[size..]).await
-                        .expect("Response body read failed");
-                    if read == 0 {
-                        break;
-                    }
-                    size += read;
-                }
-                assert_eq!(&buf[..size], $resp_body.as_bytes(), "Assert response body failed");
-            )*
-            // $handle
-            //     .client_shutdown
-            //     .send(())
-            //     .await
-            //     .expect("Client channel (Server-Half) be closed unexpectedly");
-            // $handle
-            //     .server_shutdown
-            //     .recv()
-            //     .await
-            //     .expect("Server channel (Server-Half) be closed unexpectedly");
-        });
-        $shut_downs.push(shutdown_handle);
+                    .expect("Start channel (Server-Half) be closed unexpectedly");
+                tx.send(handle)
+                    .expect("Failed to send the handle to the test thread.");
+            });
+            $runtime
+                .block_on(server_handle)
+                .expect("Runtime start server coroutine failed");
+            let handle = rx
+                .recv()
+                .expect("Handle send channel (Server-Half) be closed unexpectedly");
+            $handle_vec.push(handle);
+        }
     }};
+}
 
-    (
-        Runtime: $runtime: expr,
-        SyncClient: $sync_client: expr,
-        ServerHandle: $handle:expr,
-        ShutDownHandles: $shut_downs: expr,
-        $(Request: {
-            Method: $method: expr,
-            Host: $host: expr,
-            $(
-            Header: $req_n: expr, $req_v: expr,
-            )*
-            Body: $req_body: expr,
-        },
-        Response: {
-            Status: $status: expr,
-            Version: $version: expr,
-            $(
-            Header: $resp_n: expr, $resp_v: expr,
-            )*
-            Body: $resp_body: expr,
-        },)*
-    ) => {{
-        use ylong_http_client::sync_impl::Body;
-        let client = std::sync::Arc::clone(&$sync_client);
-        $(
-            let request = ylong_request!(
-                Request: {
-                    Method: $method,
-                    Host: $host,
-                    Port: $handle.port,
-                    $(
-                        Header: $req_n, $req_v,
-                    )*
-                    Body: $req_body,
-                },
-            );
-            let mut response = client
-                .request(request)
-                .expect("Request send failed");
-            assert_eq!(response.status().as_u16(), $status, "Assert response status code failed");
-            assert_eq!(response.version().as_str(), $version, "Assert response version failed");
-            $(assert_eq!(
-                response
-                    .headers()
-                    .get($resp_n)
-                    .expect(format!("Get response header \"{}\" failed", $resp_n).as_str())
-                    .to_str()
-                    .expect(format!("Convert response header \"{}\"into string failed", $resp_n).as_str()),
-                $resp_v,
-                "Assert response header \"{}\" failed", $resp_n,
-            );)*
-            let mut buf = [0u8; 4096];
-            let mut size = 0;
-            loop {
-                let read = response
-                    .body_mut()
-                    .data(&mut buf[size..])
-                    .expect("Response body read failed");
-                if read == 0 {
-                    break;
-                }
-                size += read;
-            }
-            assert_eq!(&buf[..size], $resp_body.as_bytes(), "Assert response body failed");
-        )*
-        let shutdown_handle = $runtime.spawn(async move {
-            // $handle
-            //     .client_shutdown
-            //     .send(())
-            //     .await
-            //     .expect("Client channel (Server-Half) be closed unexpectedly");
-            // $handle
-            //     .server_shutdown
-            //     .recv()
-            //     .await
-            //     .expect("Server channel (Server-Half) be closed unexpectedly");
-        });
-        $shut_downs.push(shutdown_handle);
-    }};
+#[macro_export]
+macro_rules! ensure_server_shutdown {
+    (ServerHandle: $handle:expr) => {
+        $handle
+            .client_shutdown
+            .send(())
+            .await
+            .expect("Client channel (Server-Half) be closed unexpectedly");
+        $handle
+            .server_shutdown
+            .recv()
+            .await
+            .expect("Server channel (Server-Half) be closed unexpectedly");
+    };
+}
+
+pub fn init_test_work_runtime(thread_num: usize) -> Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(thread_num)
+        .enable_all()
+        .build()
+        .expect("Build runtime failed.")
 }

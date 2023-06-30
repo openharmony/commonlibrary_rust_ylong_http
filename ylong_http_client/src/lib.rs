@@ -61,7 +61,7 @@ pub mod util;
 ))]
 pub use util::*;
 
-#[cfg(feature = "tokio_base")]
+#[cfg(all(feature = "tokio_base", feature = "async"))]
 pub(crate) use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::TcpStream,
