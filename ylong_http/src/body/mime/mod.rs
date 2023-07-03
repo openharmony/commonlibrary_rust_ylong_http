@@ -151,7 +151,7 @@ impl MultiPart {
                 size += 16 + mime.len() as u64;
             }
 
-            // \r\n
+            // \r\n\r\n
             size += 2 + 2;
         }
         // last boundary
@@ -459,21 +459,6 @@ impl MultiPartStates {
     }
 }
 
-enum MultiPartState {
-    Bytes(Cursor<Vec<u8>>),
-    Stream(Pin<Box<dyn AsyncRead + Send + Sync>>),
-}
-
-impl MultiPartState {
-    fn bytes(bytes: Vec<u8>) -> Self {
-        Self::Bytes(Cursor::new(bytes))
-    }
-
-    fn stream(reader: Pin<Box<dyn AsyncRead + Send + Sync>>) -> Self {
-        Self::Stream(reader)
-    }
-}
-
 impl AsyncRead for MultiPartStates {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -495,6 +480,43 @@ impl AsyncRead for MultiPartStates {
             }
         }
         Poll::Ready(Ok(()))
+    }
+}
+
+enum MultiPartState {
+    Bytes(Cursor<Vec<u8>>),
+    Stream(Pin<Box<dyn AsyncRead + Send + Sync>>),
+}
+
+impl MultiPartState {
+    fn bytes(bytes: Vec<u8>) -> Self {
+        Self::Bytes(Cursor::new(bytes))
+    }
+
+    fn stream(reader: Pin<Box<dyn AsyncRead + Send + Sync>>) -> Self {
+        Self::Stream(reader)
+    }
+}
+
+#[cfg(test)]
+impl PartialEq for MultiPartState {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bytes(l0), Self::Bytes(r0)) => l0 == r0,
+            // Cant not compare Stream, Should not do this.
+            (Self::Stream(l0), Self::Stream(r0)) => core::ptr::eq(l0, r0),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+impl core::fmt::Debug for MultiPartState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bytes(arg0) => f.debug_tuple("Bytes").field(arg0).finish(),
+            Self::Stream(arg0) => f.debug_tuple("Stream").field(&(arg0 as *const _)).finish(),
+        }
     }
 }
 
@@ -547,4 +569,192 @@ fn xor_shift() -> u64 {
         rng.set(n);
         n.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     })
+}
+
+#[cfg(test)]
+mod ut_mime {
+    use crate::body::{
+        mime::{gen_boundary, MultiPartState, ReadStatus},
+        MultiPart, Part,
+    };
+
+    /// UT test cases for `gen_boundar`.
+    ///
+    /// # Brief
+    /// 1. Creates two boundarys and compares.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_gen_boundary() {
+        let s1 = gen_boundary();
+        let s2 = gen_boundary();
+        assert_ne!(s1, s2);
+    }
+
+    /// UT test cases for `Part::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Part` by `Part::new`.
+    /// 2. Checks members of `Part`.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_part_new() {
+        let part = Part::new();
+        assert!(part.name.is_none());
+        assert!(part.file_name.is_none());
+        assert!(part.mime.is_none());
+        assert!(part.length.is_none());
+        assert!(part.body.is_none());
+    }
+
+    /// UT test cases for `Part::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Part` by `Part::default`.
+    /// 2. Checks members of `Part`.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_part_default() {
+        let part = Part::default();
+        assert!(part.name.is_none());
+        assert!(part.file_name.is_none());
+        assert!(part.mime.is_none());
+        assert!(part.length.is_none());
+        assert!(part.body.is_none());
+    }
+
+    /// UT test cases for `Part::name`, `Part::name`, `Part::file_name` and `Part::body`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Part` and sets values.
+    /// 2. Checks members of `Part`.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_part_set() {
+        let part = Part::new()
+            .name("name")
+            .file_name("example.txt")
+            .mime("application/octet-stream")
+            .body("1234");
+        assert_eq!(part.name, Some("name".to_string()));
+        assert_eq!(part.file_name, Some("example.txt".to_string()));
+        assert_eq!(part.mime, Some("application/octet-stream".to_string()));
+        assert_eq!(part.body, Some(MultiPartState::bytes("1234".into())));
+        assert_eq!(part.length, Some(4));
+
+        let part = part.stream("11223344".as_bytes()).length(Some(8));
+        assert_eq!(part.length, Some(8));
+    }
+
+    /// UT test cases for `MultiPart::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a `MultiPart` by `MultiPart::new`.
+    /// 2. Checks members of `MultiPart`.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_multipart_new() {
+        let mp = MultiPart::new();
+        assert!(mp.parts.is_empty());
+        assert!(!mp.boundary().is_empty());
+    }
+
+    /// UT test cases for `MultiPart::part` and `MultiPart::total_bytes`.
+    ///
+    /// # Brief
+    /// 1. Creates a `MultiPart` and sets values.
+    /// 2. Checks total bytes of `MultiPart`.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_multipart_set() {
+        let mp = MultiPart::default();
+        // --boundary--/r/n
+        assert_eq!(mp.total_bytes(), Some(2 + mp.boundary().len() as u64 + 4));
+
+        let mp = mp.part(
+            Part::new()
+                .name("name")
+                .file_name("example.txt")
+                .mime("application/octet-stream")
+                .body("1234"),
+        );
+        assert_eq!(
+            mp.total_bytes(),
+            Some(
+                (2 + mp.boundary().len() as u64 + 2)
+                    + (30 + 9 + 4 + 13 + 11 + 2)       // name, filename, \r\n
+                    + (16 + 24 + 2 + 2)                // mime, \r\n
+                    + 4                                // body
+                    + (2 + mp.boundary().len() as u64 + 4)
+            )
+        );
+    }
+
+    /// UT test cases for `MultiPart::poll_data`.
+    ///
+    /// # Brief
+    /// 1. Creates a `MultiPart` and sets values.
+    /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
+    /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
+    #[tokio::test]
+    async fn ut_multipart_poll_data() {
+        let mut mp = MultiPart::new().part(
+            Part::new()
+                .name("name")
+                .file_name("example.txt")
+                .mime("application/octet-stream")
+                .body("1234"),
+        );
+
+        let mut buf = vec![0u8; 50];
+        let mut v_size = vec![];
+        let mut v_str = vec![];
+
+        loop {
+            let len = crate::body::async_impl::Body::data(&mut mp, &mut buf)
+                .await
+                .unwrap();
+            if len == 0 {
+                break;
+            }
+            v_size.push(len);
+            v_str.extend_from_slice(&buf[..len]);
+        }
+        assert_eq!(v_size, vec![50, 50, 50, 50, 50, 11]);
+    }
+
+    /// UT test cases for `MultiPart::poll_data`.
+    ///
+    /// # Brief
+    /// 1. Creates a `MultiPart` and sets values.
+    /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
+    /// 3. Checks whether the result is correct.
+    #[cfg(feature = "tokio_base")]
+    #[tokio::test]
+    async fn ut_multipart_poll_data_stream() {
+        let mut mp = MultiPart::new().part(
+            Part::new()
+                .name("name")
+                .file_name("example.txt")
+                .mime("application/octet-stream")
+                .stream("1234".as_bytes())
+                .length(Some(4)),
+        );
+
+        let mut buf = vec![0u8; 50];
+        let mut v_size = vec![];
+        let mut v_str = vec![];
+
+        loop {
+            let len = crate::body::async_impl::Body::data(&mut mp, &mut buf)
+                .await
+                .unwrap();
+            if len == 0 {
+                break;
+            }
+            v_size.push(len);
+            v_str.extend_from_slice(&buf[..len]);
+        }
+        assert_eq!(v_size, vec![50, 50, 50, 50, 50, 11]);
+    }
 }
