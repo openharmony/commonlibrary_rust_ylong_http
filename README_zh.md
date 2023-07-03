@@ -8,9 +8,12 @@ ylong_http 向 OpenHarmony 系统服务层中的网络子系统提供 HTTP 协�
 
 ylong_http 协议栈主体使用 Rust 语言编写，为 OpenHarmony 的 Rust 能力构筑提供支持。
 
-## 架构图
+**架构图**:
 
 ![structure](./figures/structure.png)
+
+**内部架构图**:
+![inner_structure](./figures/inner_structure.png)
 
 ### ylong_http_client 库
 
@@ -56,6 +59,9 @@ ylong_http_client = { path = "/example_path/ylong_http_client" } # 请使用路�
 
 ```
 ylong_http
+├── docs                        # ylong_http 用户指南
+├── figures                     # ylong_http 图片资源
+├── patches                     # ylong_http 门禁使用的补丁资源
 ├── ylong_http
 │   ├── examples                # ylong_http 基础组件库代码示例
 │   ├── src                     # ylong_http 基础组件库源码
