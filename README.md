@@ -12,9 +12,13 @@ upper layer applications recommend HTTP communication capabilities.
 `ylong_http` is written in the Rust language to support OpenHarmony's Rust
 capability.
 
-## Structure
+**Structure**：
 
 ![structure](./figures/structure.png)
+
+**Inner Structure**:
+
+![inner_structure](./figures/inner_structure.png)
 
 ### ylong_http_client crate
 
@@ -62,6 +66,9 @@ ylong_http_client = { path = "/example_path/ylong_http_client" }
 
 ```text
 ylong_http
+├── docs                        # User's guide
+├── figures                     # Resources
+├── patches                     # Patches for ci
 ├── ylong_http
 │   ├── examples                # Examples of ylong_http
 │   ├── src                     # Source code ylong_http
