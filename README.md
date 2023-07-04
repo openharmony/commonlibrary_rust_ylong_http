@@ -16,9 +16,53 @@ upper layer applications build HTTP communication capabilities.
 
 ![structure](./figures/structure.png)
 
+The following is the description information for the key fields in the figure above:
+
+- `APP`: A direct user facing upper level application that requires the ability to upload and download.
+- `request`: The component in the OpenHarmony system service layer that provides upload and download capabilities.
+- `netstack`: The system component in the OpenHarmony system service layer that provides network protocol stack functionality.
+- `ylong_http`: The system component in the OpenHarmony system service layer that provides HTTP protocol stack functionality.
+    - `ylong_http_client`: One of the modules under `ylong_http` provides HTTP client capabilities.
+    - `ylong_http`: One of the modules under `ylong_http` provides the basic components of HTTP.
+- `ylong_runtime`: Rust asynchronous runtime library provided by `ylong` in the system service layer.
+- `tokio`: The third-party rust asynchronous runtime library commonly used in the industry.
+- `OpenSSL`: A commonly used third-party TLS implementation library in the industry.
+
 ### The internal structure of ylong_http
 
 ![inner_structure](./figures/inner_structure.png)
+
+The following is the description information for the key fields in the figure above:
+
+- `ylong_http_client`: One of the modules under `ylong_http` provides HTTP client capabilities.
+    - `sync_impl`: Synchronize HTTP client implementation without relying on any runtime.
+        - `Client`: Synchronize HTTP clients to send HTTP requests.
+        - `ConnectionPool`: Manage all `Dispatchers`.
+        - `Dispatcher`: Manage the usage rights of `Connections`.
+        - `Connector`: Used to create a synchronous connection.
+        - `Connections`: Synchronous TCP or TLS connections, etc.
+    - `async_impl`: Asynchronous HTTP client implementation.
+        - `Client`: Asynchronous HTTP client used to send HTTP requests.
+        - `ConnectionPool`: Manage all `Dispatchers`.
+        - `Dispatcher`: Manage the usage rights of `Connections`.
+        - `Connector`: Used to create an asynchronous connection.
+        - `Connections`: Asynchronous TCP or TLS connections, etc.
+    - `Util`: Contains common components for both synchronous and asynchronous HTTP client implementations.
+        - `Redirect`: HTTP automatic redirection policy.
+        - `Proxy`: HTTP proxy policy.
+        - `Pool`: Universal Connection pool implementation.
+        - `OpenSSL_adapter`: OpenSSL Rust adaptation layer.
+- `ylong_http`: One of the modules under `ylong_http` provides the basic components of HTTP.
+    - `Request`: HTTP Request implementation.
+    - `Response`: HTTP Response implementation.
+    - `Body`: HTTP message body implementation.
+        - `TextBody`: HTTP message body in plain text.
+        - `EmptyBody`: Empty message body implementation.
+        - `Mime`: Multipart message body implementation.
+        - `ylong_http`: ChunkBody message body implementation.
+    - `H1`: HTTP1 related component implementation.
+    - `H2`: HTTP2 related component implementation.
+    - `H3`: HTTP3 related component implementation.
 
 ### ylong_http_client crate
 
