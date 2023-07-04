@@ -19,7 +19,7 @@ ylong_http 整体分为 2 个库：
 
 在使用 ylong_http_client 的功能之前，请保证在 `BUILD.gn` 或 `Cargo.toml` 中已成功添加依赖并开启对应 feature。
 
-### v1.0.0
+当前支持的功能：
 
 - 支持异步 HTTP 客户端创建
 - 支持 HTTP/1.1
@@ -59,7 +59,7 @@ async fn create_client_with_builder() {
 当前版本提供的 Client 的配置选项：
 
 - `connect_timeout`: 设置连接超时时间
-- `request_timeout`: 设置连接超时时间
+- `request_timeout`: 设置请求超时时间
 - `redirect`: 设置重定向逻辑
 - `proxy`: 设置代理逻辑
 - `tls_built_in_root_certs`: 是否使用预置证书

@@ -4,16 +4,16 @@
 
 ylong_http 协议栈构建了完整的 HTTP 能力，支持用户使用 HTTP 能力完成通信场景的需求。
 
-ylong_http 向 OpenHarmony 系统服务层中的网络子系统提供 HTTP 协议支持，经由网络子系统帮助上层应用建议 HTTP 通信能力。
-
 ylong_http 协议栈主体使用 Rust 语言编写，为 OpenHarmony 的 Rust 能力构筑提供支持。
 
-**架构图**:
+### ylong_http 在 OpenHarmony 中的位置
 
-![structure](./figures/structure.png)
+ylong_http 向 OpenHarmony 系统服务层中的网络协议栈模块提供 HTTP 协议支持，经由网络协议栈模块帮助上层应用建立 HTTP 通信能力。
 
-**内部架构图**:
-![inner_structure](./figures/inner_structure.png)
+![structure](./figures/structure_zh.png)
+
+### ylong_http 的内部架构:
+![inner_structure](./figures/inner_structure_zh.png)
 
 ### ylong_http_client 库
 
@@ -42,7 +42,7 @@ ylong_http 库提供了 HTTP 协议的各种基础组件，例如序列化组件
 
 ## 编译构建
 
-若使用 GN 编译工具链, 在 ```BUILD.GN``` 的 ```deps``` 段下添加依赖。添加后使用 GN 进行编译和构建：
+若使用 GN 编译工具链, 在 ```BUILD.gn``` 的 ```deps``` 段下添加依赖。添加后使用 GN 进行编译和构建：
 
 ```gn
 deps += ["//example_path/ylong_http_client:ylong_http_client"]

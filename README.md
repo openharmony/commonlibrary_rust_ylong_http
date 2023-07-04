@@ -5,18 +5,18 @@
 `ylong_http` has built a complete HTTP capability, supporting users to use HTTP
 capability to meet the needs of communication scenarios.
 
-`ylong_http` provides HTTP protocol support to the network subsystem in the
-`OpenHarmony` system service layer, and through the network subsystem, helps
-upper layer applications recommend HTTP communication capabilities.
-
 `ylong_http` is written in the Rust language to support OpenHarmony's Rust
 capability.
 
-**Structure**：
+### The position of ylong_http in OpenHarmony
+
+`ylong_http` provides HTTP protocol support to the `netstack` module in the
+`OpenHarmony` system service layer, and through the `netstack` module, helps
+upper layer applications build HTTP communication capabilities.
 
 ![structure](./figures/structure.png)
 
-**Inner Structure**:
+### The internal structure of ylong_http
 
 ![inner_structure](./figures/inner_structure.png)
 
@@ -49,7 +49,7 @@ Abilities supported by the current `ylong_http` crate:
 
 ## Build
 
-`GN` is supported. User should add dependencies in `deps` of `BUILD.GN` to build this crate.
+`GN` is supported. User should add dependencies in `deps` of `BUILD.gn` to build this crate.
 
 ```gn
 deps += ["//example_path/ylong_http_client:ylong_http_client"]
