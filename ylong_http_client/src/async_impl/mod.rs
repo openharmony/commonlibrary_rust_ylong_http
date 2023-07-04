@@ -46,8 +46,6 @@ pub(crate) use pool::ConnPool;
 
 #[cfg(feature = "__tls")]
 mod ssl_stream;
-#[cfg(feature = "__tls")]
-pub use ssl_stream::{AsyncSslStream, MixStream};
 
 // TODO: Remove these later.
 /// Client Adapter.

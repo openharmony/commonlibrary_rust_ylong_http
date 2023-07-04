@@ -143,18 +143,22 @@ impl Redirect {
             let origin_scheme = request
                 .uri()
                 .scheme()
-                .ok_or_else(|| HttpClientError::new_with_message(
-                    ErrorKind::Connect,
-                    "No uri scheme in request",
-                ))?
+                .ok_or_else(|| {
+                    HttpClientError::new_with_message(
+                        ErrorKind::Connect,
+                        "No uri scheme in request",
+                    )
+                })?
                 .as_str();
             let auth = request
                 .uri()
                 .authority()
-                .ok_or_else(|| HttpClientError::new_with_message(
-                    ErrorKind::Connect,
-                    "No uri authority in request",
-                ))?
+                .ok_or_else(|| {
+                    HttpClientError::new_with_message(
+                        ErrorKind::Connect,
+                        "No uri authority in request",
+                    )
+                })?
                 .to_str();
             let origin_auth = auth.as_str();
             loc_uri = Uri::builder()
@@ -164,19 +168,23 @@ impl Redirect {
                 .path(
                     loc_uri
                         .path()
-                        .ok_or_else(|| HttpClientError::new_with_message(
-                            ErrorKind::Connect,
-                            "No loc_uri path in location",
-                        ))?
+                        .ok_or_else(|| {
+                            HttpClientError::new_with_message(
+                                ErrorKind::Connect,
+                                "No loc_uri path in location",
+                            )
+                        })?
                         .as_str(),
                 )
                 .query(
                     loc_uri
                         .query()
-                        .ok_or_else(|| HttpClientError::new_with_message(
-                            ErrorKind::Connect,
-                            "No loc_uri query in location",
-                        ))?
+                        .ok_or_else(|| {
+                            HttpClientError::new_with_message(
+                                ErrorKind::Connect,
+                                "No loc_uri query in location",
+                            )
+                        })?
                         .as_str(),
                 )
                 .build()

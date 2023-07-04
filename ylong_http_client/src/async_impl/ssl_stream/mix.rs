@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::AsyncSslStream;
+use crate::async_impl::ssl_stream::AsyncSslStream;
 use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use core::{
     pin::Pin,
