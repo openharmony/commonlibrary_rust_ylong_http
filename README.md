@@ -32,64 +32,41 @@ The following is the description information for the key fields in the figure ab
 
 ![inner_structure](./figures/inner_structure.png)
 
-The following is the description information for the key fields in the figure above:
+`ylong_http` is currently divided into two main modules internally: `ylong_http_client` client module and `ylong_http` protocol component module.
 
-- `ylong_http_client`: One of the modules under `ylong_http` provides HTTP client capabilities.
-    - `sync_impl`: Synchronize HTTP client implementation without relying on any runtime.
-        - `Client`: Synchronize HTTP clients to send HTTP requests.
-        - `ConnectionPool`: Manage all `Dispatchers`.
-        - `Dispatcher`: Manage the usage rights of `Connections`.
-        - `Connector`: Used to create a synchronous connection.
-        - `Connections`: Synchronous TCP or TLS connections, etc.
-    - `async_impl`: Asynchronous HTTP client implementation.
-        - `Client`: Asynchronous HTTP client used to send HTTP requests.
-        - `ConnectionPool`: Manage all `Dispatchers`.
-        - `Dispatcher`: Manage the usage rights of `Connections`.
-        - `Connector`: Used to create an asynchronous connection.
-        - `Connections`: Asynchronous TCP or TLS connections, etc.
-    - `Util`: Contains common components for both synchronous and asynchronous HTTP client implementations.
-        - `Redirect`: HTTP automatic redirection policy.
-        - `Proxy`: HTTP proxy policy.
-        - `Pool`: Universal Connection pool implementation.
-        - `OpenSSL_adapter`: OpenSSL Rust adaptation layer.
-- `ylong_http`: One of the modules under `ylong_http` provides the basic components of HTTP.
-    - `Request`: HTTP Request implementation.
-    - `Response`: HTTP Response implementation.
-    - `Body`: HTTP message body implementation.
-        - `TextBody`: HTTP message body in plain text.
-        - `EmptyBody`: Empty message body implementation.
-        - `Mime`: Multipart message body implementation.
-        - `ylong_http`: ChunkBody message body implementation.
-    - `H1`: HTTP1 related component implementation.
-    - `H2`: HTTP2 related component implementation.
-    - `H3`: HTTP3 related component implementation.
+The `ylong_http_client` module is responsible for providing HTTP client functions, which can support users to send HTTP requests and return HTTP responses.
 
-### ylong_http_client crate
+`ylong_http_client` is divided into three main parts:
+- `sync_impl`: A synchronous HTTP client implementation that does not depend on any runtime and can run directly on the thread model, but uses a synchronous blocking strategy as a whole.
+- `async_impl`: an asynchronous HTTP client implementation that requires the use of Rust's asynchronous runtime components. Asynchronous HTTP clients take advantage of Rust's asynchronous capabilities to provide excellent performance.
+- `Util`: some implementations of synchronous and asynchronous HTTP clients are common, so this part of common implementation is placed in this part, such as automatic redirection implementation, HTTP proxy implementation, etc.
 
-`ylong_http_client` crate supports HTTP client functionality and allows users
-to create HTTP clients to send HTTP requests to specified servers.
+Although the overall implementation of `sync_impl` and `async_impl` are in two forms, the prototypes of the interfaces are basically the same (mainly the difference between Rust asynchronous syntax and synchronous syntax). Since the interface is basically the same, users can switch between synchronous and asynchronous logic with a small amount of code changes.
 
-Abilities supported by the current `ylong_http_client` crate:
+The overall structure of `sync_impl` and `async_impl` is the same, divided into the following modules:
+- `Client`: Provide the basic interface of the HTTP client externally, such as configuring related options of the client, sending HTTP requests, etc.
+- `ConnectionPool`: Mainly responsible for a large number of connection management, managing the life cycle of all `Dispatcher`, including start, run, stop. The HTTP protocol is a communication protocol based on various IO connections, so it may involve functions such as connection multiplexing and connection management.
+- `Dispatcher`: Mainly responsible for single connection management, managing the start, operation, stop, and transmission of a single connection. Each connection is governed by a `Dispatcher`, and it is up to `Dispatcher` to decide whether the current request to be sent is through the connection it manages.
+- `Connections`: The real connection object, which can be a TCP connection, a TLS connection or a more generalized connection object. Messages are transmitted and received on this connection, and it is the base of `Client` and the HTTP protocol.
+- `Connector`: Responsible for creating connection objects. This part provides traits so that the behavior when creating a connection can be defined by the user.
 
-- Synchronous and asynchronous HTTP clients.
-- HTTP/1.1 and HTTP/2 protocol versions.
-- Proxy.
-- Redirect.
-- Automatic retry.
-- Progress callback.
-- Connection management and reuse.
+`Util` contains the common capabilities of synchronous and asynchronous HTTP clients, such as:
+- `Redirect`: HTTP automatic redirection capability, when the HTTP response returns a status code related to redirection, the HTTP client will perform automatic redirection and automatically send a new request to the next hop.
+- `Proxy`: HTTP proxy capability, when sending an HTTP request, send it to the proxy instead of directly to the original server, and then the proxy server returns a response.
+- `Pool`: A general-purpose connection pool implementation that supports the management of multiple synchronous or asynchronous connections, which facilitates the reuse of existing connections by upper-layer synchronous or asynchronous clients to reduce the number of repeated connection creations and improve performance.
+- `OpenSSL_adapter`: HTTPS needs to use TLS capability on the basis of HTTP, and OpenSSL’s TLS capability is used on OpenHarmony, so the OpenSSL interface needs to be encapsulated in Rust before it can be used by Rust.
 
-### ylong_http crate
+The `ylong_http` module is responsible for providing the basic capabilities of HTTP, such as HTTP2's HPACK, HTTP3's QPACK, etc.
 
-`ylong_http` crate provides various basic components of the HTTP protocol, such
-as serialization components, compression components, etc. 
-
-Abilities supported by the current `ylong_http` crate:
-
-- Serializer and deserializer of `HTTP/1.1` and `HTTP/2`.
-- HPACK implementation.
-- Basic types of HTTP Request and HTTP Response.
-- Body trait and implementations of bodies.
+`ylong_http` mainly includes the following key modules:
+- `Request`: The basic capability of HTTP requests, which implements all the content and behaviors of HTTP requests according to `RFC9110`. HTTP requests are mainly used to send requests to specified servers to obtain server resources.
+- `Response`: The basic capability of HTTP response, which implements all the content and behavior of HTTP response according to `RFC9110`. The HTTP response is mainly the server's response to the request sent by the client to return the results generated by the server.
+- `Body`:
+  HTTP message body capability, according to `RFC9110` regulations to achieve all the content and behavior of the HTTP message body. The main data content is stored in the HTTP message body, so that the client and server can communicate.
+  The HTTP message body has various forms in the protocol, and it is also implemented in the `ylong_http` library. For example, `EmptyBody` corresponds to an empty message body, `TextBody` corresponds to a plaintext message body, `ChunkBody` corresponds to a chunked message body,` Mime` corresponds to the Multipart message body.
+- `H1`: All basic capabilities of HTTP1, such as serializers and deserializers for requests and responses in HTTP1 format.
+- `H2`: All basic capabilities of HTTP2, such as serializers and deserializers for requests and responses in HTTP2 format, HTTP2 frame serializers, HPACK, etc.
+- `H3`: All basic capabilities of HTTP3, such as serializers and deserializers for requests and responses in HTTP3 format, QPACK, etc.
 
 ## Build
 
