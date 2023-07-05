@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "async")]
-
 use std::sync::Arc;
 use ylong_http_client::async_impl::Client;
 
@@ -376,7 +374,7 @@ macro_rules! async_client_assertions {
     }
 }
 
-#[cfg(feature = "c_openssl_1_1")]
+#[cfg(feature = "__tls")]
 pub fn async_build_https_client(tls_config: &str) -> Arc<Client> {
     let client = ylong_http_client::async_impl::Client::builder()
         .set_ca_file(tls_config)
@@ -385,7 +383,7 @@ pub fn async_build_https_client(tls_config: &str) -> Arc<Client> {
     std::sync::Arc::new(client)
 }
 
-#[cfg(not(feature = "c_openssl_1_1"))]
+#[cfg(not(feature = "__tls"))]
 pub fn async_build_http_client() -> Arc<Client> {
     let client = ylong_http_client::async_impl::Client::new();
     Arc::new(client)

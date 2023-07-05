@@ -111,18 +111,19 @@ impl X509VerifyResult {
     }
 }
 
+impl fmt::Display for X509VerifyResult {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.error_string())
+    }
+}
+
+#[cfg(test)]
 impl fmt::Debug for X509VerifyResult {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("X509VerifyResult")
             .field("code", &self.0)
             .field("error", &self.error_string())
             .finish()
-    }
-}
-
-impl fmt::Display for X509VerifyResult {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.error_string())
     }
 }
 

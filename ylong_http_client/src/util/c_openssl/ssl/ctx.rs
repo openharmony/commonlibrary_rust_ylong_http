@@ -26,8 +26,8 @@ use crate::{
         ffi::ssl::{
             SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
             SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list, SSL_CTX_set_ciphersuites,
-            SSL_CTX_up_ref, SSL_CTX_use_certificate, SSL_CTX_use_certificate_chain_file,
-            SSL_CTX_use_certificate_file, SSL_CTX,
+            SSL_CTX_up_ref, SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file,
+            SSL_CTX,
         },
         foreign::{Foreign, ForeignRef},
         ssl_init,
@@ -285,45 +285,6 @@ impl SslContextBuilder {
         match check_ret(unsafe {
             SSL_CTX_use_certificate_chain_file(ptr, file.as_ptr() as *const _)
         }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
-    }
-
-    /// Sets the leaf certificate.
-    ///
-    /// Use `add_extra_chain_cert` to add the remainder of the certificate chain.
-    pub(crate) fn set_certificate(self, key: &X509Ref) -> Self {
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
-
-        match check_ret(unsafe { SSL_CTX_use_certificate(ptr, key.as_ptr()) }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
-    }
-
-    /// Appends a certificate to the certificate chain.
-    ///
-    /// This chain should contain all certificates necessary to go from the certificate specified by
-    /// `set_certificate` to a trusted root.
-    pub(crate) fn add_extra_chain_cert(self, cert: X509) -> Self {
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
-
-        match check_ret(unsafe {
-            SSL_CTX_ctrl(
-                ptr,
-                SSL_CTRL_EXTRA_CHAIN_CERT,
-                0,
-                cert.as_ptr() as *mut c_void,
-            )
-        } as c_int)
-        {
             Ok(_num) => self,
             Err(e) => SslContextBuilder(Err(e)),
         }
