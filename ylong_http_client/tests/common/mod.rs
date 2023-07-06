@@ -17,62 +17,115 @@ mod async_utils;
 #[cfg(feature = "sync")]
 mod sync_utils;
 
-#[cfg(all(feature = "async", not(feature = "__tls")))]
-pub use async_utils::async_build_http_client;
-#[cfg(all(feature = "async", feature = "__tls"))]
-pub use async_utils::async_build_https_client;
 use tokio::runtime::Runtime;
-#[cfg(not(feature = "__tls"))]
-use tokio::sync::mpsc::{Receiver, Sender};
 
-/// Server handle.
-#[cfg(feature = "__tls")]
-pub struct TlsHandle {
-    pub port: u16,
+macro_rules! define_service_handle {
+    (
+        HTTP;
+    ) => {
+        use tokio::sync::mpsc::{Receiver, Sender};
+
+        pub struct HttpHandle {
+            pub port: u16,
+
+            // This channel allows the server to notify the client when it is up and running.
+            pub server_start: Receiver<()>,
+
+            // This channel allows the client to notify the server when it is ready to shut down.
+            pub client_shutdown: Sender<()>,
+
+            // This channel allows the server to notify the client when it has shut down.
+            pub server_shutdown: Receiver<()>,
+        }
+    };
+    (
+        HTTPS;
+    ) => {
+        pub struct TlsHandle {
+            pub port: u16,
+        }
+    };
 }
 
-#[cfg(not(feature = "__tls"))]
-pub struct HttpHandle {
-    pub port: u16,
-
-    // This channel allows the server to notify the client when it is up and running.
-    pub server_start: Receiver<()>,
-
-    // This channel allows the client to notify the server when it is ready to shut down.
-    pub client_shutdown: Sender<()>,
-
-    // This channel allows the server to notify the client when it has shut down.
-    pub server_shutdown: Receiver<()>,
+#[macro_export]
+macro_rules! start_server {
+    (
+        HTTPS;
+        ServerNum: $server_num: expr,
+        Runtime: $runtime: expr,
+        Handles: $handle_vec: expr,
+        ServeFnName: $service_fn: ident,
+    ) => {{
+        for _i in 0..$server_num {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let server_handle = $runtime.spawn(async move {
+                let handle = start_http_server!(
+                    HTTPS;
+                    $service_fn
+                );
+                tx.send(handle)
+                    .expect("Failed to send the handle to the test thread.");
+            });
+            $runtime
+                .block_on(server_handle)
+                .expect("Runtime start server coroutine failed");
+            let handle = rx
+                .recv()
+                .expect("Handle send channel (Server-Half) be closed unexpectedly");
+            $handle_vec.push(handle);
+        }
+    }};
+    (
+        HTTP;
+        ServerNum: $server_num: expr,
+        Runtime: $runtime: expr,
+        Handles: $handle_vec: expr,
+        ServeFnName: $service_fn: ident,
+    ) => {{
+        for _i in 0..$server_num {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let server_handle = $runtime.spawn(async move {
+                let mut handle = start_http_server!(
+                    HTTP;
+                    $service_fn
+                );
+                handle
+                    .server_start
+                    .recv()
+                    .await
+                    .expect("Start channel (Server-Half) be closed unexpectedly");
+                tx.send(handle)
+                    .expect("Failed to send the handle to the test thread.");
+            });
+            $runtime
+                .block_on(server_handle)
+                .expect("Runtime start server coroutine failed");
+            let handle = rx
+                .recv()
+                .expect("Handle send channel (Server-Half) be closed unexpectedly");
+            $handle_vec.push(handle);
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! start_http_server {
-    ($server_fn: ident) => {{
-        use std::convert::Infallible;
-        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
+    (
+        HTTP;
+        $server_fn: ident
+    ) => {{
         use hyper::service::{make_service_fn, service_fn};
-        use hyper::Server;
+        use std::convert::Infallible;
         use tokio::sync::mpsc::channel;
 
         let (start_tx, start_rx) = channel::<()>(1);
         let (client_tx, mut client_rx) = channel::<()>(1);
         let (server_tx, server_rx) = channel::<()>(1);
-        let mut port = 10000;
 
-        let server = loop {
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
-            match Server::try_bind(&addr) {
-                Ok(server) => break server,
-                Err(_) => {
-                    port += 1;
-                    if port == u16::MAX {
-                        port = 10000;
-                    }
-                    continue;
-                }
-            }
-        };
+        let tcp_listener = std::net::TcpListener::bind("127.0.0.1:0").expect("server bind port failed !");
+        let addr = tcp_listener.local_addr().expect("get server local address failed!");
+        let port = addr.port();
+        let server = hyper::Server::from_tcp(tcp_listener).expect("build hyper server from tcp listener failed !");
 
         tokio::spawn(async move {
             let make_svc =
@@ -102,6 +155,56 @@ macro_rules! start_http_server {
             server_start: start_rx,
             client_shutdown: client_tx,
             server_shutdown: server_rx,
+        }
+    }};
+    (
+        HTTPS;
+        $service_fn: ident
+    ) => {{
+        let mut port = 10000;
+        let listener = loop {
+            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => break listener,
+                Err(_) => {
+                    port += 1;
+                    if port == u16::MAX {
+                        port = 10000;
+                    }
+                    continue;
+                }
+            }
+        };
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            let mut acceptor = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls())
+                .expect("SslAcceptorBuilder error");
+            acceptor
+                .set_session_id_context(b"test")
+                .expect("Set session id error");
+            acceptor
+                .set_private_key_file("tests/file/key.pem", openssl::ssl::SslFiletype::PEM)
+                .expect("Set private key error");
+            acceptor
+                .set_certificate_chain_file("tests/file/cert.pem")
+                .expect("Set cert error");
+            let acceptor = acceptor.build();
+
+            let (stream, _) = listener.accept().await.expect("TCP listener accpet error");
+            let ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("Ssl Error");
+            let mut stream = tokio_openssl::SslStream::new(ssl, stream).expect("SslStream Error");
+            core::pin::Pin::new(&mut stream).accept().await.unwrap(); // SSL negotiation finished successfully
+
+            hyper::server::conn::Http::new()
+                .http1_only(true)
+                .http1_keep_alive(true)
+                .serve_connection(stream, hyper::service::service_fn($service_fn))
+                .await
+        });
+
+        TlsHandle {
+            port,
         }
     }};
 }
@@ -225,7 +328,7 @@ macro_rules! set_server_fn {
 
                         assert_eq!(
                             $host,
-                            request.uri().host().expect("Uri in request do not have a host."),
+                            format!("{}://{}", request.uri().scheme().expect("assert uri scheme failed !").as_str(), request.uri().host().expect("assert uri host failed !")),
                             "Assert request host failed",
                         );
                         assert_eq!(
@@ -261,117 +364,6 @@ macro_rules! set_server_fn {
         }
 
     };
-}
-
-#[cfg(feature = "__tls")]
-macro_rules! start_tls_server {
-    ($service_fn: ident) => {{
-        let mut port = 10000;
-        let listener = loop {
-            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-            match tokio::net::TcpListener::bind(addr).await {
-                Ok(listener) => break listener,
-                Err(_) => {
-                    port += 1;
-                    if port == u16::MAX {
-                        port = 10000;
-                    }
-                    continue;
-                }
-            }
-        };
-        let port = listener.local_addr().unwrap().port();
-
-        tokio::spawn(async move {
-            let mut acceptor =
-                openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls())
-                    .expect("SslAcceptorBuilder error");
-            acceptor
-                .set_session_id_context(b"test")
-                .expect("Set session id error");
-            acceptor
-                .set_private_key_file("tests/file/key.pem", openssl::ssl::SslFiletype::PEM)
-                .expect("Set private key error");
-            acceptor
-                .set_certificate_chain_file("tests/file/cert.pem")
-                .expect("Set cert error");
-            let acceptor = acceptor.build();
-
-            // start_tx
-            //     .send(())
-            //     .await
-            //     .expect("Start channel (Client-Half) be closed unexpectedly");
-
-            let (stream, _) = listener.accept().await.expect("TCP listener accpet error");
-            let ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("Ssl Error");
-            let mut stream = tokio_openssl::SslStream::new(ssl, stream).expect("SslStream Error");
-            // SSL negotiation finished successfully
-            core::pin::Pin::new(&mut stream).accept().await.unwrap();
-
-            hyper::server::conn::Http::new()
-                .http1_only(true)
-                .http1_keep_alive(true)
-                .serve_connection(stream, hyper::service::service_fn($service_fn))
-                .await
-        });
-
-        TlsHandle { port }
-    }};
-}
-
-#[macro_export]
-macro_rules! start_server {
-    (
-        HTTPS;
-        ServerNum: $server_num: expr,
-        Runtime: $runtime: expr,
-        Handles: $handle_vec: expr,
-        ServeFnName: $service_fn: ident,
-    ) => {{
-        for _i in 0..$server_num {
-            let (tx, rx) = std::sync::mpsc::channel();
-            let server_handle = $runtime.spawn(async move {
-                let handle = start_tls_server!($service_fn);
-                tx.send(handle)
-                    .expect("Failed to send the handle to the test thread.");
-            });
-            $runtime
-                .block_on(server_handle)
-                .expect("Runtime start server coroutine failed");
-            let handle = rx
-                .recv()
-                .expect("Handle send channel (Server-Half) be closed unexpectedly");
-            $handle_vec.push(handle);
-        }
-    }};
-    (
-        HTTP;
-        ServerNum: $server_num: expr,
-        Runtime: $runtime: expr,
-        Handles: $handle_vec: expr,
-        ServeFnName: $service_fn: ident,
-    ) => {{
-        for _i in 0..$server_num {
-            let (tx, rx) = std::sync::mpsc::channel();
-            let server_handle = $runtime.spawn(async move {
-                let mut handle = start_http_server!($service_fn);
-                handle
-                    .server_start
-                    .recv()
-                    .await
-                    .expect("Start channel (Server-Half) be closed unexpectedly");
-                tx.send(handle)
-                    .expect("Failed to send the handle to the test thread.");
-            });
-            $runtime
-                .block_on(server_handle)
-                .expect("Runtime start server coroutine failed");
-            let handle = rx
-                .recv()
-                .expect("Handle send channel (Server-Half) be closed unexpectedly");
-            $handle_vec.push(handle);
-        }
-    }};
 }
 
 #[macro_export]
