@@ -518,6 +518,14 @@ impl ClientBuilder {
 
     /// Loads trusted root certificates from a file. The file should contain a
     /// sequence of PEM-formatted CA certificates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().set_ca_file("ca.crt");
+    /// ```
     #[cfg(feature = "__tls")]
     pub fn set_ca_file(mut self, path: &str) -> Self {
         self.tls = self.tls.set_ca_file(path);
@@ -571,6 +579,15 @@ impl ClientBuilder {
 
     /// Controls the use of built-in system certificates during certificate validation.
     /// Default to `true` -- uses built-in system certs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .tls_built_in_root_certs(false);
+    /// ```
     #[cfg(feature = "__tls")]
     pub fn tls_built_in_root_certs(mut self, is_use: bool) -> ClientBuilder {
         self.tls = self.tls.build_in_root_certs(is_use);

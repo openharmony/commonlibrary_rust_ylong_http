@@ -77,11 +77,6 @@ extern "C" {
         cert_chain_file: *const c_char,
     ) -> c_int;
 
-    /// Loads the certificate `cert` into ctx.\
-    /// The rest of the certificates needed to form the complete certificate chain
-    /// can be specified using the `SSL_CTX_add_extra_chain_cert` function
-    pub(crate) fn SSL_CTX_use_certificate(ctx: *mut SSL_CTX, cert: *mut C_X509) -> c_int;
-
     /// Client sets the list of protocols available to be negotiated.
     pub(crate) fn SSL_CTX_set_alpn_protos(
         s: *mut SSL_CTX,

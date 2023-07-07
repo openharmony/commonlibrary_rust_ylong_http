@@ -195,46 +195,6 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Sets the leaf certificate.
-    ///
-    /// Use `add_extra_chain_cert` to add the remainder of the certificate chain.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use ylong_http_client::util::{TlsConfigBuilder, Cert};
-    ///
-    /// let x509 = Cert::from_pem(b"pem-content").unwrap();
-    /// let builder = TlsConfigBuilder::new().set_certificate(&x509);
-    /// ```
-    pub fn set_certificate(mut self, cert: &Cert) -> Self {
-        self.inner = self.inner.set_certificate(cert.as_ref());
-        self
-    }
-
-    /// Appends a certificate to the certificate chain.
-    ///
-    /// This chain should contain all certificates necessary to go from the
-    /// certificate specified by `set_certificate` to a trusted root.
-    ///
-    /// This method is based on `openssl::SslContextBuilder::add_extra_chain_cert`.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use ylong_http_client::util::{TlsConfigBuilder, Cert};
-    ///
-    /// let root = Cert::from_pem(b"pem-content").unwrap();
-    /// let chain = Cert::from_pem(b"pem-content").unwrap();
-    /// let builder = TlsConfigBuilder::new()
-    ///     .set_certificate(&root)
-    ///     .add_extra_chain_cert(chain);
-    /// ```
-    pub fn add_extra_chain_cert(mut self, cert: Cert) -> Self {
-        self.inner = self.inner.add_extra_chain_cert(cert.into_inner());
-        self
-    }
-
     /// Adds custom root certificate.
     pub fn add_root_certificates(mut self, certs: Certificate) -> Self {
         for cert in certs.inner {
@@ -340,7 +300,7 @@ impl Default for TlsConfigBuilder {
 ///
 /// let builder = TlsConfig::builder();
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TlsConfig(SslContext);
 
 impl TlsConfig {
@@ -550,7 +510,10 @@ impl Certificate {
 
 #[cfg(test)]
 mod ut_openssl_adapter {
-    use crate::util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion};
+    use crate::{
+        util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion},
+        AlpnProtocol, AlpnProtocolList, Certificate,
+    };
 
     /// UT test cases for `TlsConfigBuilder::new`.
     ///
@@ -651,32 +614,95 @@ mod ut_openssl_adapter {
         assert!(builder.is_err());
     }
 
-    /// UT test cases for `X509::from_pem`.
+    /// UT test cases for `TlsConfigBuilder::add_root_certificates`.
     ///
     /// # Brief
-    /// 1. Creates a `X509` by calling `X509::from_pem`.
+    /// 1. Creates a `TlsConfigBuilder` by calling `TlsConfigBuilder::new`.
+    /// 2. Calls `add_root_certificates`.
+    /// 3. Provides PEM-formatted certificates.
+    /// 4. Checks if the result is as expected.
+    #[test]
+    fn ut_add_root_certificates() {
+        let builder = TlsConfigBuilder::new()
+            .add_root_certificates(
+                Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem"))
+                    .expect("Sets certs error."),
+            )
+            .build();
+        assert!(builder.is_ok());
+    }
+
+    /// UT test cases for `TlsConfigBuilder::build_in_root_certs`.
+    ///
+    /// # Brief
+    /// 1. Creates a `TlsConfigBuilder` by calling `TlsConfigBuilder::new`.
+    /// 2. Calls `build_in_root_certs`.
+    /// 3. Checks if the result is as expected.
+    #[test]
+    fn ut_build_in_root_certs() {
+        let builder = TlsConfigBuilder::new().build_in_root_certs(true).build();
+        assert!(builder.is_ok());
+    }
+
+    /// UT test cases for `TlsConfigBuilder::set_alpn_proto_list`.
+    ///
+    /// # Brief
+    /// 1. Creates a `TlsConfigBuilder` by calling `TlsConfigBuilder::new`.
+    /// 2. Calls `set_alpn_proto_list`.
+    /// 3. Provides `AlpnProtocol`s.
+    /// 4. Checks if the result is as expected.
+    #[test]
+    fn ut_set_alpn_proto_list() {
+        let builder = TlsConfigBuilder::new()
+            .set_alpn_proto_list(
+                AlpnProtocolList::new()
+                    .extend(AlpnProtocol::HTTP11)
+                    .extend(AlpnProtocol::H2),
+            )
+            .build();
+        assert!(builder.is_ok());
+    }
+
+    /// UT test cases for `TlsConfig::ssl`.
+    ///
+    /// # Brief
+    /// 1. Creates a `TlsConfig` by calling `TlsConfigBuilder::new` and `TlsConfigBuilder::build`.
+    /// 2. Creates a `TlsSsl` by calling `TlsConfig::ssl`.
+    /// 3. Calls `TlsSsl::set_sni_verify` and `TlsSsl::into_inner`.
+    /// 4. Checks if the result is as expected.
+    #[test]
+    fn ut_tls_ssl() {
+        let config = TlsConfigBuilder::new()
+            .build()
+            .expect("TlsConfig build error.");
+        let mut ssl = config.ssl().expect("Ssl build error.");
+        ssl.set_sni_verify("host name")
+            .expect("Set SNI verify error.");
+        let _ssl = ssl.into_inner();
+    }
+
+    /// UT test cases for `Cert::from_pem`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Cert` by calling `Cert::from_pem`.
     /// 2. Provides an invalid pem as argument.
     /// 3. Checks if the result is as expected.
     #[test]
     fn ut_x509_from_pem() {
         let pem = "(pem-content)";
         let x509 = Cert::from_pem(pem.as_bytes());
-        // println!("{:?}", x509);
         assert!(x509.is_err());
 
         let cert = include_bytes!("../../../tests/file/root-ca.pem");
         println!("{:?}", std::str::from_utf8(cert).unwrap());
-        // let debugged = format!("{:#?}", cert);
-        // println!("{debugged}");
         let x509 = Cert::from_pem(cert);
-        // println!("{:?}", x509);
         assert!(x509.is_ok());
     }
 
-    /// UT test cases for `X509::from_der`.
+    /// UT test cases for `Cert::from_der`.
     ///
     /// # Brief
-    /// 1. Creates a `X509` by calling `X509::from_der`.
+    /// 1. Creates a `Cert` by calling `Cert::from_der`.
     /// 2. Provides an invalid der as argument.
     /// 3. Checks if the result is as expected.
     #[test]
@@ -684,5 +710,31 @@ mod ut_openssl_adapter {
         let der = "(dar-content)";
         let x509 = Cert::from_der(der.as_bytes());
         assert!(x509.is_err());
+    }
+
+    /// UT test cases for `Cert::stack_from_pem`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Cert` by calling `Cert::stack_from_pem`.
+    /// 2. Provides pem bytes as argument.
+    /// 3. Checks if the result is as expected.
+    #[test]
+    fn ut_cert_stack_from_der() {
+        let v = include_bytes!("../../../tests/file/root-ca.pem");
+        let x509 = Cert::stack_from_pem(v);
+        assert!(x509.is_ok());
+    }
+
+    /// UT test cases for `Certificate::from_pem`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Certificate` by calling `Certificate::from_pem`.
+    /// 2. Provides pem bytes as argument.
+    /// 3. Checks if the result is as expected.
+    #[test]
+    fn ut_certificate_from_pem() {
+        let v = include_bytes!("../../../tests/file/root-ca.pem");
+        let certs = Certificate::from_pem(v);
+        assert!(certs.is_ok());
     }
 }

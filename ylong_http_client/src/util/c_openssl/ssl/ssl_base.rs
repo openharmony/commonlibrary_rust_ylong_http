@@ -57,7 +57,7 @@ impl Ssl {
 
     /// Client connect to Server.
     /// only `sync` use.
-    #[allow(dead_code)]
+    #[cfg(feature = "sync")]
     pub(crate) fn connect<S>(self, stream: S) -> Result<SslStream<S>, HandshakeError<S>>
     where
         S: Read + Write,

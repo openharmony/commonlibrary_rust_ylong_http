@@ -17,24 +17,24 @@ mod async_utils;
 #[cfg(feature = "sync")]
 mod sync_utils;
 
-#[cfg(all(feature = "async", not(feature = "c_openssl_1_1")))]
+#[cfg(all(feature = "async", not(feature = "__tls")))]
 pub use async_utils::async_build_http_client;
 
-#[cfg(all(feature = "async", feature = "c_openssl_1_1"))]
+#[cfg(all(feature = "async", feature = "__tls"))]
 pub use async_utils::async_build_https_client;
 
 use tokio::runtime::Runtime;
 
-#[cfg(not(feature = "c_openssl_1_1"))]
+#[cfg(not(feature = "__tls"))]
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Server handle.
-#[cfg(feature = "c_openssl_1_1")]
+#[cfg(feature = "__tls")]
 pub struct TlsHandle {
     pub port: u16,
 }
 
-#[cfg(not(feature = "c_openssl_1_1"))]
+#[cfg(not(feature = "__tls"))]
 pub struct HttpHandle {
     pub port: u16,
 
@@ -265,7 +265,7 @@ macro_rules! set_server_fn {
     };
 }
 
-#[cfg(feature = "c_openssl_1_1")]
+#[cfg(feature = "__tls")]
 macro_rules! start_tls_server {
     ($service_fn: ident) => {{
         let mut port = 10000;

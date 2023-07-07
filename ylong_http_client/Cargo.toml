@@ -103,9 +103,9 @@ required-features = ["sync", "http1_1", "tokio_base"]
 [[test]]
 name = "sdv_async_https_c_ssl"
 path = "./tests/sdv_async_https_c_ssl.rs"
-required-features = ["async", "http1_1", "c_openssl_1_1", "tokio_base"]
+required-features = ["async", "http1_1", "__tls", "tokio_base"]
 
 [[test]]
 name = "sdv_sync_https_c_ssl"
 path = "./tests/sdv_sync_https_c_ssl.rs"
-required-features = ["sync", "http1_1", "c_openssl_1_1", "tokio_base"]
+required-features = ["sync", "http1_1", "__tls", "tokio_base"]
