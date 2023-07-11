@@ -63,7 +63,12 @@ required-features = ["async", "http2", "tokio_base"]
 [[example]]
 name = "async_https_outside"
 path = "./examples/async_https_outside.rs"
-required-features = ["async", "http1_1", "tls_default", "tokio_base"]
+required-features = ["async", "http1_1", "__tls", "tokio_base"]
+
+[[example]]
+name = "sync_https_outside"
+path = "./examples/sync_https_outside.rs"
+required-features = ["sync", "http1_1", "__tls"]
 
 [[example]]
 name = "async_proxy_http"

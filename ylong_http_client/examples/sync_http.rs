@@ -15,18 +15,21 @@
 //! It demonstrates creating a client, making a request, and reading the response.
 
 use ylong_http_client::sync_impl::{BodyReader, Client};
-use ylong_http_client::Request;
+use ylong_http_client::{HttpClientError, Request};
 
-fn main() {
+fn main() -> Result<(), HttpClientError> {
     // Creates a `sync_impl::Client`
     let client = Client::new();
 
     // Creates a `Request`.
-    let request = Request::get("127.0.0.1:3000").body("".as_bytes()).unwrap();
+    let request = Request::get("127.0.0.1:3000")
+        .body("".as_bytes())
+        .map_err(|e| HttpClientError::other(Some(e)))?;
 
     // Sends request and receives a `Response`.
-    let mut response = client.request(request).unwrap();
+    let mut response = client.request(request)?;
 
     // Reads the body of `Response` by using `BodyReader`.
     let _ = BodyReader::default().read_all(response.body_mut());
+    Ok(())
 }

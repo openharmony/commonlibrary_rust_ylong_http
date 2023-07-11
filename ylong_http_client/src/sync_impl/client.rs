@@ -34,7 +34,7 @@ use ylong_http::response::Response;
 ///
 /// ```no_run
 /// use ylong_http_client::sync_impl::Client;
-/// use ylong_http_client::{Request, Response, EmptyBody};
+/// use ylong_http_client::{Request, EmptyBody};
 ///
 /// // Creates a new `Client`.
 /// let client = Client::new();
@@ -312,124 +312,6 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the maximum allowed TLS version for connections.
-    ///
-    /// By default there's no maximum.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    /// use ylong_http_client::TlsVersion;
-    ///
-    /// let builder = ClientBuilder::new().max_tls_version(TlsVersion::TLS_1_2);
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn max_tls_version(mut self, version: crate::util::TlsVersion) -> Self {
-        self.tls = self.tls.set_max_proto_version(version);
-        self
-    }
-
-    /// Sets the minimum required TLS version for connections.
-    ///
-    /// By default the TLS backend's own default is used.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    /// use ylong_http_client::TlsVersion;
-    ///
-    /// let builder = ClientBuilder::new().min_tls_version(TlsVersion::TLS_1_2);
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn min_tls_version(mut self, version: crate::util::TlsVersion) -> Self {
-        self.tls = self.tls.set_min_proto_version(version);
-        self
-    }
-
-    /// Adds a custom root certificate.
-    ///
-    /// This can be used to connect to a server that has a self-signed.
-    /// certificate for example.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    /// use ylong_http_client::Certificate;
-    ///
-    /// # fn set_cert(cert: Certificate) {
-    /// let builder = ClientBuilder::new().add_root_certificate(cert);
-    /// # }
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn add_root_certificate(mut self, certs: crate::util::Certificate) -> Self {
-        self.tls = self.tls.add_root_certificates(certs);
-        self
-    }
-
-    /// Loads trusted root certificates from a file. The file should contain a
-    /// sequence of PEM-formatted CA certificates.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new().set_ca_file("ca.crt");
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn set_ca_file(mut self, path: &str) -> Self {
-        self.tls = self.tls.set_ca_file(path);
-        self
-    }
-
-    /// Sets the list of supported ciphers for protocols before `TLSv1.3`.
-    ///
-    /// See [`ciphers`] for details on the format.
-    ///
-    /// [`ciphers`]: https://www.openssl.org/docs/man1.1.0/apps/ciphers.html
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new()
-    ///     .set_cipher_list(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn set_cipher_list(mut self, list: &str) -> Self {
-        self.tls = self.tls.set_cipher_list(list);
-        self
-    }
-
-    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    ///
-    /// The format consists of TLSv1.3 cipher suite names separated by `:`
-    /// characters in order of preference.
-    ///
-    /// Requires `OpenSSL 1.1.1` or `LibreSSL 3.4.0` or newer.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new()
-    ///     .set_cipher_suites(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
-    /// ```
-    #[cfg(feature = "__tls")]
-    pub fn set_cipher_suites(mut self, list: &str) -> Self {
-        self.tls = self.tls.set_cipher_suites(list);
-        self
-    }
-
     /// Constructs a `Client` based on the given settings.
     ///
     /// # Examples
@@ -452,6 +334,197 @@ impl ClientBuilder {
             inner: ConnPool::new(connector),
             client_config: self.client,
         })
+    }
+}
+
+#[cfg(feature = "__tls")]
+impl ClientBuilder {
+    /// Sets the maximum allowed TLS version for connections.
+    ///
+    /// By default there's no maximum.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    /// use ylong_http_client::TlsVersion;
+    ///
+    /// let builder = ClientBuilder::new().max_tls_version(TlsVersion::TLS_1_2);
+    /// ```
+    pub fn max_tls_version(mut self, version: crate::util::TlsVersion) -> Self {
+        self.tls = self.tls.max_proto_version(version);
+        self
+    }
+
+    /// Sets the minimum required TLS version for connections.
+    ///
+    /// By default the TLS backend's own default is used.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    /// use ylong_http_client::TlsVersion;
+    ///
+    /// let builder = ClientBuilder::new().min_tls_version(TlsVersion::TLS_1_2);
+    /// ```
+    pub fn min_tls_version(mut self, version: crate::util::TlsVersion) -> Self {
+        self.tls = self.tls.min_proto_version(version);
+        self
+    }
+
+    /// Adds a custom root certificate.
+    ///
+    /// This can be used to connect to a server that has a self-signed.
+    /// certificate for example.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    /// use ylong_http_client::Certificate;
+    ///
+    /// # fn set_cert(cert: Certificate) {
+    /// let builder = ClientBuilder::new().add_root_certificate(cert);
+    /// # }
+    /// ```
+    pub fn add_root_certificate(mut self, certs: crate::util::Certificate) -> Self {
+        self.tls = self.tls.add_root_certificates(certs);
+        self
+    }
+
+    /// Loads trusted root certificates from a file. The file should contain a
+    /// sequence of PEM-formatted CA certificates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().tls_ca_file("ca.crt");
+    /// ```
+    pub fn tls_ca_file(mut self, path: &str) -> Self {
+        self.tls = self.tls.ca_file(path);
+        self
+    }
+
+    /// Sets the list of supported ciphers for protocols before `TLSv1.3`.
+    ///
+    /// See [`ciphers`] for details on the format.
+    ///
+    /// [`ciphers`]: https://www.openssl.org/docs/man1.1.0/apps/ciphers.html
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .tls_cipher_list(
+    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
+    ///     );
+    /// ```
+    pub fn tls_cipher_list(mut self, list: &str) -> Self {
+        self.tls = self.tls.cipher_list(list);
+        self
+    }
+
+    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
+    ///
+    /// The format consists of TLSv1.3 cipher suite names separated by `:`
+    /// characters in order of preference.
+    ///
+    /// Requires `OpenSSL 1.1.1` or `LibreSSL 3.4.0` or newer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .tls_cipher_suites(
+    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
+    ///     );
+    /// ```
+    pub fn tls_cipher_suites(mut self, list: &str) -> Self {
+        self.tls = self.tls.cipher_suites(list);
+        self
+    }
+
+    /// Controls the use of built-in system certificates during certificate validation.
+    /// Default to `true` -- uses built-in system certs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .tls_built_in_root_certs(false);
+    /// ```
+    pub fn tls_built_in_root_certs(mut self, is_use: bool) -> Self {
+        self.tls = self.tls.build_in_root_certs(is_use);
+        self
+    }
+
+    /// Controls the use of certificates verification.
+    ///
+    /// Defaults to `false` -- verify certificates.
+    ///
+    /// # Warning
+    ///
+    /// When sets `true`, any certificate for any site will be trusted for use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .danger_accept_invalid_certs(true);
+    /// ```
+    pub fn danger_accept_invalid_certs(mut self, is_invalid: bool) -> Self {
+        self.tls = self.tls.danger_accept_invalid_certs(is_invalid);
+        self
+    }
+
+    /// Controls the use of hostname verification.
+    ///
+    /// Defaults to `false` -- verify hostname.
+    ///
+    /// # Warning
+    ///
+    /// When sets `true`, any valid certificate for any site will be trusted for
+    /// use from any other.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .danger_accept_invalid_hostnames(true);
+    /// ```
+    pub fn danger_accept_invalid_hostnames(mut self, is_invalid: bool) -> Self {
+        self.tls = self.tls.danger_accept_invalid_hostnames(is_invalid);
+        self
+    }
+
+    /// Controls the use of TLS server name indication.
+    ///
+    /// Defaults to `true` -- sets sni.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::sync_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new()
+    ///     .tls_sni(true);
+    /// ```
+    pub fn tls_sni(mut self, is_set_sni: bool) -> Self {
+        self.tls = self.tls.sni(is_set_sni);
+        self
     }
 }
 

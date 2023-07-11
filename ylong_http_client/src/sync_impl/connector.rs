@@ -124,24 +124,13 @@ pub mod tls_conn {
                         tcp_stream
                     };
 
-                    let mut tls_ssl = self.config.tls.ssl().map_err(|e| {
+                    let tls_ssl = self.config.tls.ssl_new(&host_name).map_err(|e| {
                         HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
                     })?;
 
-                    tls_ssl.set_sni_verify(&host_name).map_err(|e| {
+                    let stream = tls_ssl.into_inner().connect(tcp_stream).map_err(|e| {
                         HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
                     })?;
-
-                    let stream = self
-                        .config
-                        .tls
-                        .ssl()
-                        .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?
-                        .into_inner()
-                        .connect(tcp_stream)
-                        .map_err(|e| {
-                            HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                        })?;
                     Ok(MixStream::Https(stream))
                 }
             }

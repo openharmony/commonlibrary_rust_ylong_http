@@ -115,7 +115,7 @@ impl SslRef {
         unsafe { SSL_write(self.as_ptr(), buf.as_ptr() as *const c_void, len) }
     }
 
-    pub(crate) fn set_host_name(&mut self, name: &str) -> Result<(), ErrorStack> {
+    pub(crate) fn set_host_name_in_sni(&mut self, name: &str) -> Result<(), ErrorStack> {
         let name = match CString::new(name) {
             Ok(name) => name,
             Err(_) => return Err(ErrorStack::get()),
@@ -130,12 +130,12 @@ impl SslRef {
         unsafe { X509VerifyParamRef::from_ptr_mut(SSL_get0_param(self.as_ptr())) }
     }
 
-    pub(crate) fn setup_verify_hostname(ssl: &mut SslRef, host: &str) -> Result<(), ErrorStack> {
-        let param = ssl.param_mut();
+    pub(crate) fn set_verify_hostname(&mut self, host_name: &str) -> Result<(), ErrorStack> {
+        let param = self.param_mut();
         param.set_hostflags(X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-        match host.parse() {
+        match host_name.parse() {
             Ok(ip) => param.set_ip(ip),
-            Err(_) => param.set_host(host),
+            Err(_) => param.set_host(host_name),
         }
     }
 }

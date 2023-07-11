@@ -219,7 +219,8 @@ macro_rules! sync_client_assert {
         },)*
     ) => {{
         let client = ylong_http_client::sync_impl::Client::builder()
-            .set_ca_file($tls_config)
+            .tls_ca_file($tls_config)
+            .danger_accept_invalid_hostnames(true)
             .build()
             .unwrap();
         let client = std::sync::Arc::new(client);

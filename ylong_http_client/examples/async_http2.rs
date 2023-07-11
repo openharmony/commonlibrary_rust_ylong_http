@@ -15,30 +15,25 @@
 //! It demonstrates creating a client, making a request, and reading the response asynchronously.
 
 use ylong_http_client::async_impl::{Body, ClientBuilder};
-use ylong_http_client::{RequestBuilder, StatusCode, TextBody, Version};
+use ylong_http_client::{HttpClientError, RequestBuilder, StatusCode, TextBody, Version};
 
-fn main() {
+fn main() -> Result<(), HttpClientError> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
-        .build()
-        .expect("Build runtime failed.");
+        .build()?;
 
-    let client = ClientBuilder::new()
-        .http2_prior_knowledge()
-        .build()
-        .unwrap();
+    let client = ClientBuilder::new().http2_prior_knowledge().build()?;
 
     let request = RequestBuilder::new()
         .version("HTTP/2.0")
         .url("127.0.0.1:5678")
         .method("GET")
         .header("host", "127.0.0.1")
-        .body(TextBody::from_bytes("Hi".as_bytes()))
-        .unwrap();
+        .body(TextBody::from_bytes("Hi".as_bytes()))?;
 
     rt.block_on(async move {
-        let mut response = client.request(request).await.unwrap();
+        let mut response = client.request(request).await?;
         assert_eq!(response.version(), &Version::HTTP2);
         assert_eq!(response.status(), &StatusCode::OK);
 
@@ -62,4 +57,5 @@ fn main() {
             "Assert response body failed"
         );
     });
+    Ok(())
 }

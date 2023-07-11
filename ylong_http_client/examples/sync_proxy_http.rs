@@ -15,22 +15,22 @@
 //! It demonstrates creating a client, making a request, and reading the response.
 use ylong_http_client::sync_impl::{BodyReader, ClientBuilder};
 use ylong_http_client::util::Proxy;
-use ylong_http_client::{EmptyBody, Request};
+use ylong_http_client::{EmptyBody, HttpClientError, Request};
 
-fn main() {
+fn main() -> Result<(), HttpClientError> {
     // Creates a `sync_impl::Client`
     let client = ClientBuilder::new()
-        .proxy(Proxy::http("https://proxy.example.com").build().unwrap())
-        .build()
-        .unwrap();
+        .proxy(Proxy::http("https://proxy.example.com").build()?)
+        .build()?;
     // Creates a `Request`.
 
     let request = Request::get("http://127.0.0.1:3000")
         .body(EmptyBody)
-        .unwrap();
+        .map_err(|e| HttpClientError::other(Some(e)))?;
 
     // Sends request and receives a `Response`.
-    let mut response = client.request(request).unwrap();
+    let mut response = client.request(request)?;
     // Reads the body of `Response` by using `BodyReader`.
     let _ = BodyReader::default().read_all(response.body_mut());
+    Ok(())
 }

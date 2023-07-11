@@ -11,29 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use ylong_http_client::async_impl::{Client, Downloader};
+use ylong_http_client::sync_impl::Client;
 use ylong_http_client::util::Redirect;
 use ylong_http_client::{Certificate, HttpClientError, Request, TlsVersion};
 
 fn main() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Tokio runtime build err.");
     let mut v = vec![];
     for _i in 0..3 {
-        let handle = rt.spawn(req());
+        let handle = std::thread::spawn(|| req);
         v.push(handle);
     }
 
-    rt.block_on(async move {
-        for h in v {
-            let _ = h.await;
-        }
-    });
+    for h in v {
+        let _ = h.join();
+    }
 }
 
-async fn req() -> Result<(), HttpClientError> {
+fn req() -> Result<(), HttpClientError> {
     let v = "some certs".as_bytes();
     let cert = Certificate::from_pem(v)?;
 
@@ -53,12 +47,9 @@ async fn req() -> Result<(), HttpClientError> {
         .map_err(|e| HttpClientError::other(Some(e)))?;
 
     // Sends request and receives a `Response`.
-    let response = client.request(request).await?;
+    let response = client.request(request)?;
 
     println!("{}", response.status().as_u16());
     println!("{}", response.headers());
-
-    // Reads the body of `Response` by using `BodyReader`.
-    let _ = Downloader::console(response).download().await;
     Ok(())
 }

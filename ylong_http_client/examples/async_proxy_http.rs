@@ -14,21 +14,21 @@
 //! This is a simple asynchronous HTTP client example using the ylong_http_client crate.
 //! It demonstrates creating a client, making a request, and reading the response asynchronously.
 use ylong_http_client::async_impl::{ClientBuilder, Downloader};
-use ylong_http_client::{EmptyBody, Proxy, Request};
+use ylong_http_client::{EmptyBody, HttpClientError, Proxy, Request};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), HttpClientError> {
     // Creates a `async_impl::Client`
     let client = ClientBuilder::new()
-        .proxy(Proxy::all("http://proxy.example.com").build().unwrap())
-        .build()
-        .unwrap();
+        .proxy(Proxy::all("http://proxy.example.com").build()?)
+        .build()?;
     // Creates a `Request`.
     let request = Request::get("http://127.0.0.1:3000")
         .body(EmptyBody)
-        .unwrap();
+        .map_err(|e| HttpClientError::other(Some(e)))?;
     // Sends request and receives a `Response`.
-    let response = client.request(request).await.unwrap();
+    let response = client.request(request).await?;
     // Reads the body of `Response` by using `BodyReader`.
     let _ = Downloader::console(response).download().await;
+    Ok(())
 }
