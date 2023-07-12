@@ -14,9 +14,9 @@
 import("//build/ohos.gni")
 import("//build/test.gni")
 
-ohos_rust_static_library("ylong_http_client_rlib") {
+ohos_rust_shared_library("ylong_http_client_inner") {
   crate_name = "ylong_http_client_inner"
-  crate_type = "rlib"
+  crate_type = "dylib"
   crate_root = "src/lib.rs"
 
   subsystem_name = "commonlibrary"
