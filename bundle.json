@@ -19,12 +19,7 @@
     "features": [],
     "rom": "100KB",
     "ram": "~200KB",
-    "deps": {
-        "third_party": [
-          "openssl",
-	  "rust_tokio"
-	]
-    },
+    "deps": {},
     "build": {
       "sub_component": [],
       "inner_kits": [
@@ -33,7 +28,7 @@
             "header_base": [],
             "header_files": []
           },
-          "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_rlib"
+          "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_inner"
         },      
         {
           "header": {
