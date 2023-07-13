@@ -19,7 +19,12 @@
     "features": [],
     "rom": "100KB",
     "ram": "~200KB",
-    "deps": {},
+    "deps": {
+      "third_party": [
+          "openssl",
+          "ylong_runtime"
+      ]
+    },
     "build": {
       "sub_component": [],
       "inner_kits": [
