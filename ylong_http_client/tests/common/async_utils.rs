@@ -377,7 +377,8 @@ macro_rules! async_client_assertions {
 #[cfg(feature = "__tls")]
 pub fn async_build_https_client(tls_config: &str) -> Arc<Client> {
     let client = ylong_http_client::async_impl::Client::builder()
-        .set_ca_file(tls_config)
+        .tls_ca_file(tls_config)
+        .danger_accept_invalid_hostnames(true) // The root-ca is not have SAN hostname.
         .build()
         .unwrap();
     std::sync::Arc::new(client)

@@ -51,7 +51,7 @@ foreign_type!(
 );
 
 impl SslContext {
-    pub(crate) fn builder(method: SslMethod) -> SslContextBuilder {
+    pub(crate) fn builder(method: SslMethod) -> Result<SslContextBuilder, ErrorStack> {
         SslContextBuilder::new(method)
     }
 }
@@ -80,60 +80,47 @@ impl ToOwned for SslContextRef {
     }
 }
 
-const SSL_VERIFY_PEER: c_int = 1;
+pub(crate) const SSL_VERIFY_NONE: c_int = 0;
+pub(crate) const SSL_VERIFY_PEER: c_int = 1;
 
 /// A builder for `SslContext`.
-pub(crate) struct SslContextBuilder(Result<SslContext, ErrorStack>);
+pub(crate) struct SslContextBuilder(SslContext);
 
 impl SslContextBuilder {
-    pub(crate) fn new(method: SslMethod) -> Self {
+    pub(crate) fn new(method: SslMethod) -> Result<Self, ErrorStack> {
         ssl_init();
-        let ptr = match check_ptr(unsafe { SSL_CTX_new(method.as_ptr()) }) {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
-        if let Err(e) = check_ret(unsafe { SSL_CTX_set_default_verify_paths(ptr) }) {
-            return SslContextBuilder(Err(e));
-        };
 
-        unsafe {
-            SSL_CTX_set_verify(ptr, SSL_VERIFY_PEER, None);
-        }
+        let ptr = check_ptr(unsafe { SSL_CTX_new(method.as_ptr()) })?;
+        check_ret(unsafe { SSL_CTX_set_default_verify_paths(ptr) })?;
 
-        SslContextBuilder::from_ptr(ptr).set_cipher_list(
+        let mut builder = Self::from_ptr(ptr);
+        builder.set_verify(SSL_VERIFY_PEER);
+        builder.set_cipher_list(
             "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
-        )
+        )?;
+
+        Ok(builder)
     }
 
     /// Creates a `SslContextBuilder` from a `SSL_CTX`.
     pub(crate) fn from_ptr(ptr: *mut SSL_CTX) -> Self {
-        SslContextBuilder(Ok(SslContext(ptr)))
+        SslContextBuilder(SslContext(ptr))
     }
 
-    /// Creates a `SslContextBuilder` from a `SSL_CTX`.
-    pub(crate) fn as_ptr(&self) -> Result<*mut SSL_CTX, ErrorStack> {
-        match &self.0 {
-            Ok(ctx) => Ok(ctx.0),
-            Err(e) => Err(e.to_owned()),
-        }
+    /// Creates a `*mut SSL_CTX` from a `SSL_CTX`.
+    pub(crate) fn as_ptr_mut(&mut self) -> *mut SSL_CTX {
+        self.0 .0
     }
 
     /// Builds a `SslContext`.
-    pub(crate) fn build(self) -> Result<SslContext, ErrorStack> {
+    pub(crate) fn build(self) -> SslContext {
         self.0
     }
 
-    pub(crate) fn from_error(e: ErrorStack) -> Self {
-        SslContextBuilder(Err(e))
-    }
+    pub(crate) fn set_min_proto_version(&mut self, version: SslVersion) -> Result<(), ErrorStack> {
+        let ptr = self.as_ptr_mut();
 
-    pub(crate) fn set_min_proto_version(self, version: SslVersion) -> Self {
-        let ptr = match self.as_ptr() {
-            Ok(p) => p,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
-
-        match check_ret(unsafe {
+        check_ret(unsafe {
             SSL_CTX_ctrl(
                 ptr,
                 SSL_CTRL_SET_MIN_PROTO_VERSION,
@@ -141,19 +128,13 @@ impl SslContextBuilder {
                 ptr::null_mut(),
             )
         } as c_int)
-        {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        .map(|_| ())
     }
 
-    pub(crate) fn set_max_proto_version(self, version: SslVersion) -> Self {
-        let ptr = match self.as_ptr() {
-            Ok(p) => p,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+    pub(crate) fn set_max_proto_version(&mut self, version: SslVersion) -> Result<(), ErrorStack> {
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe {
+        check_ret(unsafe {
             SSL_CTX_ctrl(
                 ptr,
                 SSL_CTRL_SET_MAX_PROTO_VERSION,
@@ -161,73 +142,53 @@ impl SslContextBuilder {
                 ptr::null_mut(),
             )
         } as c_int)
-        {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        .map(|_| ())
     }
 
     /// Loads trusted root certificates from a file.\
     /// Uses to Set default locations for trusted CA certificates.
     ///
     /// The file should contain a sequence of PEM-formatted CA certificates.
-    pub(crate) fn set_ca_file<P>(self, file: P) -> Self
+    pub(crate) fn set_ca_file<P>(&mut self, file: P) -> Result<(), ErrorStack>
     where
         P: AsRef<Path>,
     {
         let path = match file.as_ref().as_os_str().to_str() {
             Some(path) => path,
-            None => return SslContextBuilder(Err(ErrorStack::get())),
+            None => return Err(ErrorStack::get()),
         };
         let file = match CString::new(path) {
             Ok(path) => path,
-            Err(_) => return SslContextBuilder(Err(ErrorStack::get())),
+            Err(_) => return Err(ErrorStack::get()),
         };
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe {
+        check_ret(unsafe {
             SSL_CTX_load_verify_locations(ptr, file.as_ptr() as *const _, ptr::null())
-        }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        })
+        .map(|_| ())
     }
 
     /// Sets the list of supported ciphers for protocols before `TLSv1.3`.
-    pub(crate) fn set_cipher_list(self, list: &str) -> Self {
+    pub(crate) fn set_cipher_list(&mut self, list: &str) -> Result<(), ErrorStack> {
         let list = match CString::new(list) {
             Ok(cstr) => cstr,
-            Err(_) => return SslContextBuilder(Err(ErrorStack::get())),
+            Err(_) => return Err(ErrorStack::get()),
         };
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe { SSL_CTX_set_cipher_list(ptr, list.as_ptr() as *const _) }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        check_ret(unsafe { SSL_CTX_set_cipher_list(ptr, list.as_ptr() as *const _) }).map(|_| ())
     }
 
     /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    pub(crate) fn set_cipher_suites(self, list: &str) -> Self {
+    pub(crate) fn set_cipher_suites(&mut self, list: &str) -> Result<(), ErrorStack> {
         let list = match CString::new(list) {
             Ok(cstr) => cstr,
-            Err(_) => return SslContextBuilder(Err(ErrorStack::get())),
+            Err(_) => return Err(ErrorStack::get()),
         };
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe { SSL_CTX_set_ciphersuites(ptr, list.as_ptr() as *const _) }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        check_ret(unsafe { SSL_CTX_set_ciphersuites(ptr, list.as_ptr() as *const _) }).map(|_| ())
     }
 
     /// Loads a leaf certificate from a file.
@@ -235,29 +196,28 @@ impl SslContextBuilder {
     /// Only a single certificate will be loaded - use `add_extra_chain_cert` to add the remainder
     /// of the certificate chain, or `set_certificate_chain_file` to load the entire chain from a
     /// single file.
-    pub(crate) fn set_certificate_file<P>(self, file: P, file_type: SslFiletype) -> Self
+    pub(crate) fn set_certificate_file<P>(
+        &mut self,
+        file: P,
+        file_type: SslFiletype,
+    ) -> Result<(), ErrorStack>
     where
         P: AsRef<Path>,
     {
         let path = match file.as_ref().as_os_str().to_str() {
             Some(path) => path,
-            None => return SslContextBuilder(Err(ErrorStack::get())),
+            None => return Err(ErrorStack::get()),
         };
         let file = match CString::new(path) {
             Ok(path) => path,
-            Err(_) => return SslContextBuilder(Err(ErrorStack::get())),
+            Err(_) => return Err(ErrorStack::get()),
         };
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe {
+        check_ret(unsafe {
             SSL_CTX_use_certificate_file(ptr, file.as_ptr() as *const _, file_type.as_raw())
-        }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        })
+        .map(|_| ())
     }
 
     /// Loads a certificate chain from file into ctx.
@@ -265,64 +225,51 @@ impl SslContextBuilder {
     /// the subject's certificate (actual client or server certificate), followed
     /// by intermediate CA certificates if applicable, and ending at the highest
     /// level (root) CA.
-    pub(crate) fn set_certificate_chain_file<P>(self, file: P) -> Self
+    pub(crate) fn set_certificate_chain_file<P>(&mut self, file: P) -> Result<(), ErrorStack>
     where
         P: AsRef<Path>,
     {
         let path = match file.as_ref().as_os_str().to_str() {
             Some(path) => path,
-            None => return SslContextBuilder(Err(ErrorStack::get())),
+            None => return Err(ErrorStack::get()),
         };
         let file = match CString::new(path) {
             Ok(path) => path,
-            Err(_) => return SslContextBuilder(Err(ErrorStack::get())),
+            Err(_) => return Err(ErrorStack::get()),
         };
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+        let ptr = self.as_ptr_mut();
 
-        match check_ret(unsafe {
-            SSL_CTX_use_certificate_chain_file(ptr, file.as_ptr() as *const _)
-        }) {
-            Ok(_num) => self,
-            Err(e) => SslContextBuilder(Err(e)),
-        }
+        check_ret(unsafe { SSL_CTX_use_certificate_chain_file(ptr, file.as_ptr() as *const _) })
+            .map(|_| ())
     }
 
     /// Sets the protocols to sent to the server for Application Layer Protocol Negotiation (ALPN).
-    pub(crate) fn set_alpn_protos(self, protocols: &[u8]) -> Self {
+    pub(crate) fn set_alpn_protos(&mut self, protocols: &[u8]) -> Result<(), ErrorStack> {
         assert!(protocols.len() <= c_uint::max_value() as usize);
 
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
-
+        let ptr = self.as_ptr_mut();
         match unsafe { SSL_CTX_set_alpn_protos(ptr, protocols.as_ptr(), protocols.len() as c_uint) }
         {
-            0 => self,
-            _ => SslContextBuilder(Err(ErrorStack::get())),
+            0 => Ok(()),
+            _ => Err(ErrorStack::get()),
         }
     }
 
-    pub(crate) fn set_cert_store(self, cert_store: X509Store) -> Self {
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return SslContextBuilder(Err(e)),
-        };
+    pub(crate) fn set_verify(&mut self, mode: c_int) {
+        let ptr = self.as_ptr_mut();
+        unsafe { SSL_CTX_set_verify(ptr, mode, None) };
+    }
+
+    pub(crate) fn set_cert_store(&mut self, cert_store: X509Store) {
+        let ptr = self.as_ptr_mut();
         unsafe {
             SSL_CTX_set_cert_store(ptr, cert_store.as_ptr());
             mem::forget(cert_store);
         }
-        self
     }
 
-    pub(crate) fn cert_store_mut(&mut self) -> Result<&mut X509StoreRef, ErrorStack> {
-        let ptr = match self.as_ptr() {
-            Ok(ptr) => ptr,
-            Err(e) => return Err(e),
-        };
-        Ok(unsafe { X509StoreRef::from_ptr_mut(SSL_CTX_get_cert_store(ptr)) })
+    pub(crate) fn cert_store_mut(&mut self) -> &mut X509StoreRef {
+        let ptr = self.as_ptr_mut();
+        unsafe { X509StoreRef::from_ptr_mut(SSL_CTX_get_cert_store(ptr)) }
     }
 }

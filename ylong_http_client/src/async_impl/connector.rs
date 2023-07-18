@@ -150,8 +150,7 @@ mod tls {
                         };
 
                         let mut stream = config
-                            .ssl()
-                            .and_then(|mut ssl| ssl.set_sni_verify(&host_name).map(|_| ssl))
+                            .ssl_new(&host_name)
                             .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 

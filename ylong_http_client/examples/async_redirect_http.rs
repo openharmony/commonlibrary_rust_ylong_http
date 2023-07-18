@@ -15,20 +15,20 @@
 //! It demonstrates creating a client, making a request, and reading the response asynchronously.
 
 use ylong_http_client::async_impl::{ClientBuilder, Downloader};
-use ylong_http_client::{Redirect, Request};
+use ylong_http_client::{HttpClientError, Redirect, Request};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), HttpClientError> {
     // Creates a `async_impl::Client`
-    let client = ClientBuilder::new()
-        .redirect(Redirect::default())
-        .build()
-        .unwrap();
+    let client = ClientBuilder::new().redirect(Redirect::default()).build()?;
     // Creates a `Request`.
-    let request = Request::get("127.0.0.1:3000").body("".as_bytes()).unwrap();
+    let request = Request::get("127.0.0.1:3000")
+        .body("".as_bytes())
+        .map_err(|e| HttpClientError::other(Some(e)))?;
 
     // Sends request and receives a `Response`.
-    let response = client.request(request).await.unwrap();
+    let response = client.request(request).await?;
     // Reads the body of `Response` by using `BodyReader`.
     let _ = Downloader::console(response).download().await;
+    Ok(())
 }

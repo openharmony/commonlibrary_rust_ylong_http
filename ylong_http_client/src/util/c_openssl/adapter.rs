@@ -30,14 +30,16 @@ use std::{net::IpAddr, path::Path};
 /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
 ///
 /// let context = TlsConfigBuilder::new()
-///     .set_ca_file("ca.crt")
-///     .set_max_proto_version(TlsVersion::TLS_1_2)
-///     .set_min_proto_version(TlsVersion::TLS_1_2)
-///     .set_cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
+///     .ca_file("ca.crt")
+///     .max_proto_version(TlsVersion::TLS_1_2)
+///     .min_proto_version(TlsVersion::TLS_1_2)
+///     .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
 ///     .build();
 /// ```
 pub struct TlsConfigBuilder {
-    inner: SslContextBuilder,
+    inner: Result<SslContextBuilder, ErrorStack>,
+    use_sni: bool,
+    verify_hostname: bool,
 }
 
 impl TlsConfigBuilder {
@@ -53,6 +55,8 @@ impl TlsConfigBuilder {
     pub fn new() -> Self {
         Self {
             inner: SslContext::builder(SslMethod::tls_client()),
+            use_sni: true,
+            verify_hostname: true,
         }
     }
 
@@ -65,10 +69,12 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_ca_file("ca.crt");
+    ///     .ca_file("ca.crt");
     /// ```
-    pub fn set_ca_file<T: AsRef<Path>>(mut self, path: T) -> Self {
-        self.inner = self.inner.set_ca_file(path);
+    pub fn ca_file<T: AsRef<Path>>(mut self, path: T) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_ca_file(path).map(|_| builder));
         self
     }
 
@@ -83,10 +89,14 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_max_proto_version(TlsVersion::TLS_1_2);
+    ///     .max_proto_version(TlsVersion::TLS_1_2);
     /// ```
-    pub fn set_max_proto_version(mut self, version: TlsVersion) -> Self {
-        self.inner = self.inner.set_max_proto_version(version.into_inner());
+    pub fn max_proto_version(mut self, version: TlsVersion) -> Self {
+        self.inner = self.inner.and_then(|mut builder| {
+            builder
+                .set_max_proto_version(version.into_inner())
+                .map(|_| builder)
+        });
         self
     }
 
@@ -101,10 +111,14 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_min_proto_version(TlsVersion::TLS_1_2);
+    ///     .min_proto_version(TlsVersion::TLS_1_2);
     /// ```
-    pub fn set_min_proto_version(mut self, version: TlsVersion) -> Self {
-        self.inner = self.inner.set_min_proto_version(version.into_inner());
+    pub fn min_proto_version(mut self, version: TlsVersion) -> Self {
+        self.inner = self.inner.and_then(|mut builder| {
+            builder
+                .set_min_proto_version(version.into_inner())
+                .map(|_| builder)
+        });
         self
     }
 
@@ -122,12 +136,14 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_cipher_list(
+    ///     .cipher_list(
     ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
     ///     );
     /// ```
-    pub fn set_cipher_list(mut self, list: &str) -> Self {
-        self.inner = self.inner.set_cipher_list(list);
+    pub fn cipher_list(mut self, list: &str) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_cipher_list(list).map(|_| builder));
         self
     }
 
@@ -147,12 +163,14 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_cipher_suites(
+    ///     .cipher_suites(
     ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
     ///     );
     /// ```
-    pub fn set_cipher_suites(mut self, list: &str) -> Self {
-        self.inner = self.inner.set_cipher_suites(list);
+    pub fn cipher_suites(mut self, list: &str) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_cipher_suites(list).map(|_| builder));
         self
     }
 
@@ -168,12 +186,14 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsFileType};
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .set_certificate_file("cert.pem", TlsFileType::PEM);
+    ///     .certificate_file("cert.pem", TlsFileType::PEM);
     /// ```
-    pub fn set_certificate_file<T: AsRef<Path>>(mut self, path: T, file_type: TlsFileType) -> Self {
-        self.inner = self
-            .inner
-            .set_certificate_file(path, file_type.into_inner());
+    pub fn certificate_file<T: AsRef<Path>>(mut self, path: T, file_type: TlsFileType) -> Self {
+        self.inner = self.inner.and_then(|mut builder| {
+            builder
+                .set_certificate_file(path, file_type.into_inner())
+                .map(|_| builder)
+        });
         self
     }
 
@@ -188,29 +208,23 @@ impl TlsConfigBuilder {
     /// ```
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
-    /// let builder = TlsConfigBuilder::new().set_certificate_chain_file("cert.pem");
+    /// let builder = TlsConfigBuilder::new().certificate_chain_file("cert.pem");
     /// ```
-    pub fn set_certificate_chain_file<T: AsRef<Path>>(mut self, path: T) -> Self {
-        self.inner = self.inner.set_certificate_chain_file(path);
+    pub fn certificate_chain_file<T: AsRef<Path>>(mut self, path: T) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_certificate_chain_file(path).map(|_| builder));
         self
     }
 
     /// Adds custom root certificate.
     pub fn add_root_certificates(mut self, certs: Certificate) -> Self {
         for cert in certs.inner {
-            let store = match self.inner.cert_store_mut() {
-                Ok(store) => store,
-                Err(e) => {
-                    self.inner = SslContextBuilder::from_error(e);
-                    return self;
-                }
-            };
-            if let Err(e) = store.add_cert(cert.0) {
-                self.inner = SslContextBuilder::from_error(e);
-                return self;
-            }
+            self.inner = self.inner.and_then(|mut builder| {
+                { Ok(builder.cert_store_mut()).map(|store| store.add_cert(cert.0)) }
+                    .map(|_| builder)
+            });
         }
-
         self
     }
 
@@ -223,10 +237,12 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::{TlsConfigBuilder};
     ///
     /// let protocols = b"\x06spdy/1\x08http/1.1";
-    /// let builder = TlsConfigBuilder::new().set_alpn_protos(protocols);
+    /// let builder = TlsConfigBuilder::new().alpn_protos(protocols);
     /// ```
-    pub fn set_alpn_protos(mut self, protocols: &[u8]) -> Self {
-        self.inner = self.inner.set_alpn_protos(protocols);
+    pub fn alpn_protos(mut self, protocols: &[u8]) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_alpn_protos(protocols).map(|_| builder));
         self
     }
 
@@ -243,10 +259,12 @@ impl TlsConfigBuilder {
     /// let protocols = AlpnProtocolList::new()
     ///     .extend(AlpnProtocol::SPDY1)
     ///     .extend(AlpnProtocol::HTTP11);
-    /// let builder = TlsConfigBuilder::new().set_alpn_protos(protocols.as_slice());
+    /// let builder = TlsConfigBuilder::new().alpn_protos(protocols.as_slice());
     /// ```
-    pub fn set_alpn_proto_list(mut self, list: AlpnProtocolList) -> Self {
-        self.inner = self.inner.set_alpn_protos(list.as_slice());
+    pub fn alpn_proto_list(mut self, list: AlpnProtocolList) -> Self {
+        self.inner = self
+            .inner
+            .and_then(|mut builder| builder.set_alpn_protos(list.as_slice()).map(|_| builder));
         self
     }
 
@@ -254,12 +272,81 @@ impl TlsConfigBuilder {
     /// Default to `true` -- uses built-in system certs.
     pub fn build_in_root_certs(mut self, is_use: bool) -> Self {
         if !is_use {
-            let cert_store = X509Store::new();
-            match cert_store {
-                Ok(store) => self.inner = self.inner.set_cert_store(store),
-                Err(e) => self.inner = SslContextBuilder::from_error(e),
-            }
+            self.inner = X509Store::new().and_then(|store| {
+                self.inner.and_then(|mut builder| {
+                    {
+                        builder.set_cert_store(store);
+                        Ok(())
+                    }
+                    .map(|_| builder)
+                })
+            });
         }
+        self
+    }
+
+    /// Controls the use of certificates verification.
+    ///
+    /// Defaults to `false` -- verify certificates.
+    ///
+    /// # Warning
+    ///
+    /// When sets `true`, any certificate for any site will be trusted for use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::util::TlsConfigBuilder;
+    ///
+    /// let builder = TlsConfigBuilder::new().danger_accept_invalid_certs(true);
+    /// ```
+    pub fn danger_accept_invalid_certs(mut self, is_invalid: bool) -> Self {
+        if is_invalid {
+            self.inner = self.inner.and_then(|mut builder| {
+                {
+                    builder.set_verify(crate::util::c_openssl::ssl::SSL_VERIFY_NONE);
+                    Ok(())
+                }
+                .map(|_| builder)
+            });
+        }
+        self
+    }
+
+    /// Controls the use of hostname verification.
+    ///
+    /// Defaults to `false` -- verify hostname.
+    ///
+    /// # Warning
+    ///
+    /// When sets `true`, any valid certificate for any site will be trusted for
+    /// use from any other.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::util::TlsConfigBuilder;
+    ///
+    /// let builder = TlsConfigBuilder::new().danger_accept_invalid_hostnames(true);
+    /// ```
+    pub fn danger_accept_invalid_hostnames(mut self, invalid_hostname: bool) -> Self {
+        self.verify_hostname = !invalid_hostname;
+        self
+    }
+
+    /// Controls the use of TLS server name indication.
+    ///
+    /// Defaults to `true` -- sets sni.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::util::TlsConfigBuilder;
+    ///
+    /// let builder = TlsConfigBuilder::new().sni(true);
+    /// ```
+    pub fn sni(mut self, use_sni: bool) -> Self {
+        self.use_sni = use_sni;
         self
     }
 
@@ -271,16 +358,23 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
     ///
     /// let context = TlsConfigBuilder::new()
-    ///     .set_ca_file("ca.crt")
-    ///     .set_max_proto_version(TlsVersion::TLS_1_2)
-    ///     .set_min_proto_version(TlsVersion::TLS_1_2)
-    ///     .set_cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
+    ///     .ca_file("ca.crt")
+    ///     .max_proto_version(TlsVersion::TLS_1_2)
+    ///     .min_proto_version(TlsVersion::TLS_1_2)
+    ///     .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
     ///     .build();
     /// ```
     pub fn build(self) -> Result<TlsConfig, HttpClientError> {
-        Ok(TlsConfig(self.inner.build().map_err(|e| {
-            HttpClientError::new_with_cause(ErrorKind::Build, Some(e))
-        })?))
+        let ctx = self
+            .inner
+            .map(|builder| builder.build())
+            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Build, Some(e)))?;
+
+        Ok(TlsConfig {
+            ctx,
+            use_sni: self.use_sni,
+            verify_hostname: self.verify_hostname,
+        })
     }
 }
 
@@ -301,7 +395,11 @@ impl Default for TlsConfigBuilder {
 /// let builder = TlsConfig::builder();
 /// ```
 #[derive(Clone)]
-pub struct TlsConfig(SslContext);
+pub struct TlsConfig {
+    ctx: SslContext,
+    use_sni: bool,
+    verify_hostname: bool,
+}
 
 impl TlsConfig {
     /// Creates a new, default `TlsContextBuilder`.
@@ -318,16 +416,29 @@ impl TlsConfig {
     }
 
     /// Creates a new, default `TlsSsl`.
-    pub(crate) fn ssl(&self) -> Result<TlsSsl, ErrorStack> {
-        let ctx = &self.0;
-        let ssl = Ssl::new(ctx)?;
+    pub(crate) fn ssl_new(&self, domain: &str) -> Result<TlsSsl, ErrorStack> {
+        let ctx = &self.ctx;
+        let mut ssl = Ssl::new(ctx)?;
+
+        // SNI extension in `ClientHello` stage.
+        if self.use_sni && domain.parse::<IpAddr>().is_err() {
+            ssl.set_host_name_in_sni(domain)?;
+        }
+
+        // Hostname verification in certificate verification.
+        if self.verify_hostname {
+            ssl.set_verify_hostname(domain)?;
+        }
         Ok(TlsSsl(ssl))
     }
 }
 
 impl Default for TlsConfig {
     fn default() -> Self {
-        TlsConfig::builder().build().unwrap()
+        // It must can be successful.
+        TlsConfig::builder()
+            .build()
+            .expect("TlsConfig build error!")
     }
 }
 
@@ -337,14 +448,6 @@ pub(crate) struct TlsSsl(Ssl);
 impl TlsSsl {
     pub(crate) fn into_inner(self) -> Ssl {
         self.0
-    }
-
-    pub(crate) fn set_sni_verify(&mut self, name: &str) -> Result<(), ErrorStack> {
-        let ssl = &mut self.0;
-        if name.parse::<IpAddr>().is_err() {
-            ssl.set_host_name(name)?;
-        }
-        Ok(())
     }
 }
 
@@ -524,7 +627,7 @@ mod ut_openssl_adapter {
     fn ut_tls_config_builder_new() {
         let _ = TlsConfigBuilder::default();
         let builder = TlsConfigBuilder::new();
-        assert!(builder.set_ca_file("folder/ca.crt").build().is_err());
+        assert!(builder.ca_file("folder/ca.crt").build().is_err());
     }
 
     /// UT test cases for `TlsConfigBuilder::new`.
@@ -536,7 +639,7 @@ mod ut_openssl_adapter {
     /// 4. Checks if the result is as expected.
     #[test]
     fn ut_set_cipher_suites() {
-        let builder = TlsConfigBuilder::new().set_cipher_suites("INVALID STRING");
+        let builder = TlsConfigBuilder::new().cipher_suites("INVALID STRING");
         assert!(builder.build().is_err());
     }
 
@@ -549,7 +652,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_max_proto_version() {
         let builder = TlsConfigBuilder::new()
-            .set_max_proto_version(TlsVersion::TLS_1_2)
+            .max_proto_version(TlsVersion::TLS_1_2)
             .build();
         assert!(builder.is_ok());
     }
@@ -563,7 +666,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_min_proto_version() {
         let builder = TlsConfigBuilder::new()
-            .set_min_proto_version(TlsVersion::TLS_1_2)
+            .min_proto_version(TlsVersion::TLS_1_2)
             .build();
         assert!(builder.is_ok());
     }
@@ -577,9 +680,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_cipher_list() {
         let builder = TlsConfigBuilder::new()
-            .set_cipher_list(
-                "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
-            )
+            .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
             .build();
         assert!(builder.is_ok());
     }
@@ -594,7 +695,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_certificate_file() {
         let builder = TlsConfigBuilder::new()
-            .set_certificate_file("cert.pem", TlsFileType::PEM)
+            .certificate_file("cert.pem", TlsFileType::PEM)
             .build();
         assert!(builder.is_err());
     }
@@ -609,7 +710,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_certificate_chain_file() {
         let builder = TlsConfigBuilder::new()
-            .set_certificate_chain_file("cert.pem")
+            .certificate_chain_file("cert.pem")
             .build();
         assert!(builder.is_err());
     }
@@ -654,7 +755,7 @@ mod ut_openssl_adapter {
     #[test]
     fn ut_set_alpn_proto_list() {
         let builder = TlsConfigBuilder::new()
-            .set_alpn_proto_list(
+            .alpn_proto_list(
                 AlpnProtocolList::new()
                     .extend(AlpnProtocol::HTTP11)
                     .extend(AlpnProtocol::H2),
@@ -667,18 +768,18 @@ mod ut_openssl_adapter {
     ///
     /// # Brief
     /// 1. Creates a `TlsConfig` by calling `TlsConfigBuilder::new` and `TlsConfigBuilder::build`.
-    /// 2. Creates a `TlsSsl` by calling `TlsConfig::ssl`.
-    /// 3. Calls `TlsSsl::set_sni_verify` and `TlsSsl::into_inner`.
+    /// 2. Creates a `TlsSsl` by calling `TlsConfig::ssl_new`.
+    /// 3. Calls `TlsSsl::into_inner`.
     /// 4. Checks if the result is as expected.
     #[test]
     fn ut_tls_ssl() {
         let config = TlsConfigBuilder::new()
             .build()
             .expect("TlsConfig build error.");
-        let mut ssl = config.ssl().expect("Ssl build error.");
-        ssl.set_sni_verify("host name")
-            .expect("Set SNI verify error.");
-        let _ssl = ssl.into_inner();
+        let _ssl = config
+            .ssl_new("host name")
+            .expect("Ssl build error.")
+            .into_inner();
     }
 
     /// UT test cases for `Cert::from_pem`.

@@ -16,19 +16,16 @@
 
 use std::sync::Arc;
 use ylong_http_client::async_impl::{Body, ClientBuilder};
-use ylong_http_client::{RequestBuilder, StatusCode, TextBody, Version};
+use ylong_http_client::{HttpClientError, RequestBuilder, StatusCode, TextBody, Version};
 
-fn main() {
+fn main() -> Result<(), HttpClientError> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
         .expect("Build runtime failed.");
 
-    let client = ClientBuilder::new()
-        .http2_prior_knowledge()
-        .build()
-        .unwrap();
+    let client = ClientBuilder::new().http2_prior_knowledge().build()?;
 
     let client_interface = Arc::new(client);
     let mut shut_downs = vec![];
@@ -42,10 +39,9 @@ fn main() {
                 .url("127.0.0.1:5678")
                 .method("GET")
                 .header("host", "127.0.0.1")
-                .body(TextBody::from_bytes(body_text.as_bytes()))
-                .unwrap();
+                .body(TextBody::from_bytes(body_text.as_bytes()))?;
 
-            let mut response = client.request(request).await.unwrap();
+            let mut response = client.request(request).await?;
             assert_eq!(response.version(), &Version::HTTP2);
             assert_eq!(response.status(), &StatusCode::OK);
 
@@ -77,4 +73,5 @@ fn main() {
         rt.block_on(shut_down)
             .expect("Runtime wait for server shutdown failed");
     }
+    Ok(())
 }
