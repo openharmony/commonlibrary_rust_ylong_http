@@ -34,13 +34,6 @@
             "header_files": []
           },
           "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_inner"
-        },      
-        {
-          "header": {
-            "header_base": [],
-            "header_files": []
-          },
-          "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client"
         }
       ],
       "test": []
