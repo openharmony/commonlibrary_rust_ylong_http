@@ -33,16 +33,15 @@ mod timeout;
 mod uploader;
 
 pub use client::ClientBuilder;
-
+pub(crate) use conn::StreamData;
 pub use connector::Connector;
+pub(crate) use connector::HttpConnector;
 pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
 pub use http_body::HttpBody;
-pub use uploader::{UploadOperator, Uploader, UploaderBuilder};
-pub use ylong_http::body::{async_impl::Body, MultiPart, Part};
-
-pub(crate) use conn::StreamData;
-pub(crate) use connector::HttpConnector;
 pub(crate) use pool::ConnPool;
+pub use uploader::{UploadOperator, Uploader, UploaderBuilder};
+pub use ylong_http::body::async_impl::Body;
+pub use ylong_http::body::{MultiPart, Part};
 
 #[cfg(feature = "__tls")]
 mod ssl_stream;

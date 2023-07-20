@@ -25,9 +25,9 @@ extern "C" {
 
     pub(crate) fn ERR_clear_error();
 
-    /// Returns the earliest error code from the thread's error queue and removes
-    /// the entry. This function can be called repeatedly until there are no more
-    /// error codes to return.
+    /// Returns the earliest error code from the thread's error queue and
+    /// removes the entry. This function can be called repeatedly until
+    /// there are no more error codes to return.
     #[cfg(feature = "c_openssl_3_0")]
     pub(crate) fn ERR_get_error_all(
         file: *mut *const c_char,

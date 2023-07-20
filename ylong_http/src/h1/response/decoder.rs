@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::mem::take;
+
 use crate::error::{ErrorKind, HttpError};
 use crate::h1::H1Error;
 use crate::headers::Headers;
 use crate::response::status::StatusCode;
 use crate::response::ResponsePart;
 use crate::version::Version;
-use core::mem::take;
 
 /// `HTTP/1.1` response decoder, which support decoding multi-segment byte
 /// streams into `Response`.
@@ -30,11 +31,7 @@ use core::mem::take;
 ///
 /// // The complete message is:
 /// // "HTTP/1.1 304 OK\r\nContent-Length:4\r\n\r\nbody"
-/// let strings = [
-///     "HTTP/1.1 304 OK\r\nCon",
-///     "tent-Length:",
-///     "4\r\n\r\nbody",
-/// ];
+/// let strings = ["HTTP/1.1 304 OK\r\nCon", "tent-Length:", "4\r\n\r\nbody"];
 ///
 /// // We need to create a decoder first.
 /// let mut decoder = ResponseDecoder::new();
@@ -50,26 +47,40 @@ use core::mem::take;
 /// // Then we can use the decode result.
 /// assert_eq!(part.version.as_str(), "HTTP/1.1");
 /// assert_eq!(part.status.as_u16(), 304);
-/// assert_eq!(part.headers.get("content-length").unwrap().to_str().unwrap(), "4");
+/// assert_eq!(
+///     part.headers
+///         .get("content-length")
+///         .unwrap()
+///         .to_str()
+///         .unwrap(),
+///     "4"
+/// );
 /// assert_eq!(body, b"body");
 /// ```
 pub struct ResponseDecoder {
-    stage: ParseStage, // Parsing phase, corresponding to each component of response-message.
+    // Parsing phase, corresponding to each component of response-message.
+    stage: ParseStage,
     version: Option<Version>,
     status_code: Option<StatusCode>,
     headers: Option<Headers>,
-    head_key: Vec<u8>, // Cache the parsed header key.
-    rest: Vec<u8>, // Cache the response-message component whose current bytes segment is incomplete,
-    new_line: bool, // The value is true when the last byte of the current byte segment is CR.
+    // Cache the parsed header key.
+    head_key: Vec<u8>,
+    // Cache the response-message component whose current bytes segment is incomplete
+    rest: Vec<u8>,
+    // The value is true when the last byte of the current byte segment is CR.
+    new_line: bool,
 }
 
 // Component parsing status
 enum TokenStatus<T, E> {
-    Complete(T), // The current component is completely parsed.
-    Partial(E),  // The current component is not completely parsed.
+    // The current component is completely parsed.
+    Complete(T),
+    // The current component is not completely parsed.
+    Partial(E),
 }
 
-// ResponseDecoder parsing phase, All components of response-message are as follows:
+// ResponseDecoder parsing phase, All components of response-message are as
+// follows:
 // ---------------------------------------------------------
 // | HTTP-version SP status-code SP [ reason-phrase ]CRLF  | // status-line
 // | *( field-name ":" OWS field-value OWS CRLF )          | // field-line
@@ -78,13 +89,20 @@ enum TokenStatus<T, E> {
 // ---------------------------------------------------------
 #[derive(Clone)]
 enum ParseStage {
-    Initial,    // Decoder initialization phase, The decoder parses the bytes for the first time.
-    Version,    // "HTTP-version" phase of parsing response-message
-    StatusCode, // "status-code" phase of parsing response-message
-    Reason,     // "reason-phrase" phase of parsing response-message
-    StatusCrlf, // CRLF after "reason-phrase" of parsing response-message
-    Header(HeaderStage), // "field-line" phase of parsing response-message
-    BlankLine,  // CRLF after "field-line" of parsing response-message
+    // Decoder initialization phase, The decoder parses the bytes for the first time.
+    Initial,
+    // "HTTP-version" phase of parsing response-message
+    Version,
+    // "status-code" phase of parsing response-message
+    StatusCode,
+    // "reason-phrase" phase of parsing response-message
+    Reason,
+    // CRLF after "reason-phrase" of parsing response-message
+    StatusCrlf,
+    // "field-line" phase of parsing response-message
+    Header(HeaderStage),
+    // CRLF after "field-line" of parsing response-message
+    BlankLine,
 }
 
 // Stage of parsing field-line, the filed line component is as follows:
@@ -171,17 +189,14 @@ impl ResponseDecoder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http::version::Version;
     /// use ylong_http::h1::ResponseDecoder;
+    /// use ylong_http::version::Version;
     ///
-    /// let valid = [
-    ///     "HTTP/1.1",
-    ///     " 304 OK\r\n\r\n",
-    /// ];
+    /// let valid = ["HTTP/1.1", " 304 OK\r\n\r\n"];
     /// let mut decoder = ResponseDecoder::new();
     /// // Returns `Ok(None)` if decoder needs more bytes to decode.
     /// assert_eq!(decoder.decode(valid[0].as_bytes()), Ok(None));
-    /// //Returns `ResponsePart` and a slice of bytes if decoder has complete decoding.
+    /// // Returns `ResponsePart` and a slice of bytes if decoder has complete decoding.
     /// let (part, body) = decoder.decode(valid[1].as_bytes()).unwrap().unwrap();
     /// assert_eq!(part.version, Version::HTTP1_1);
     /// assert_eq!(part.status.as_u16(), 304);
@@ -599,7 +614,8 @@ fn header_insert(
     let key = name.to_lowercase();
     let header_name = key.as_str();
     let header_value = value.as_str();
-    // If the response contains headers with the same name, add them to one `Headers`.
+    // If the response contains headers with the same name, add them to one
+    // `Headers`.
     headers.append(header_name, header_value)?;
     Ok(Some(headers))
 }
@@ -811,7 +827,8 @@ mod ut_decoder {
     /// UT test cases for `ResponseDecoder::decode`.
     ///
     /// # Brief
-    /// Decode a segmented transmission response and test `ParseStage` parsing rules.
+    /// Decode a segmented transmission response and test `ParseStage` parsing
+    /// rules.
     /// 1. Creates a `ResponseDecoder` by calling `ResponseDecoder::new`.
     /// 2. Decodes response bytes by calling `ResponseDecoder::decode`
     /// 3. Checks if the test result is correct.

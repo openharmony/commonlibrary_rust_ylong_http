@@ -21,27 +21,25 @@ mod decode;
 mod encode;
 mod mimetype;
 
-pub use common::{MimeMulti, MimeMultiBuilder, MimePart, MimePartBuilder, TokenStatus, XPart};
-pub use decode::MimeMultiDecoder;
-pub use encode::MimeMultiEncoder;
-pub use encode::MimePartEncoder;
-pub use mimetype::MimeType;
+use std::io::Cursor;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::vec::IntoIter;
 
 pub(crate) use common::{
     DecodeHeaders, EncodeHeaders, HeaderStatus, MixFrom, PartStatus, CR, CRLF, HTAB, LF, SP,
 };
+pub use common::{MimeMulti, MimeMultiBuilder, MimePart, MimePartBuilder, TokenStatus, XPart};
+pub use decode::MimeMultiDecoder;
 pub(crate) use decode::MimePartDecoder;
+pub use encode::{MimeMultiEncoder, MimePartEncoder};
+pub use mimetype::MimeType;
 
 // TODO: reuse mime later.
 
 // TODO: Adapter, remove this later.
 use crate::body::async_impl::{poll_read, Body};
-
 use crate::{AsyncRead, ReadBuf};
-use std::io::Cursor;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::vec::IntoIter;
 
 /// A structure that helps you build a `multipart/form-data` message.
 ///
@@ -85,8 +83,7 @@ impl MultiPart {
     /// ```
     /// # use ylong_http::body::{MultiPart, Part};
     ///
-    /// let multipart = MultiPart::new()
-    ///     .part(Part::new().name("name").body("xiaoming"));
+    /// let multipart = MultiPart::new().part(Part::new().name("name").body("xiaoming"));
     /// ```
     pub fn part(mut self, part: Part) -> Self {
         self.parts.push(part);
@@ -115,8 +112,7 @@ impl MultiPart {
     /// ```
     /// # use ylong_http::body::{MultiPart, Part};
     ///
-    /// let multipart = MultiPart::new()
-    ///     .part(Part::new().name("name").body("xiaoming"));
+    /// let multipart = MultiPart::new().part(Part::new().name("name").body("xiaoming"));
     ///
     /// let bytes = multipart.total_bytes();
     /// ```
@@ -571,10 +567,8 @@ fn xor_shift() -> u64 {
 
 #[cfg(test)]
 mod ut_mime {
-    use crate::body::{
-        mime::{gen_boundary, MultiPartState, ReadStatus},
-        MultiPart, Part,
-    };
+    use crate::body::mime::{gen_boundary, MultiPartState, ReadStatus};
+    use crate::body::{MultiPart, Part};
 
     /// UT test cases for `gen_boundar`.
     ///
@@ -620,7 +614,8 @@ mod ut_mime {
         assert!(part.body.is_none());
     }
 
-    /// UT test cases for `Part::name`, `Part::name`, `Part::file_name` and `Part::body`.
+    /// UT test cases for `Part::name`, `Part::name`, `Part::file_name` and
+    /// `Part::body`.
     ///
     /// # Brief
     /// 1. Creates a `Part` and sets values.

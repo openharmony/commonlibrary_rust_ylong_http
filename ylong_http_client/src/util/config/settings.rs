@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::{ErrorKind, HttpClientError};
-use crate::util::proxy;
-use crate::util::redirect as redirect_util;
-use crate::util::redirect::{RedirectStrategy, TriggerKind};
 use core::cmp;
 use core::time::Duration;
+
 use ylong_http::request::uri::Uri;
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::Response;
+
+use crate::error::{ErrorKind, HttpClientError};
+use crate::util::redirect::{RedirectStrategy, TriggerKind};
+use crate::util::{proxy, redirect as redirect_util};
 
 /// Redirects settings of requests.
 ///
@@ -147,7 +148,8 @@ pub struct Retry(Option<usize>);
 impl Retry {
     const MAX_RETRIES: usize = 3;
 
-    /// Customizes the number of retries. Returns `Err` if `times` is greater than 3.
+    /// Customizes the number of retries. Returns `Err` if `times` is greater
+    /// than 3.
     ///
     /// # Examples
     ///
@@ -296,7 +298,8 @@ impl SpeedLimit {
     /// Sets the minimum speed and the seconds for which the current speed is
     /// allowed to be less than this minimum speed.
     ///
-    /// The unit of speed is bytes per second, and the unit of duration is seconds.
+    /// The unit of speed is bytes per second, and the unit of duration is
+    /// seconds.
     ///
     /// The minimum speed cannot exceed the maximum speed that has been set. If
     /// the set value exceeds the currently set maximum speed, the minimum speed
@@ -457,7 +460,8 @@ pub struct ProxyBuilder {
 }
 
 impl ProxyBuilder {
-    /// Pass HTTPS to the proxy URL, but the https uri which is in the no proxy list, will not pass the proxy URL.
+    /// Pass HTTPS to the proxy URL, but the https uri which is in the no proxy
+    /// list, will not pass the proxy URL.
     ///
     /// # Examples
     ///
@@ -474,7 +478,8 @@ impl ProxyBuilder {
         self
     }
 
-    /// Pass HTTPS to the proxy URL, and set username and password which is required by the proxy server.
+    /// Pass HTTPS to the proxy URL, and set username and password which is
+    /// required by the proxy server.
     ///
     /// # Examples
     ///
@@ -507,15 +512,16 @@ impl ProxyBuilder {
 
 #[cfg(test)]
 mod ut_settings {
-    use crate::error::HttpClientError;
-    use crate::util::redirect as redirect_util;
-    use crate::util::redirect::TriggerKind;
-    use crate::{Redirect, Retry};
     use ylong_http::h1::ResponseDecoder;
     use ylong_http::request::uri::Uri;
     use ylong_http::request::Request;
     use ylong_http::response::status::StatusCode;
     use ylong_http::response::Response;
+
+    use crate::error::HttpClientError;
+    use crate::util::redirect as redirect_util;
+    use crate::util::redirect::TriggerKind;
+    use crate::{Redirect, Retry};
 
     fn create_trigger(
         redirect: &Redirect,

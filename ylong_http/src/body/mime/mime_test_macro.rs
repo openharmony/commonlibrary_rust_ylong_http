@@ -62,8 +62,9 @@ macro_rules! part_encode_compare {
             },
         );
 
+        // default 1
         #[allow(unused_assignments, unused_mut)]
-        let mut len = 1; // default 1
+        let mut len = 1;
 
         $(len = $size;)?
         let mut buf = vec![0u8; len];
@@ -107,9 +108,9 @@ macro_rules! part_encode_compare {
                 $(BodyAsyncReader: $body4,)?
             },
         );
-
+        // default 1
         #[allow(unused_assignments, unused_mut)]
-        let mut len = 1; // default 1
+        let mut len = 1;
 
         $(len = $size;)?
         let mut buf = vec![0u8; len];

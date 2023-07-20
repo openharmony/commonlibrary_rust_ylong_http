@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This is a simple synchronous HTTP client redirect example using the ylong_http_client crate.
-//! It demonstrates creating a client, making a request, and reading the response.
+//! This is a simple synchronous HTTP client redirect example using the
+//! ylong_http_client crate. It demonstrates creating a client, making a
+//! request, and reading the response.
 
 use ylong_http_client::sync_impl::{BodyReader, ClientBuilder};
 use ylong_http_client::util::Redirect;

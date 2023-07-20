@@ -11,24 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    body::{
-        async_impl,
-        mime::{
-            common::{data_copy, SizeResult},
-            EncodeHeaders,
-        },
-        sync_impl, MimeMulti, MimePartEncoder, TokenStatus, XPart,
-    },
-    headers::Headers,
-};
-use core::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use std::collections::VecDeque;
 
-/// `MimeMultiEncoder` can get a [`MimeMulti`] to encode into data that can be transmitted.
+use crate::body::mime::common::{data_copy, SizeResult};
+use crate::body::mime::EncodeHeaders;
+use crate::body::{async_impl, sync_impl, MimeMulti, MimePartEncoder, TokenStatus, XPart};
+use crate::headers::Headers;
+
+/// `MimeMultiEncoder` can get a [`MimeMulti`] to encode into data that can be
+/// transmitted.
 ///
 /// [`MimeMulti`]: MimeMulti
 ///
@@ -91,7 +84,8 @@ use std::collections::VecDeque;
 ///     v_str.extend_from_slice(&buf[..len]);
 /// }
 /// assert_eq!(v_size, vec![30, 30, 30, 30, 30, 30, 13]);
-/// assert_eq!(v_str,
+/// assert_eq!(
+///     v_str,
 ///     b"--abcde\r\nkey3:value3\r\n\r\n33333\r\n--abcde\r\n\
 ///     content-type:multipart/mixed; boundary=abc\r\n\r\n--abc\r\n\
 ///     key1:value1\r\n\r\n111111\r\n--abc\r\nkey2:value2\r\n\r\n22222\r\n\
@@ -101,7 +95,8 @@ use std::collections::VecDeque;
 #[derive(Debug)]
 pub struct MimeMultiEncoder<'a> {
     stages: VecDeque<MultiStage<'a>>,
-    headers: Option<Headers>, // default is not part, don't encode headers
+    // default is not part, don't encode headers
+    headers: Option<Headers>,
     src_idx: usize,
     src: Vec<u8>,
 }
@@ -116,9 +111,7 @@ impl<'a> MimeMultiEncoder<'a> {
     /// ```
     /// use ylong_http::body::{MimeMulti, MimeMultiEncoder};
     ///
-    /// let multi = MimeMulti::builder()
-    ///     .build()
-    ///     .unwrap();
+    /// let multi = MimeMulti::builder().build().unwrap();
     /// let multi_encoder = MimeMultiEncoder::from_multi(multi);
     /// ```
     pub fn from_multi(multi: MimeMulti<'a>) -> Self {
@@ -360,11 +353,16 @@ impl async_impl::Body for MimeMultiEncoder<'_> {
 
 #[derive(Debug)]
 enum MultiStage<'a> {
-    Crlf,                          // \r\n
-    Dash,                          // --
-    Boundary(Vec<u8>),             // boundary
-    Headers(EncodeHeaders),        // headers
-    MimePart(MimePartEncoder<'a>), // part
+    // \r\n
+    Crlf,
+    // --
+    Dash,
+    // boundary
+    Boundary(Vec<u8>),
+    // headers
+    Headers(EncodeHeaders),
+    // part
+    MimePart(MimePartEncoder<'a>),
 }
 
 #[cfg(test)]
@@ -440,7 +438,8 @@ mod ut_mime_multi_encoder {
     /// 1. Creates a `MimeMulti`.
     /// 2. Creates several `MimePart`, sets headers, sets body, builds.
     /// 3. Adds `MimePart` to `MimeMulti` by `add_part`.
-    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes synchronously.
+    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes
+    ///    synchronously.
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_mime_multi_encoder_data_many_parts() {
@@ -477,7 +476,8 @@ mod ut_mime_multi_encoder {
     /// 1. Creates a `MimeMulti`.
     /// 2. Creates several `MimePart`, sets headers, sets body, builds.
     /// 3. Creates a main `MimeMulti`, adds parts.
-    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes synchronously.
+    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes
+    ///    synchronously.
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_mime_multi_encoder_data_many_parts_nesting() {
@@ -539,7 +539,8 @@ mod ut_mime_multi_encoder {
     /// 1. Creates a `MimeMulti`.
     /// 2. Creates several `MimePart`, sets headers, sets body, builds.
     /// 3. Creates a main `MimeMulti`, adds parts.
-    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes asynchronously.
+    /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes
+    ///    asynchronously.
     /// 5. Checks whether the result is correct.
     #[cfg(feature = "tokio_base")]
     #[tokio::test]

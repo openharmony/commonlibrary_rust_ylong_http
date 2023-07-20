@@ -11,25 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::body::{
-    async_impl::{self, DataFuture},
-    mime::common::{data_copy, SizeResult, TokenStatus},
-    sync_impl,
-};
-use crate::{AsyncRead, ReadBuf};
-use core::{
-    fmt::Debug,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use core::fmt::Debug;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use std::io::Read;
 
-// Uses Box<dyn trait> so that it can be put into a list(like vec) with different T.
+use crate::body::async_impl::{self, DataFuture};
+use crate::body::mime::common::{data_copy, SizeResult, TokenStatus};
+use crate::body::sync_impl;
+use crate::{AsyncRead, ReadBuf};
+
+// Uses Box<dyn trait> so that it can be put into a list(like vec) with
+// different T.
 pub(crate) enum MixFrom<'a> {
-    Owned { bytes: Vec<u8>, index: usize }, // the read content is Vec<u8>
-    Slice { bytes: &'a [u8], index: usize }, // the read content is from memory
-    Reader(Box<dyn Read + Send + Sync>),    // the read content is from a synchronous reader
-    AsyncReader(Box<dyn AsyncRead + Send + Sync + Unpin>), // the read content is from an asynchronous reader
+    // the read content is Vec<u8>
+    Owned { bytes: Vec<u8>, index: usize },
+    // the read content is from memory
+    Slice { bytes: &'a [u8], index: usize },
+    // the read content is from a synchronous reader
+    Reader(Box<dyn Read + Send + Sync>),
+    // the read content is from an asynchronous reader
+    AsyncReader(Box<dyn AsyncRead + Send + Sync + Unpin>),
 }
 
 impl<'a> MixFrom<'a> {
@@ -135,7 +137,8 @@ impl Debug for MixFrom<'_> {
     }
 }
 
-// It is not a complete implementation, only implements for MixFrom::Owned && MixFrom::Slice.
+// It is not a complete implementation, only implements for MixFrom::Owned &&
+// MixFrom::Slice.
 impl PartialEq for MixFrom<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -214,7 +217,8 @@ impl async_impl::Body for MixFrom<'_> {
 
 #[cfg(test)]
 mod ut_mix {
-    use crate::body::{async_impl, mime::common::mix::MixFrom, sync_impl};
+    use crate::body::mime::common::mix::MixFrom;
+    use crate::body::{async_impl, sync_impl};
 
     /// Builds a `MixFrom`.
     macro_rules! mix_build {
@@ -261,9 +265,9 @@ mod ut_mix {
                     $(BodyAsyncReader: $body4,)?
                 },
             );
-
+            // default 1
             #[allow(unused_assignments, unused_mut)]
-            let mut len = 1; // default 1
+            let mut len = 1;
 
             $(len = $size;)?
             let mut buf = vec![0u8; len];
@@ -303,8 +307,9 @@ mod ut_mix {
                 },
             );
 
+            // default 1
             #[allow(unused_assignments, unused_mut)]
-            let mut len = 1; // default 1
+            let mut len = 1;
 
             $(len = $size;)?
             let mut buf = vec![0u8; len];
@@ -376,7 +381,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_reader`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_reader`.
+    /// 1. Creates a `MixFrom` from synchronous read content by
+    ///    `MixFrom::set_reader`.
     /// 2. Checks whether the result is correct.
     #[test]
     fn ut_mix_set_reader() {
@@ -392,7 +398,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_async_reader`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from asynchronous read content by `MixFrom::set_async_reader`.
+    /// 1. Creates a `MixFrom` from asynchronous read content by
+    ///    `MixFrom::set_async_reader`.
     /// 2. Encodes by synchronous encoding.
     /// 3. Checks whether the result is correct.
     #[test]
@@ -409,7 +416,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_async_reader`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from asynchronous read content by `MixFrom::set_async_reader`.
+    /// 1. Creates a `MixFrom` from asynchronous read content by
+    ///    `MixFrom::set_async_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
     #[cfg(feature = "tokio_base")]
@@ -427,7 +435,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_reader`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_reader`.
+    /// 1. Creates a `MixFrom` from synchronous read content by
+    ///    `MixFrom::set_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
     #[cfg(feature = "tokio_base")]
@@ -445,7 +454,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_bytes`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_bytes`.
+    /// 1. Creates a `MixFrom` from synchronous read content by
+    ///    `MixFrom::set_bytes`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
     #[cfg(feature = "tokio_base")]
@@ -463,7 +473,8 @@ mod ut_mix {
     /// UT test cases for `MixFrom::set_owned`.
     ///
     /// # Brief
-    /// 1. Creates a `MixFrom` from synchronous read content by `MixFrom::set_owned`.
+    /// 1. Creates a `MixFrom` from synchronous read content by
+    ///    `MixFrom::set_owned`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
     #[cfg(feature = "tokio_base")]

@@ -11,22 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{InternalError, Ssl, SslError, SslErrorCode, SslRef};
-use crate::{
-    c_openssl::{
-        bio::{self, get_error, get_panic, get_stream_mut, get_stream_ref},
-        error::ErrorStack,
-        ffi::ssl::{SSL_connect, SSL_set_bio, SSL_shutdown},
-        foreign::Foreign,
-    },
-    util::c_openssl::bio::BioMethod,
-};
-use core::{fmt, marker::PhantomData, mem::ManuallyDrop};
+use core::fmt;
+use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
+use std::io::{self, Read, Write};
+use std::panic::resume_unwind;
+
 use libc::c_int;
-use std::{
-    io::{self, Read, Write},
-    panic::resume_unwind,
-};
+
+use super::{InternalError, Ssl, SslError, SslErrorCode, SslRef};
+use crate::c_openssl::bio::{self, get_error, get_panic, get_stream_mut, get_stream_ref};
+use crate::c_openssl::error::ErrorStack;
+use crate::c_openssl::ffi::ssl::{SSL_connect, SSL_set_bio, SSL_shutdown};
+use crate::c_openssl::foreign::Foreign;
+use crate::util::c_openssl::bio::BioMethod;
 
 /// A TLS session over a stream.
 pub struct SslStream<S> {
@@ -175,7 +173,8 @@ impl<S: Read + Write> Read for SslStream<S> {
                 // the close_notify alert. No more data can be read.
                 // Does not necessarily indicate that the underlying transport has been closed.
                 Err(ref e) if e.code == SslErrorCode::ZERO_RETURN => return Ok(0),
-                // A non-recoverable, fatal error in the SSL library occurred, usually a protocol error.
+                // A non-recoverable, fatal error in the SSL library occurred, usually a protocol
+                // error.
                 Err(ref e) if e.code == SslErrorCode::SYSCALL && e.get_io_error().is_none() => {
                     return Ok(0)
                 }

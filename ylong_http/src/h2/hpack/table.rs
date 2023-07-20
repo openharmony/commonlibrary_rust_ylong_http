@@ -14,7 +14,8 @@
 use std::collections::VecDeque;
 use std::ops::Add;
 
-/// `TableSearcher` is used to find specified content in static and dynamic tables.
+/// `TableSearcher` is used to find specified content in static and dynamic
+/// tables.
 pub(crate) struct TableSearcher<'a> {
     dynamic: &'a DynamicTable,
 }
@@ -68,9 +69,10 @@ pub(crate) enum TableIndex {
 /// [HPACK]: https://httpwg.org/specs/rfc7541.html
 ///
 /// # Introduction
-/// The dynamic table consists of a list of header fields maintained in first-in,
-/// first-out order. The first and newest entry in a dynamic table is at the
-/// lowest index, and the oldest entry of a dynamic table is at the highest index.
+/// The dynamic table consists of a list of header fields maintained in
+/// first-in, first-out order. The first and newest entry in a dynamic table is
+/// at the lowest index, and the oldest entry of a dynamic table is at the
+/// highest index.
 ///
 /// The dynamic table is initially empty. Entries are added as each header block
 /// is decompressed.
@@ -409,11 +411,16 @@ pub(crate) enum Header {
 impl Header {
     pub(crate) fn len(&self) -> usize {
         match self {
-            Header::Authority => 10, // 10 is the length of ":authority".
-            Header::Method => 7,     // 7 is the length of ":method".
-            Header::Path => 5,       // 5 is the length of ":path".
-            Header::Scheme => 7,     // 7 is the length of "scheme".
-            Header::Status => 7,     // 7 is the length of "status".
+            // 10 is the length of ":authority".
+            Header::Authority => 10,
+            // 7 is the length of ":method".
+            Header::Method => 7,
+            // 5 is the length of ":path".
+            Header::Path => 5,
+            // 7 is the length of "scheme".
+            Header::Scheme => 7,
+            // 7 is the length of "status".
+            Header::Status => 7,
             Header::Other(s) => s.len(),
         }
     }
@@ -533,8 +540,10 @@ mod ut_dynamic_table {
     /// UT test cases for `StaticTable::header_name` and `StaticTable::header`.
     ///
     /// # Brief
-    /// 1. Iterates over a range of indices, testing both `StaticTable::header_name` and `StaticTable::header`.
-    /// 2. Verifies the presence or absence of header names and headers based on the given index.
+    /// 1. Iterates over a range of indices, testing both
+    ///    `StaticTable::header_name` and `StaticTable::header`.
+    /// 2. Verifies the presence or absence of header names and headers based on
+    ///    the given index.
     #[test]
     fn ut_static_table() {
         // Checking header names for indices 1 to 64

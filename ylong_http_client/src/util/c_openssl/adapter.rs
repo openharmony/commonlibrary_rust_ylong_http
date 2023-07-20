@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{error::HttpClientError, util::AlpnProtocolList};
-use crate::{
-    util::c_openssl::{
-        error::ErrorStack,
-        ssl::{Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion},
-        x509::{X509Ref, X509Store, X509},
-    },
-    ErrorKind,
+use std::net::IpAddr;
+use std::path::Path;
+
+use crate::error::HttpClientError;
+use crate::util::c_openssl::error::ErrorStack;
+use crate::util::c_openssl::ssl::{
+    Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion,
 };
-use std::{net::IpAddr, path::Path};
+use crate::util::c_openssl::x509::{X509Ref, X509Store, X509};
+use crate::util::AlpnProtocolList;
+use crate::ErrorKind;
 
 /// `TlsContextBuilder` implementation based on `SSL_CTX`.
 ///
@@ -68,8 +69,7 @@ impl TlsConfigBuilder {
     /// ```
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
-    /// let builder = TlsConfigBuilder::new()
-    ///     .ca_file("ca.crt");
+    /// let builder = TlsConfigBuilder::new().ca_file("ca.crt");
     /// ```
     pub fn ca_file<T: AsRef<Path>>(mut self, path: T) -> Self {
         self.inner = self
@@ -79,7 +79,8 @@ impl TlsConfigBuilder {
     }
 
     /// Sets the maximum supported protocol version. A value of `None` will
-    /// enable protocol versions down the the highest version supported by `OpenSSL`.
+    /// enable protocol versions down the the highest version supported by
+    /// `OpenSSL`.
     ///
     /// Requires `OpenSSL 1.1.0` or or `LibreSSL 2.6.1` or newer.
     ///
@@ -88,8 +89,7 @@ impl TlsConfigBuilder {
     /// ```
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
     ///
-    /// let builder = TlsConfigBuilder::new()
-    ///     .max_proto_version(TlsVersion::TLS_1_2);
+    /// let builder = TlsConfigBuilder::new().max_proto_version(TlsVersion::TLS_1_2);
     /// ```
     pub fn max_proto_version(mut self, version: TlsVersion) -> Self {
         self.inner = self.inner.and_then(|mut builder| {
@@ -101,7 +101,8 @@ impl TlsConfigBuilder {
     }
 
     /// Sets the minimum supported protocol version. A value of `None` will
-    /// enable protocol versions down the the lowest version supported by `OpenSSL`.
+    /// enable protocol versions down the the lowest version supported by
+    /// `OpenSSL`.
     ///
     /// Requires `OpenSSL 1.1.0` or `LibreSSL 2.6.1` or newer.
     ///
@@ -110,8 +111,7 @@ impl TlsConfigBuilder {
     /// ```
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
     ///
-    /// let builder = TlsConfigBuilder::new()
-    ///     .min_proto_version(TlsVersion::TLS_1_2);
+    /// let builder = TlsConfigBuilder::new().min_proto_version(TlsVersion::TLS_1_2);
     /// ```
     pub fn min_proto_version(mut self, version: TlsVersion) -> Self {
         self.inner = self.inner.and_then(|mut builder| {
@@ -136,9 +136,7 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .cipher_list(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    ///     .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
     /// ```
     pub fn cipher_list(mut self, list: &str) -> Self {
         self.inner = self
@@ -163,9 +161,7 @@ impl TlsConfigBuilder {
     /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
-    ///     .cipher_suites(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    ///     .cipher_suites("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
     /// ```
     pub fn cipher_suites(mut self, list: &str) -> Self {
         self.inner = self
@@ -177,16 +173,16 @@ impl TlsConfigBuilder {
     /// Loads a leaf certificate from a file.
     ///
     /// Only a single certificate will be loaded - use `add_extra_chain_cert` to
-    /// add the remainder of the certificate chain, or `set_certificate_chain_file`
-    /// to load the entire chain from a single file.
+    /// add the remainder of the certificate chain, or
+    /// `set_certificate_chain_file` to load the entire chain from a single
+    /// file.
     ///
     /// # Examples
     ///
     /// ```
     /// use ylong_http_client::util::{TlsConfigBuilder, TlsFileType};
     ///
-    /// let builder = TlsConfigBuilder::new()
-    ///     .certificate_file("cert.pem", TlsFileType::PEM);
+    /// let builder = TlsConfigBuilder::new().certificate_file("cert.pem", TlsFileType::PEM);
     /// ```
     pub fn certificate_file<T: AsRef<Path>>(mut self, path: T, file_type: TlsFileType) -> Self {
         self.inner = self.inner.and_then(|mut builder| {
@@ -228,13 +224,14 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Sets the protocols to sent to the server for Application Layer Protocol Negotiation (ALPN).
+    /// Sets the protocols to sent to the server for Application Layer Protocol
+    /// Negotiation (ALPN).
     ///
     /// Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
     ///
     /// # Examples
     /// ```
-    /// use ylong_http_client::util::{TlsConfigBuilder};
+    /// use ylong_http_client::util::TlsConfigBuilder;
     ///
     /// let protocols = b"\x06spdy/1\x08http/1.1";
     /// let builder = TlsConfigBuilder::new().alpn_protos(protocols);
@@ -246,7 +243,8 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Sets the protocols to sent to the server for Application Layer Protocol Negotiation (ALPN).
+    /// Sets the protocols to sent to the server for Application Layer Protocol
+    /// Negotiation (ALPN).
     ///
     /// This method is based on `openssl::SslContextBuilder::set_alpn_protos`.
     ///
@@ -268,8 +266,8 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Controls the use of built-in system certificates during certificate validation.
-    /// Default to `true` -- uses built-in system certs.
+    /// Controls the use of built-in system certificates during certificate
+    /// validation. Default to `true` -- uses built-in system certs.
     pub fn build_in_root_certs(mut self, is_use: bool) -> Self {
         if !is_use {
             self.inner = X509Store::new().and_then(|store| {
@@ -350,7 +348,8 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Builds a `TlsContext`. Returns `Err` if an error occurred during configuration.
+    /// Builds a `TlsContext`. Returns `Err` if an error occurred during
+    /// configuration.
     ///
     /// # Examples
     ///
@@ -613,10 +612,8 @@ impl Certificate {
 
 #[cfg(test)]
 mod ut_openssl_adapter {
-    use crate::{
-        util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion},
-        AlpnProtocol, AlpnProtocolList, Certificate,
-    };
+    use crate::util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion};
+    use crate::{AlpnProtocol, AlpnProtocolList, Certificate};
 
     /// UT test cases for `TlsConfigBuilder::new`.
     ///
@@ -767,7 +764,8 @@ mod ut_openssl_adapter {
     /// UT test cases for `TlsConfig::ssl`.
     ///
     /// # Brief
-    /// 1. Creates a `TlsConfig` by calling `TlsConfigBuilder::new` and `TlsConfigBuilder::build`.
+    /// 1. Creates a `TlsConfig` by calling `TlsConfigBuilder::new` and
+    ///    `TlsConfigBuilder::build`.
     /// 2. Creates a `TlsSsl` by calling `TlsConfig::ssl_new`.
     /// 3. Calls `TlsSsl::into_inner`.
     /// 4. Checks if the result is as expected.

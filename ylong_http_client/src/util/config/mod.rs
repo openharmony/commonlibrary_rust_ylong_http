@@ -19,16 +19,13 @@ mod settings;
 pub(crate) use client::ClientConfig;
 pub(crate) use connector::ConnectorConfig;
 pub(crate) use http::{HttpConfig, HttpVersion};
-
 pub use settings::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 
 #[cfg(feature = "__tls")]
 mod tls;
-#[cfg(feature = "__tls")]
-pub use tls::{AlpnProtocol, AlpnProtocolList};
-
-#[cfg(feature = "tls_rust_ssl")]
-pub use tls::{Certificate, PrivateKey, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
-
 #[cfg(feature = "http2")]
 pub use http::http2::H2Config;
+#[cfg(feature = "__tls")]
+pub use tls::{AlpnProtocol, AlpnProtocolList};
+#[cfg(feature = "tls_rust_ssl")]
+pub use tls::{Certificate, PrivateKey, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};

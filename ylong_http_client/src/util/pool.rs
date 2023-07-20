@@ -17,6 +17,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
+
 use ylong_http::request::uri::{Authority, Scheme};
 
 pub(crate) struct Pool<K, V> {
@@ -54,9 +55,11 @@ impl PoolKey {
 }
 #[cfg(test)]
 mod ut_pool {
-    use crate::pool::{Pool, PoolKey};
     use std::sync::{Arc, Mutex};
+
     use ylong_http::request::uri::Uri;
+
+    use crate::pool::{Pool, PoolKey};
     /// UT test cases for `Pool::get`.
     ///
     /// # Brief

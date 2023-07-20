@@ -13,10 +13,12 @@
 
 #![cfg(all(feature = "sync", feature = "__tls"))]
 
-use crate::common::init_test_work_runtime;
-use common::TlsHandle;
 use std::path::PathBuf;
+
+use common::TlsHandle;
 use ylong_http_client::sync_impl::Body;
+
+use crate::common::init_test_work_runtime;
 
 #[macro_use]
 mod common;

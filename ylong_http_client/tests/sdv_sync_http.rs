@@ -16,10 +16,11 @@
 #[macro_use]
 mod common;
 
-use crate::common::init_test_work_runtime;
-use crate::common::HttpHandle;
 use std::sync::Arc;
+
 use ylong_http_client::sync_impl::Body;
+
+use crate::common::{init_test_work_runtime, HttpHandle};
 
 /// SDV test cases for `sync::Client`.
 ///

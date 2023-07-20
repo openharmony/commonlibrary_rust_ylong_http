@@ -33,7 +33,8 @@ pub struct DownloaderBuilder<S> {
     state: S,
 }
 
-/// A state indicates that `DownloaderBuilder` wants a body that needs to be downloaded.
+/// A state indicates that `DownloaderBuilder` wants a body that needs to be
+/// downloaded.
 pub struct WantsBody;
 
 impl DownloaderBuilder<WantsBody> {
@@ -171,7 +172,10 @@ impl<T: DownloadOperator> DownloaderBuilder<WantsConfig<T>> {
     /// # use ylong_http_client::Timeout;
     ///
     /// # async fn set_timeout(body: Response) {
-    /// let builder = DownloaderBuilder::new().body(body).console().timeout(Timeout::none());
+    /// let builder = DownloaderBuilder::new()
+    ///     .body(body)
+    ///     .console()
+    ///     .timeout(Timeout::none());
     /// # }
     /// ```
     pub fn timeout(mut self, timeout: Timeout) -> Self {
@@ -190,7 +194,10 @@ impl<T: DownloadOperator> DownloaderBuilder<WantsConfig<T>> {
     /// # use ylong_http_client::SpeedLimit;
     ///
     /// # async fn set_timeout(body: Response) {
-    /// let builder = DownloaderBuilder::new().body(body).console().speed_limit(SpeedLimit::none());
+    /// let builder = DownloaderBuilder::new()
+    ///     .body(body)
+    ///     .console()
+    ///     .speed_limit(SpeedLimit::none());
     /// # }
     /// ```
     pub fn speed_limit(mut self, speed_limit: SpeedLimit) -> Self {

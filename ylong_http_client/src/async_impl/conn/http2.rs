@@ -11,16 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::client::Retryable;
-use crate::async_impl::conn::HttpBody;
-use crate::async_impl::StreamData;
-use crate::error::{ErrorKind, HttpClientError};
-use crate::util::dispatcher::http2::Http2Conn;
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
 use std::cmp::min;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 use ylong_http::body::async_impl::Body;
 use ylong_http::error::HttpError;
 use ylong_http::h2;
@@ -30,6 +25,13 @@ use ylong_http::request::uri::Scheme;
 use ylong_http::request::{Request, RequestPart};
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::{Response, ResponsePart};
+
+use crate::async_impl::client::Retryable;
+use crate::async_impl::conn::HttpBody;
+use crate::async_impl::StreamData;
+use crate::error::{ErrorKind, HttpClientError};
+use crate::util::dispatcher::http2::Http2Conn;
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 
 const UNUSED_FLAG: u8 = 0x0;
 
@@ -45,7 +47,9 @@ where
     let part = request.part().clone();
     let body = request.body_mut();
 
-    // TODO Due to the reason of the Body structure, the use of the trailer is not implemented here for the time being, and it needs to be completed after the Body trait is provided to obtain the trailer interface
+    // TODO Due to the reason of the Body structure, the use of the trailer is not
+    // implemented here for the time being, and it needs to be completed after the
+    // Body trait is provided to obtain the trailer interface
     match build_data_frame(conn.id as usize, body).await? {
         None => {
             let headers = build_headers_frame(conn.id, part, true)
@@ -173,7 +177,8 @@ pub(crate) async fn build_data_frame<T: Body>(
     if data_vec.is_empty() {
         Ok(None)
     } else {
-        // TODO When the Body trait supports trailer, END_STREAM_FLAG needs to be modified
+        // TODO When the Body trait supports trailer, END_STREAM_FLAG needs to be
+        // modified
         let mut flag = FrameFlags::new(UNUSED_FLAG);
         flag.set_end_stream(true);
         Ok(Some(Frame::new(
@@ -248,7 +253,8 @@ fn build_pseudo_headers(request_part: &RequestPart) -> PseudoHeaders {
             .path_and_query()
             .or_else(|| Some(String::from("/"))),
     );
-    // TODO Validity verification is required, for example: `Authority` must be consistent with the `Host` header
+    // TODO Validity verification is required, for example: `Authority` must be
+    // consistent with the `Host` header
     pseudo.set_authority(request_part.uri.authority().map(|auth| auth.to_string()));
     pseudo
 }
@@ -376,10 +382,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> AsyncRead for Te
 #[cfg(feature = "http2")]
 #[cfg(test)]
 mod ut_http2 {
-    use crate::async_impl::conn::http2::{build_data_frame, build_headers_frame};
     use ylong_http::body::TextBody;
     use ylong_http::h2::{ErrorCode, H2Error, Payload};
     use ylong_http::request::RequestBuilder;
+
+    use crate::async_impl::conn::http2::{build_data_frame, build_headers_frame};
 
     macro_rules! build_request {
         (

@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::headers::{HeaderName, HeaderValue};
-use crate::{
-    body::mime::{DecodeHeaders, MimePart},
-    error::{ErrorKind, HttpError},
-    headers::{Header, Headers},
-};
-use core::{convert::TryFrom, mem::take};
+use core::convert::TryFrom;
+use core::mem::take;
+
+use crate::body::mime::{DecodeHeaders, MimePart};
+use crate::error::{ErrorKind, HttpError};
+use crate::headers::{Header, HeaderName, HeaderValue, Headers};
 
 /// `MimeMulti` is a Composite MIME body which is defined in [`RFC2046`]: \
 /// In the case of multipart entities, in which one or more different
@@ -346,18 +345,16 @@ impl<'a> MimeMultiBuilder<'a> {
     }
 
     /// Sets headers to the Composite MIME body. \
-    /// It is recommended to use [`set_content_type`] to set header 'Content-Type'
-    /// and set boundary simultaneously.
+    /// It is recommended to use [`set_content_type`] to set header
+    /// 'Content-Type' and set boundary simultaneously.
     ///
     /// [`set_content_type`]: MimeMultiBuilder::set_content_type
     ///
     /// # Examples
     ///
     /// ```
-    /// use ylong_http::{
-    ///     body::MimeMultiBuilder,
-    ///     headers::Headers,
-    /// };
+    /// use ylong_http::body::MimeMultiBuilder;
+    /// use ylong_http::headers::Headers;
     ///
     /// let multi = MimeMultiBuilder::new()
     ///     .set_headers({
@@ -433,8 +430,8 @@ impl<'a> MimeMultiBuilder<'a> {
     /// the boundary parameter, which consists of 1 to 70 characters from a
     /// set of characters known to be very robust through mail gateways, and
     /// NOT ending with white space. \
-    /// It is recommended to use [`set_content_type`] to set header 'Content-Type'
-    /// and set boundary simultaneously.
+    /// It is recommended to use [`set_content_type`] to set header
+    /// 'Content-Type' and set boundary simultaneously.
     ///
     /// [`RFC2046`]: https://www.rfc-editor.org/rfc/rfc2046#section-5.1.1
     /// [`set_content_type`]: MimeMultiBuilder::set_content_type
@@ -460,8 +457,7 @@ impl<'a> MimeMultiBuilder<'a> {
     /// ```
     /// use ylong_http::body::MimeMultiBuilder;
     ///
-    /// let mut multi = MimeMultiBuilder::new()
-    ///     .set_content_type(b"multipart/mixed", b"ab".to_vec());
+    /// let mut multi = MimeMultiBuilder::new().set_content_type(b"multipart/mixed", b"ab".to_vec());
     /// ```
     pub fn set_content_type(mut self, content_type: &'a [u8], boundary: Vec<u8>) -> Self {
         self.inner = self.inner.and_then(move |mut inner| {
@@ -500,8 +496,7 @@ impl<'a> MimeMultiBuilder<'a> {
     /// use ylong_http::body::{MimeMulti, MimeMultiBuilder};
     ///
     /// let multi1 = MimeMulti::builder().build().unwrap();
-    /// let multi = MimeMultiBuilder::new()
-    ///     .add_multi(multi1);
+    /// let multi = MimeMultiBuilder::new().add_multi(multi1);
     /// ```
     pub fn add_multi(mut self, multi: MimeMulti<'a>) -> Self {
         self.inner = self.inner.map(move |mut inner| {
@@ -518,8 +513,7 @@ impl<'a> MimeMultiBuilder<'a> {
     /// use ylong_http::body::{MimeMulti, MimeMultiBuilder, XPart};
     ///
     /// let multi1 = MimeMulti::builder().build().unwrap();
-    /// let multi = MimeMultiBuilder::new()
-    ///     .add_xpart(XPart::Multi(multi1));
+    /// let multi = MimeMultiBuilder::new().add_xpart(XPart::Multi(multi1));
     /// ```
     pub fn add_xpart(mut self, xpart: XPart<'a>) -> Self {
         self.inner = self.inner.map(move |mut inner| {

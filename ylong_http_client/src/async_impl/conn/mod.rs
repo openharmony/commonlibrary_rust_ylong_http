@@ -11,15 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use ylong_http::body::async_impl::Body;
+use ylong_http::request::Request;
+use ylong_http::response::Response;
+
+use crate::async_impl::client::Retryable;
 use crate::async_impl::HttpBody;
 use crate::error::HttpClientError;
 use crate::util::dispatcher::Conn;
 use crate::{AsyncRead, AsyncWrite};
-use ylong_http::body::async_impl::Body;
-
-use crate::async_impl::client::Retryable;
-use ylong_http::request::Request;
-use ylong_http::response::Response;
 
 #[cfg(feature = "http1_1")]
 mod http1;

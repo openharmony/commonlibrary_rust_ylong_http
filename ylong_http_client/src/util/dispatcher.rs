@@ -61,9 +61,10 @@ pub(crate) enum Conn<S> {
 
 #[cfg(feature = "http1_1")]
 pub(crate) mod http1 {
-    use super::{ConnDispatcher, Dispatcher};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+
+    use super::{ConnDispatcher, Dispatcher};
 
     impl<S> ConnDispatcher<S> {
         pub(crate) fn http1(io: S) -> Self {
@@ -144,15 +145,6 @@ pub(crate) mod http1 {
 
 #[cfg(feature = "http2")]
 pub(crate) mod http2 {
-    use super::{ConnDispatcher, Dispatcher};
-    use crate::dispatcher::http2::StreamState::Closed;
-    use crate::error::HttpClientError;
-    use crate::util::H2Config;
-    use crate::ErrorKind;
-    use crate::MutexGuard;
-    use crate::TryRecvError;
-    use crate::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-    use crate::{AsyncMutex, AsyncRead, AsyncWrite, ReadBuf};
     use std::collections::{HashMap, VecDeque};
     use std::future::Future;
     use std::mem::take;
@@ -160,12 +152,22 @@ pub(crate) mod http2 {
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll, Waker};
+
     use ylong_http::error::HttpError;
     use ylong_http::h2;
     use ylong_http::h2::Payload::Settings;
     use ylong_http::h2::{
         ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, FrameKind, FramesIntoIter,
         Goaway, H2Error, Payload, RstStream, Setting, SettingsBuilder,
+    };
+
+    use super::{ConnDispatcher, Dispatcher};
+    use crate::dispatcher::http2::StreamState::Closed;
+    use crate::error::HttpClientError;
+    use crate::util::H2Config;
+    use crate::{
+        unbounded_channel, AsyncMutex, AsyncRead, AsyncWrite, ErrorKind, MutexGuard, ReadBuf,
+        TryRecvError, UnboundedReceiver, UnboundedSender,
     };
 
     impl<S> ConnDispatcher<S> {
@@ -208,9 +210,11 @@ pub(crate) mod http2 {
     }
 
     pub(crate) struct StreamController<S> {
-        // I/O unavailability flag, which prevents the upper layer from using this I/O to create new streams.
+        // I/O unavailability flag, which prevents the upper layer from using this I/O to create
+        // new streams.
         pub(crate) io_shutdown: AtomicBool,
-        // Indicates that the dispatcher is occupied. At this time, a user coroutine is already acting as the dispatcher.
+        // Indicates that the dispatcher is occupied. At this time, a user coroutine is already
+        // acting as the dispatcher.
         pub(crate) occupied: AtomicU32,
         pub(crate) dispatcher_invalid: AtomicBool,
         pub(crate) manager: AsyncMutex<IoManager<S>>,
@@ -389,7 +393,8 @@ pub(crate) mod http2 {
             }
         }
 
-        // TODO At present, only the state is changed to closed, and other states are not involved, and it needs to be added later
+        // TODO At present, only the state is changed to closed, and other states are
+        // not involved, and it needs to be added later
         pub(crate) fn recv_headers(&mut self, id: u32) -> Result<StreamState, H2Error> {
             match self.buffer.get_mut(&id) {
                 None => Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
@@ -416,11 +421,13 @@ pub(crate) mod http2 {
             match self.stream_to_send.pop_front() {
                 None => Ok(None),
                 Some(id) => {
-                    // TODO Subsequent consideration is to delete the corresponding elements in the map after the status becomes Closed
+                    // TODO Subsequent consideration is to delete the corresponding elements in the
+                    // map after the status becomes Closed
                     match self.buffer.get_mut(&id) {
                         None => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
                         Some(sender) => {
-                            // TODO For the time being, match state is used here, and the complete logic should be judged based on the frame type and state
+                            // TODO For the time being, match state is used here, and the complete
+                            // logic should be judged based on the frame type and state
                             match sender.state {
                                 Closed(ResetReason::Remote | ResetReason::Local) => Ok(None),
                                 _ => Ok(sender.pop_front()),
@@ -574,7 +581,8 @@ pub(crate) mod http2 {
             Some(handle)
         }
 
-        // TODO When the stream id reaches the maximum value, shutdown the current connection
+        // TODO When the stream id reaches the maximum value, shutdown the current
+        // connection
         fn is_shutdown(&self) -> bool {
             self.controller.io_shutdown.load(Ordering::Relaxed)
         }
@@ -631,7 +639,8 @@ pub(crate) mod http2 {
             let stream_info = self.get_mut();
 
             // First, check whether the frame of the current stream is in the Channel.
-            // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+            // The error cannot occur. Therefore, the error is thrown directly without
+            // connection-level processing.
             if let Some(frame) = stream_info.receiver.recv_frame(stream_info.id)? {
                 {
                     let mut stream_waker = stream_info
@@ -645,7 +654,8 @@ pub(crate) mod http2 {
                 return Poll::Ready(Ok(frame));
             }
 
-            // If the dispatcher sends a goaway frame, all streams on the current connection are unavailable.
+            // If the dispatcher sends a goaway frame, all streams on the current connection
+            // are unavailable.
             if stream_info
                 .controller
                 .dispatcher_invalid
@@ -654,7 +664,8 @@ pub(crate) mod http2 {
                 return Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::ConnectError).into()));
             }
 
-            // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+            // The error cannot occur. Therefore, the error is thrown directly without
+            // connection-level processing.
             if is_io_available(&stream_info.controller.occupied, stream_info.id)? {
                 {
                     // Second, try to get io and read the frame of the current stream from io.
@@ -675,14 +686,16 @@ pub(crate) mod http2 {
                         .expect("Blocking get waker lock failed! ");
                     wakeup_next_stream(&mut stream_waker.waker);
                 }
-                // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+                // The error cannot occur. Therefore, the error is thrown directly without
+                // connection-level processing.
                 let frame_opt = get_frame(stream_info.receiver.recv_frame(stream_info.id)?);
                 return Poll::Ready(frame_opt);
             }
 
             {
                 let mut io_manager = {
-                    // Third, wait to acquire the lock of waker, which is used to insert the current waker, and wait to be awakened by the io stream.
+                    // Third, wait to acquire the lock of waker, which is used to insert the current
+                    // waker, and wait to be awakened by the io stream.
                     let mut stream_waker = stream_info
                         .controller
                         .stream_waker
@@ -690,17 +703,21 @@ pub(crate) mod http2 {
                         .expect("Blocking get waker lock failed! ");
 
                     // Fourth, after obtaining the waker lock,
-                    // you need to check the Receiver again to prevent the Receiver from receiving a frame while waiting for the waker.
-                    // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+                    // you need to check the Receiver again to prevent the Receiver from receiving a
+                    // frame while waiting for the waker. The error cannot
+                    // occur. Therefore, the error is thrown directly without connection-level
+                    // processing.
                     if let Some(frame) = stream_info.receiver.recv_frame(stream_info.id)? {
                         wakeup_next_stream(&mut stream_waker.waker);
                         return Poll::Ready(Ok(frame));
                     }
 
-                    // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+                    // The error cannot occur. Therefore, the error is thrown directly without
+                    // connection-level processing.
                     if is_io_available(&stream_info.controller.occupied, stream_info.id)? {
-                        // Fifth, get io again to prevent no other streams from controlling io while waiting for the waker,
-                        // leaving only the current stream.
+                        // Fifth, get io again to prevent no other streams from controlling io while
+                        // waiting for the waker, leaving only the current
+                        // stream.
                         match stream_info.controller.manager.try_lock() {
                             Ok(guard) => guard,
                             _ => {
@@ -733,7 +750,8 @@ pub(crate) mod http2 {
                         .expect("Blocking get waker lock failed! ");
                     wakeup_next_stream(&mut stream_waker.waker);
                 }
-                // The error cannot occur. Therefore, the error is thrown directly without connection-level processing.
+                // The error cannot occur. Therefore, the error is thrown directly without
+                // connection-level processing.
                 let frame_opt = get_frame(stream_info.receiver.recv_frame(stream_info.id)?);
                 Poll::Ready(frame_opt)
             }
@@ -782,7 +800,9 @@ pub(crate) mod http2 {
                                             .stream_waker
                                             .lock()
                                             .expect("Blocking get waker lock failed! ");
-                                        // TODO Is there a situation where the result has been returned, but the waker has not been inserted into the map? how to deal with.
+                                        // TODO Is there a situation where the result has been
+                                        // returned, but the waker has not been inserted into the
+                                        // map? how to deal with.
                                         if let Some(waker) = stream_waker.waker.remove(&id) {
                                             waker.wake();
                                         }
@@ -792,11 +812,15 @@ pub(crate) mod http2 {
                             H2Error::ConnectionError(code) => {
                                 io_manager.close_frame_receiver();
                                 self.controller.shutdown();
-                                // Since ConnectError may be caused by an io error, so when the client
-                                // actively sends a goaway frame, all streams are shut down and no streams are allowed to complete.
-                                // TODO Then consider separating io errors from frame errors to allow streams whose stream id is less than last_stream_id to continue
+                                // Since ConnectError may be caused by an io error, so when the
+                                // client actively sends a goaway
+                                // frame, all streams are shut down and no streams are allowed to
+                                // complete. TODO Then consider
+                                // separating io errors from frame errors to allow streams whose
+                                // stream id is less than last_stream_id to continue
                                 self.controller.invalid();
-                                // last_stream_id is set to 0 to ensure that all streams are shutdown.
+                                // last_stream_id is set to 0 to ensure that all streams are
+                                // shutdown.
                                 let goaway_payload =
                                     Goaway::new(code.clone().into_code(), 0, vec![]);
                                 let frame = Frame::new(
@@ -852,7 +876,8 @@ pub(crate) mod http2 {
                     return Poll::Pending;
                 }
             }
-            // Write and read frames to io in a loop until the frame of the current stream is read and exit the loop.
+            // Write and read frames to io in a loop until the frame of the current stream
+            // is read and exit the loop.
             loop {
                 if self.poll_write_frame(cx, io_manager)?.is_pending() {
                     return Poll::Pending;
@@ -971,11 +996,13 @@ pub(crate) mod http2 {
         ) -> Poll<Result<(), H2Error>> {
             const FRAME_WRITE_NUM: usize = 10;
 
-            // Send 10 frames each time, if there is not enough in the queue, read enough from mpsc::Receiver
+            // Send 10 frames each time, if there is not enough in the queue, read enough
+            // from mpsc::Receiver
             while io_manager.streams.size() < FRAME_WRITE_NUM {
                 match io_manager.frame_receiver.try_recv() {
-                    // The Frame sent by the Handle for the first time will carry a Sender at the same time,
-                    // which is used to send the Response Frame back to the Handle
+                    // The Frame sent by the Handle for the first time will carry a Sender at the
+                    // same time, which is used to send the Response Frame back
+                    // to the Handle
                     Ok((Some((id, sender)), frame)) => {
                         if io_manager.senders.insert(id, sender).is_some() {
                             return Poll::Ready(Err(H2Error::ConnectionError(
@@ -1018,7 +1045,8 @@ pub(crate) mod http2 {
             cx: &mut Context<'_>,
             io_manager: &mut MutexGuard<IoManager<S>>,
         ) -> Poll<Result<ReadState, H2Error>> {
-            // Read all the frames in io until the frame of the current stream is read and stop.
+            // Read all the frames in io until the frame of the current stream is read and
+            // stop.
             let mut buf = [0u8; 1024];
             loop {
                 let mut read_buf = ReadBuf::new(&mut buf);
@@ -1150,13 +1178,16 @@ pub(crate) mod http2 {
                                 break;
                             } else {
                                 self.controller_send_frame_to_stream(stream_id, frame, io_manager);
-                                // TODO After adding frames such as Reset/Priority, there may be problems with the following logic, because the lack of waker cannot wake up
+                                // TODO After adding frames such as Reset/Priority, there may be
+                                // problems with the following logic, because the lack of waker
+                                // cannot wake up
                                 let mut stream_waker = self
                                     .controller
                                     .stream_waker
                                     .lock()
                                     .expect("Blocking get waker lock failed! ");
-                                // TODO Is there a situation where the result has been returned, but the waker has not been inserted into the map? how to deal with.
+                                // TODO Is there a situation where the result has been returned, but
+                                // the waker has not been inserted into the map? how to deal with.
                                 if let Some(waker) = stream_waker.waker.remove(&stream_id) {
                                     waker.wake();
                                 }
@@ -1263,7 +1294,8 @@ pub(crate) mod http2 {
             ping: &h2::Ping,
         ) -> Poll<Result<(), H2Error>> {
             if is_ack {
-                // TODO The sending logic of ping has not been implemented yet, so there is no processing for ack
+                // TODO The sending logic of ping has not been implemented yet, so there is no
+                // processing for ack
                 Poll::Ready(Ok(()))
             } else {
                 // reply ack Settings
@@ -1283,7 +1315,8 @@ pub(crate) mod http2 {
             frame: Frame,
             guard: &mut MutexGuard<IoManager<S>>,
         ) {
-            // TODO Need to consider when to delete useless Sender after support reset stream
+            // TODO Need to consider when to delete useless Sender after support reset
+            // stream
             if let Some(sender) = guard.senders.get(&stream_id) {
                 // If the client coroutine has exited, this frame is skipped.
                 let _ = sender.send(frame);

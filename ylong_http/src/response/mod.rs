@@ -23,7 +23,8 @@ use crate::version::Version;
 
 /// HTTP `Response` Implementation.
 ///
-/// The status-line and field-line of a response-message are stored in `Response`.
+/// The status-line and field-line of a response-message are stored in
+/// `Response`.
 ///
 /// The body can be saved in the user-defined type.
 ///
@@ -85,8 +86,8 @@ impl<T: Clone> Clone for Response<T> {
 /// `ResponsePart`, which is called [`Status Line`] in [`RFC9112`].
 ///
 /// A request-line begins with a method token, followed by a single space (SP),
-/// the request-target, and another single space (SP), and ends with the protocol
-/// version.
+/// the request-target, and another single space (SP), and ends with the
+/// protocol version.
 ///
 /// [`RFC9112`]: https://httpwg.org/specs/rfc9112.html
 /// [`Status Line`]: https://httpwg.org/specs/rfc9112.html#status.line
@@ -130,7 +131,8 @@ mod ut_response {
     ///
     /// # Brief
     /// 1. Creates a `ResponsePart` by calling `ResponseDecoder::decode`.
-    /// 2. Gets the reference of a `StatusCode` by calling `Response::status_code`.
+    /// 2. Gets the reference of a `StatusCode` by calling
+    ///    `Response::status_code`.
     /// 3. Checks if the test result is correct.
     #[test]
     fn ut_response_status_code() {

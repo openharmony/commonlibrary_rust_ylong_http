@@ -20,11 +20,11 @@
 // TODO: 考虑将 PseudoHeaders 拆分成 `RequestPseudo` 和 `ResponsePseudo`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PseudoHeaders {
-    authority: Option<String>, // Request.
-    method: Option<String>,    // Request.
-    path: Option<String>,      // Request.
-    scheme: Option<String>,    // Request.
-    status: Option<String>,    // Response.
+    authority: Option<String>,
+    method: Option<String>,
+    path: Option<String>,
+    scheme: Option<String>,
+    status: Option<String>,
 }
 
 // TODO: 去掉冗余的方法。
@@ -179,7 +179,8 @@ mod ut_pseudo_headers {
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
     /// 2. Calls `PseudoHeaders::contains_authority` of it.
-    /// 3. Calls `PseudoHeaders::contains_authority` of it after its `authority` is set.
+    /// 3. Calls `PseudoHeaders::contains_authority` of it after its `authority`
+    ///    is set.
     /// 4. Checks the results.
     #[test]
     fn ut_pseudo_headers_contains_authority() {
@@ -210,7 +211,8 @@ mod ut_pseudo_headers {
     ///
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
-    /// 2. Calls `PseudoHeaders::set_authority` of it to set `authority` a value.
+    /// 2. Calls `PseudoHeaders::set_authority` of it to set `authority` a
+    ///    value.
     /// 3. Checks the results.
     #[test]
     fn ut_pseudo_headers_set_authority() {
@@ -229,7 +231,8 @@ mod ut_pseudo_headers {
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
     /// 2. Calls `PseudoHeaders::take_authority` of it.
-    /// 3. Calls `PseudoHeaders::take_authority` of it after its `authority` is set.
+    /// 3. Calls `PseudoHeaders::take_authority` of it after its `authority` is
+    ///    set.
     /// 4. Checks the results.
     #[test]
     fn ut_pseudo_headers_take_authority() {
@@ -245,7 +248,8 @@ mod ut_pseudo_headers {
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
     /// 2. Calls `PseudoHeaders::contains_method` of it.
-    /// 3. Calls `PseudoHeaders::contains_method` of it after its `method` is set.
+    /// 3. Calls `PseudoHeaders::contains_method` of it after its `method` is
+    ///    set.
     /// 4. Checks the results.
     #[test]
     fn ut_pseudo_headers_contains_method() {
@@ -377,7 +381,8 @@ mod ut_pseudo_headers {
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
     /// 2. Calls `PseudoHeaders::contains_scheme` of it.
-    /// 3. Calls `PseudoHeaders::contains_scheme` of it after its `scheme` is set.
+    /// 3. Calls `PseudoHeaders::contains_scheme` of it after its `scheme` is
+    ///    set.
     /// 4. Checks the results.
     #[test]
     fn ut_pseudo_headers_contains_scheme() {
@@ -443,7 +448,8 @@ mod ut_pseudo_headers {
     /// # Brief
     /// 1. Creates a `PseudoHeaders`.
     /// 2. Calls `PseudoHeaders::contains_status` of it.
-    /// 3. Calls `PseudoHeaders::contains_status` of it after its `status` is set.
+    /// 3. Calls `PseudoHeaders::contains_status` of it after its `status` is
+    ///    set.
     /// 4. Checks the results.
     #[test]
     fn ut_pseudo_headers_contains_status() {

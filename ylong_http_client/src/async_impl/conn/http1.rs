@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use ylong_http::h1::{RequestEncoder, ResponseDecoder};
+use ylong_http::response::Response;
+
 use crate::async_impl::{Body, HttpBody, StreamData};
 use crate::error::{ErrorKind, HttpClientError};
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::util::normalizer::BodyLengthParser;
-use crate::Request;
-use crate::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use ylong_http::h1::{RequestEncoder, ResponseDecoder};
-use ylong_http::response::Response;
+use crate::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, Request};
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
 

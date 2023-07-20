@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::HttpBody;
-use crate::{ErrorKind, HttpClientError};
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
+
 use ylong_http::body::async_impl::Body;
 use ylong_http::body::MultiPart;
 use ylong_http::error::HttpError;
@@ -24,6 +23,9 @@ use ylong_http::request::uri::Uri;
 use ylong_http::request::{Request, RequestBuilder as ReqBuilder};
 use ylong_http::response::Response as Resp;
 use ylong_http::version::Version;
+
+use crate::async_impl::HttpBody;
+use crate::{ErrorKind, HttpClientError};
 
 /// Response Adapter.
 pub struct Response {
@@ -117,7 +119,7 @@ impl RequestBuilder {
     /// use ylong_http::headers::Headers;
     /// use ylong_http::request::RequestBuilder;
     ///
-    /// let request = RequestBuilder::new().header("ACCEPT","text/html");
+    /// let request = RequestBuilder::new().header("ACCEPT", "text/html");
     /// ```
     pub fn header<N, V>(mut self, name: N, value: V) -> Self
     where
@@ -139,7 +141,7 @@ impl RequestBuilder {
     /// use ylong_http::headers::Headers;
     /// use ylong_http::request::RequestBuilder;
     ///
-    /// let request = RequestBuilder::new().append_header("ACCEPT","text/html");
+    /// let request = RequestBuilder::new().append_header("ACCEPT", "text/html");
     /// ```
     pub fn append_header<N, V>(mut self, name: N, value: V) -> Self
     where

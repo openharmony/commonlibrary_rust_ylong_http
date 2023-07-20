@@ -65,9 +65,9 @@ pub(crate) mod http2 {
     /// use ylong_http_client::util::H2Config;
     ///
     /// let config = H2Config::new()
-    /// .set_header_table_size(4096)
-    /// .set_max_header_list_size(16 << 20)
-    /// .set_max_frame_size(2 << 13);
+    ///     .set_header_table_size(4096)
+    ///     .set_max_header_list_size(16 << 20)
+    ///     .set_max_frame_size(2 << 13);
     /// ```
     #[derive(Clone)]
     pub struct H2Config {
@@ -97,8 +97,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_max_frame_size(2 << 13);
+        /// let config = H2Config::new().set_max_frame_size(2 << 13);
         /// ```
         pub fn set_max_frame_size(mut self, size: u32) -> Self {
             self.max_frame_size = size;
@@ -112,8 +111,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_max_header_list_size(16 << 20);
+        /// let config = H2Config::new().set_max_header_list_size(16 << 20);
         /// ```
         pub fn set_max_header_list_size(mut self, size: u32) -> Self {
             self.max_header_list_size = size;
@@ -127,8 +125,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_max_header_list_size(4096);
+        /// let config = H2Config::new().set_max_header_list_size(4096);
         /// ```
         pub fn set_header_table_size(mut self, size: u32) -> Self {
             self.header_table_size = size;
@@ -142,8 +139,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_max_frame_size(2 << 13);
+        /// let config = H2Config::new().set_max_frame_size(2 << 13);
         /// assert_eq!(config.max_frame_size(), 2 << 13);
         /// ```
         pub fn max_frame_size(&self) -> u32 {
@@ -157,8 +153,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_max_header_list_size(16 << 20);
+        /// let config = H2Config::new().set_max_header_list_size(16 << 20);
         /// assert_eq!(config.max_header_list_size(), 16 << 20);
         /// ```
         pub fn max_header_list_size(&self) -> u32 {
@@ -172,8 +167,7 @@ pub(crate) mod http2 {
         /// ```
         /// use ylong_http_client::util::H2Config;
         ///
-        /// let config = H2Config::new()
-        ///     .set_header_table_size(4096);
+        /// let config = H2Config::new().set_header_table_size(4096);
         /// assert_eq!(config.header_table_size(), 4096);
         /// ```
         pub fn header_table_size(&self) -> u32 {

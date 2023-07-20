@@ -11,23 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    check_ptr,
-    error::ErrorStack,
-    ffi::bio::{
-        BIO_clear_flags, BIO_free_all, BIO_get_data, BIO_meth_free, BIO_meth_new,
-        BIO_meth_set_create, BIO_meth_set_ctrl, BIO_meth_set_destroy, BIO_meth_set_puts,
-        BIO_meth_set_read, BIO_meth_set_write, BIO_new, BIO_new_mem_buf, BIO_set_data,
-        BIO_set_flags, BIO_set_init, BIO, BIO_METHOD,
-    },
-    ssl_init,
-};
-use core::{any::Any, marker::PhantomData, panic::AssertUnwindSafe, ptr, slice};
+use core::any::Any;
+use core::marker::PhantomData;
+use core::panic::AssertUnwindSafe;
+use core::{ptr, slice};
+use std::io::{self, Read, Write};
+use std::panic::catch_unwind;
+
 use libc::{c_char, c_int, c_long, c_void, strlen};
-use std::{
-    io::{self, Read, Write},
-    panic::catch_unwind,
+
+use super::error::ErrorStack;
+use super::ffi::bio::{
+    BIO_clear_flags, BIO_free_all, BIO_get_data, BIO_meth_free, BIO_meth_new, BIO_meth_set_create,
+    BIO_meth_set_ctrl, BIO_meth_set_destroy, BIO_meth_set_puts, BIO_meth_set_read,
+    BIO_meth_set_write, BIO_new, BIO_new_mem_buf, BIO_set_data, BIO_set_flags, BIO_set_init, BIO,
+    BIO_METHOD,
 };
+use super::{check_ptr, ssl_init};
 
 #[derive(Debug)]
 pub struct Bio(*mut BIO);

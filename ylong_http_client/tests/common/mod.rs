@@ -19,12 +19,9 @@ mod sync_utils;
 
 #[cfg(all(feature = "async", not(feature = "__tls")))]
 pub use async_utils::async_build_http_client;
-
 #[cfg(all(feature = "async", feature = "__tls"))]
 pub use async_utils::async_build_https_client;
-
 use tokio::runtime::Runtime;
-
 #[cfg(not(feature = "__tls"))]
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -51,10 +48,11 @@ pub struct HttpHandle {
 #[macro_export]
 macro_rules! start_http_server {
     ($server_fn: ident) => {{
-        use hyper::service::{make_service_fn, service_fn};
-        use hyper::Server;
         use std::convert::Infallible;
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+        use hyper::service::{make_service_fn, service_fn};
+        use hyper::Server;
         use tokio::sync::mpsc::channel;
 
         let (start_tx, start_rx) = channel::<()>(1);
@@ -285,8 +283,9 @@ macro_rules! start_tls_server {
         let port = listener.local_addr().unwrap().port();
 
         tokio::spawn(async move {
-            let mut acceptor = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls())
-                .expect("SslAcceptorBuilder error");
+            let mut acceptor =
+                openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls())
+                    .expect("SslAcceptorBuilder error");
             acceptor
                 .set_session_id_context(b"test")
                 .expect("Set session id error");
@@ -306,7 +305,8 @@ macro_rules! start_tls_server {
             let (stream, _) = listener.accept().await.expect("TCP listener accpet error");
             let ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("Ssl Error");
             let mut stream = tokio_openssl::SslStream::new(ssl, stream).expect("SslStream Error");
-            core::pin::Pin::new(&mut stream).accept().await.unwrap(); // SSL negotiation finished successfully
+            // SSL negotiation finished successfully
+            core::pin::Pin::new(&mut stream).accept().await.unwrap();
 
             hyper::server::conn::Http::new()
                 .http1_only(true)
@@ -315,9 +315,7 @@ macro_rules! start_tls_server {
                 .await
         });
 
-        TlsHandle {
-            port,
-        }
+        TlsHandle { port }
     }};
 }
 

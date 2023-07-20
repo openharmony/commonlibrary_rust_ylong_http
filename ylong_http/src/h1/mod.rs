@@ -18,6 +18,5 @@ mod request;
 pub(crate) mod response;
 
 pub(crate) use error::H1Error;
-
 pub use request::RequestEncoder;
 pub use response::ResponseDecoder;

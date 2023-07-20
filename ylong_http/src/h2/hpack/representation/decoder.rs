@@ -11,12 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::cmp::Ordering;
+
 use crate::h2::error::ErrorCode;
 use crate::h2::hpack::integer::IntegerDecoder;
 use crate::h2::hpack::representation::{Name, PrefixBit, Representation};
 use crate::h2::H2Error;
 use crate::huffman::HuffmanDecoder;
-use core::cmp::Ordering;
 
 /// Decoder implementation for decoding representation. Every time users call
 /// `decode`, the `ReprDecoder` will try to decode a `Repr`. If `buf` has been
