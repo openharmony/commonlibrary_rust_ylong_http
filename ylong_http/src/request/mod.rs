@@ -33,8 +33,8 @@
 //!     .method("GET")
 //!     .url("www.example.com")
 //!     .version("HTTP/1.1")
-//!     .header("ACCEPT","text/html")
-//!     .append_header("ACCEPT","application/xml")
+//!     .header("ACCEPT", "text/html")
+//!     .append_header("ACCEPT", "application/xml")
 //!     .body(())
 //!     .unwrap();
 //!
@@ -50,6 +50,8 @@
 pub mod method;
 pub mod uri;
 
+use core::convert::TryFrom;
+
 use method::Method;
 use uri::Uri;
 
@@ -57,7 +59,6 @@ use crate::body::MultiPart;
 use crate::error::{ErrorKind, HttpError};
 use crate::headers::{Header, HeaderName, HeaderValue, Headers};
 use crate::version::Version;
-use core::convert::TryFrom;
 
 /// HTTP `Request`. A `Request` consists of a request line and a body.
 ///
@@ -105,7 +106,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::GET).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `HEAD`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `HEAD`.
     ///
     /// # Examples
     ///
@@ -122,7 +124,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::HEAD).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `POST`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `POST`.
     ///
     /// # Examples
     ///
@@ -156,7 +159,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::PUT).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `DELETE`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `DELETE`.
     ///
     /// # Examples
     ///
@@ -173,7 +177,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::DELETE).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `CONNECT`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `CONNECT`.
     ///
     /// # Examples
     ///
@@ -190,7 +195,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::CONNECT).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `OPTIONS`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `OPTIONS`.
     ///
     /// # Examples
     ///
@@ -207,7 +213,8 @@ impl Request<()> {
         RequestBuilder::new().method(Method::OPTIONS).url(uri)
     }
 
-    /// Creates a `RequestBuilder` for the given `Uri` with method set to `TRACE`.
+    /// Creates a `RequestBuilder` for the given `Uri` with method set to
+    /// `TRACE`.
     ///
     /// # Examples
     ///
@@ -459,8 +466,8 @@ impl<T: Clone> Clone for Request<T> {
 ///     .method("GET")
 ///     .url("www.example.com")
 ///     .version("HTTP/1.1")
-///     .header("ACCEPT","text/html")
-///     .append_header("ACCEPT","application/xml")
+///     .header("ACCEPT", "text/html")
+///     .append_header("ACCEPT", "application/xml")
 ///     .body(())
 ///     .unwrap();
 ///
@@ -565,7 +572,7 @@ impl RequestBuilder {
     /// use ylong_http::headers::Headers;
     /// use ylong_http::request::RequestBuilder;
     ///
-    /// let request = RequestBuilder::new().header("ACCEPT","text/html");
+    /// let request = RequestBuilder::new().header("ACCEPT", "text/html");
     /// ```
     pub fn header<N, V>(mut self, name: N, value: V) -> Self
     where
@@ -590,7 +597,7 @@ impl RequestBuilder {
     /// use ylong_http::headers::Headers;
     /// use ylong_http::request::RequestBuilder;
     ///
-    /// let request = RequestBuilder::new().append_header("ACCEPT","text/html");
+    /// let request = RequestBuilder::new().append_header("ACCEPT", "text/html");
     /// ```
     pub fn append_header<N, V>(mut self, name: N, value: V) -> Self
     where
@@ -674,8 +681,8 @@ impl Default for RequestBuilder {
 /// `RequestPart`, which is called [`Request Line`] in [`RFC9112`].
 ///
 /// A request-line begins with a method token, followed by a single space (SP),
-/// the request-target, and another single space (SP), and ends with the protocol
-/// version.
+/// the request-target, and another single space (SP), and ends with the
+/// protocol version.
 ///
 /// [`RFC9112`]: https://httpwg.org/specs/rfc9112.html
 /// [`Request Line`]: https://httpwg.org/specs/rfc9112.html#request.line
@@ -715,10 +722,11 @@ impl Default for RequestPart {
 
 #[cfg(test)]
 mod ut_request {
+    use core::convert::TryFrom;
+
     use super::{Method, Request, RequestBuilder, RequestPart, Uri};
     use crate::headers::Headers;
     use crate::version::Version;
-    use core::convert::TryFrom;
 
     /// UT test cases for `RequestBuilder::build`.
     ///

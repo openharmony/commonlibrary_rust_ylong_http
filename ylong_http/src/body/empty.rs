@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::body::{async_impl, sync_impl};
 use core::convert::Infallible;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+use crate::body::{async_impl, sync_impl};
+
 /// An empty body, indicating that there is no body part in the message.
 ///
-/// `EmptyBody` both implements [`sync_impl::Body`] and [`async_impl::Body`]. Using
-/// [`sync_impl::Body::data`] method or [`async_impl::Body::data`] method has no effect
-/// on buf and always returns `Ok(0)`.
+/// `EmptyBody` both implements [`sync_impl::Body`] and [`async_impl::Body`].
+/// Using [`sync_impl::Body::data`] method or [`async_impl::Body::data`] method
+/// has no effect on buf and always returns `Ok(0)`.
 ///
 /// [`sync_impl::Body`]: sync_impl::Body
 /// [`async_impl::Body`]: async_impl::Body
@@ -32,8 +33,8 @@ use core::task::{Context, Poll};
 /// sync_impl:
 ///
 /// ```
-/// use ylong_http::body::EmptyBody;
 /// use ylong_http::body::sync_impl::Body;
+/// use ylong_http::body::EmptyBody;
 ///
 /// let mut body = EmptyBody::new();
 /// let mut buf = [0u8; 1024];
@@ -45,8 +46,8 @@ use core::task::{Context, Poll};
 /// async_impl:
 ///
 /// ```
-/// use ylong_http::body::EmptyBody;
 /// use ylong_http::body::async_impl::Body;
+/// use ylong_http::body::EmptyBody;
 ///
 /// # async fn read_empty_body() {
 /// let mut body = EmptyBody::new();
@@ -131,7 +132,8 @@ mod ut_empty {
     ///
     /// # Brief
     /// 1. Creates an `EmptyBody`.
-    /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    /// 2. Calls its `async_impl::Body::data` method and then checks the
+    ///    results.
     #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_empty_body_async_impl_data() {

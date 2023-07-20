@@ -11,17 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Read, Write};
+
+use ylong_http::body::sync_impl::Body;
+use ylong_http::h1::{RequestEncoder, ResponseDecoder};
+// TODO: Adapter, remove this later.
+use ylong_http::response::Response;
+
 use crate::error::{ErrorKind, HttpClientError};
 use crate::sync_impl::conn::StreamData;
 use crate::sync_impl::HttpBody;
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::Request;
-use std::io::{Read, Write};
-use ylong_http::body::sync_impl::Body;
-use ylong_http::h1::{RequestEncoder, ResponseDecoder};
-
-// TODO: Adapter, remove this later.
-use ylong_http::response::Response;
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
 

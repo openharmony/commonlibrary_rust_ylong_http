@@ -11,33 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{error::HandshakeError, MidHandshakeSslStream, SslContext, SslErrorCode, SslStream};
-use crate::{
-    c_openssl::{
-        check_ret,
-        ffi::{
-            bio::BIO,
-            ssl::{
-                SSL_connect, SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio,
-                SSL_get_verify_result, SSL_read, SSL_state_string_long, SSL_write,
-            },
-        },
-        foreign::ForeignRef,
-        x509::{X509VerifyParamRef, X509VerifyResult, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS},
-    },
-    util::c_openssl::{
-        check_ptr,
-        error::ErrorStack,
-        ffi::ssl::{SSL_free, SSL_new, SSL},
-        foreign::Foreign,
-    },
-};
 use core::{cmp, ffi, fmt, str};
+use std::ffi::CString;
+use std::io::{Read, Write};
+
 use libc::{c_char, c_int, c_long, c_void};
-use std::{
-    ffi::CString,
-    io::{Read, Write},
+
+use super::error::HandshakeError;
+use super::{MidHandshakeSslStream, SslContext, SslErrorCode, SslStream};
+use crate::c_openssl::check_ret;
+use crate::c_openssl::ffi::bio::BIO;
+use crate::c_openssl::ffi::ssl::{
+    SSL_connect, SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio, SSL_get_verify_result,
+    SSL_read, SSL_state_string_long, SSL_write,
 };
+use crate::c_openssl::foreign::ForeignRef;
+use crate::c_openssl::x509::{
+    X509VerifyParamRef, X509VerifyResult, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS,
+};
+use crate::util::c_openssl::check_ptr;
+use crate::util::c_openssl::error::ErrorStack;
+use crate::util::c_openssl::ffi::ssl::{SSL_free, SSL_new, SSL};
+use crate::util::c_openssl::foreign::Foreign;
 
 foreign_type!(
     type CStruct = SSL;

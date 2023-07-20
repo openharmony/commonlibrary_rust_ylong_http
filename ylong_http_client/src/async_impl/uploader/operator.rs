@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::HttpClientError;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use crate::HttpClientError;
 
 /// A `UploadOperator` represents structures that can read local data to socket.
 ///
@@ -39,7 +40,7 @@ use std::task::{Context, Poll};
 ///         self: Pin<&mut Self>,
 ///         cx: &mut Context<'_>,
 ///         uploaded: u64,
-///         total: Option<u64>
+///         total: Option<u64>,
 ///     ) -> Poll<Result<(), HttpClientError>> {
 ///         todo!()
 ///     }

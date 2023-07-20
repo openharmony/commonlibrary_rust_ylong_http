@@ -24,7 +24,10 @@ use crate::AsyncRead;
 /// ```
 /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader};
 ///
-/// let uploader = UploaderBuilder::new().reader("HelloWorld".as_bytes()).console().build();
+/// let uploader = UploaderBuilder::new()
+///     .reader("HelloWorld".as_bytes())
+///     .console()
+///     .build();
 /// ```
 pub struct UploaderBuilder<S> {
     state: S,
@@ -118,13 +121,15 @@ impl<R: AsyncRead> UploaderBuilder<WantsOperator<R>> {
     ///         self: Pin<&mut Self>,
     ///         cx: &mut Context<'_>,
     ///         uploaded: u64,
-    ///         total: Option<u64>
+    ///         total: Option<u64>,
     ///     ) -> Poll<Result<(), HttpClientError>> {
     ///         todo!()
     ///     }
     /// }
     ///
-    /// let builder = UploaderBuilder::new().reader("HelloWorld".as_bytes()).operator(MyOperator);
+    /// let builder = UploaderBuilder::new()
+    ///     .reader("HelloWorld".as_bytes())
+    ///     .operator(MyOperator);
     /// ```
     pub fn operator<T: UploadOperator>(self, operator: T) -> UploaderBuilder<WantsConfig<R, T>> {
         UploaderBuilder {
@@ -147,7 +152,9 @@ impl<R: AsyncRead> UploaderBuilder<WantsOperator<R>> {
     /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader};
     /// # use ylong_http_client::Response;
     ///
-    /// let builder = UploaderBuilder::new().reader("HelloWorld".as_bytes()).console();
+    /// let builder = UploaderBuilder::new()
+    ///     .reader("HelloWorld".as_bytes())
+    ///     .console();
     /// ```
     pub fn console(self) -> UploaderBuilder<WantsConfig<R, Console>> {
         UploaderBuilder {
@@ -170,7 +177,8 @@ pub struct WantsConfig<R, T> {
 impl<R, T> UploaderBuilder<WantsConfig<R, T>> {
     /// Sets the total bytes of the uploaded content.
     ///
-    /// Default is `None` which means that you don't know the size of the content.
+    /// Default is `None` which means that you don't know the size of the
+    /// content.
     ///
     /// # Examples
     ///

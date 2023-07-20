@@ -25,6 +25,7 @@ use libc::c_int;
 pub(crate) enum OPENSSL_INIT_SETTINGS {}
 
 extern "C" {
-    /// Calls this function will explicitly initialise BOTH libcrypto and libssl.
+    /// Calls this function will explicitly initialise BOTH libcrypto and
+    /// libssl.
     pub(crate) fn OPENSSL_init_ssl(opts: u64, settings: *const OPENSSL_INIT_SETTINGS) -> c_int;
 }

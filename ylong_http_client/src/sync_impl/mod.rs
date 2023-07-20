@@ -34,14 +34,12 @@ mod reader;
 
 pub use client::{Client, ClientBuilder};
 pub use connector::Connector;
+pub(crate) use connector::HttpConnector;
 pub use http_body::HttpBody;
 pub use reader::{BodyProcessError, BodyProcessor, BodyReader, DefaultBodyProcessor};
 pub use ylong_http::body::sync_impl::Body;
-
 // TODO: Adapter, remove this later.
 pub use ylong_http::response::Response;
-
-pub(crate) use connector::HttpConnector;
 
 #[cfg(feature = "__tls")]
 mod ssl_stream;

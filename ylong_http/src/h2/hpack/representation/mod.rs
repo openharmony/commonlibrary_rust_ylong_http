@@ -17,7 +17,8 @@
 //! [HPACK]: https://httpwg.org/specs/rfc7541.html
 //!
 //! # Description from RFC7541
-//! An encoded header field can be represented either as an index or as a literal.
+//! An encoded header field can be represented either as an index or as a
+//! literal.
 //!
 //! An [indexed representation] defines a header field as a reference to an
 //! entry in either the static table or the dynamic table.
@@ -67,7 +68,8 @@ pub(crate) use decoder::{ReprDecStateHolder, ReprDecodeState, ReprDecoder};
 pub(crate) use encoder::{ReprEncStateHolder, ReprEncodeState, ReprEncoder};
 
 /// Definition and [binary format] of each of the different
-/// [header field representations] and the [dynamic table size update] instruction.
+/// [header field representations] and the [dynamic table size update]
+/// instruction.
 ///
 /// [binary format]: https://www.rfc-editor.org/rfc/rfc7541.html#section-6
 /// [header field representations]: https://www.rfc-editor.org/rfc/rfc7541.html#section-3.2
@@ -93,9 +95,9 @@ pub(crate) enum Representation {
     /// ```
     Indexed { index: usize },
 
-    /// A [literal header field with incremental indexing representation] results
-    /// in appending a header field to the decoded header list and inserting it
-    /// as a new entry into the dynamic table.
+    /// A [literal header field with incremental indexing representation]
+    /// results in appending a header field to the decoded header list and
+    /// inserting it as a new entry into the dynamic table.
     ///
     /// A literal header field with incremental indexing representation starts
     /// with the '01' 2-bit pattern.
@@ -170,10 +172,10 @@ pub(crate) enum Representation {
     /// ```
     LiteralWithoutIndexing { name: Name, value: Vec<u8> },
 
-    /// A [literal header field never-indexed representation] results in appending
-    /// a header field to the decoded header list without altering the dynamic
-    /// table. Intermediaries **MUST** use the same representation for encoding
-    /// this header field.
+    /// A [literal header field never-indexed representation] results in
+    /// appending a header field to the decoded header list without altering
+    /// the dynamic table. Intermediaries **MUST** use the same
+    /// representation for encoding this header field.
     ///
     /// A literal header field never-indexed representation starts with the
     /// '0001' 4-bit pattern.
@@ -320,7 +322,8 @@ impl PrefixIndexMask {
     pub(crate) const LITERAL_WITHOUT_INDEXING: Self = Self(0x0f);
 }
 
-/// Name of `Representation`. It can be represented as string literals or an index.
+/// Name of `Representation`. It can be represented as string literals or an
+/// index.
 pub(crate) enum Name {
     Index(usize),
     Literal(Vec<u8>),

@@ -16,11 +16,12 @@
 #[macro_use]
 mod common;
 
-use crate::common::async_build_https_client;
-use crate::common::init_test_work_runtime;
-use common::TlsHandle;
 use std::path::PathBuf;
+
+use common::TlsHandle;
 use ylong_http_client::Body;
+
+use crate::common::{async_build_https_client, init_test_work_runtime};
 
 // TODO: Add doc for sdv tests.
 #[test]

@@ -34,15 +34,22 @@
 //! headers.insert("Accept", "text/html").unwrap();
 //! headers.insert("Content-Length", "3495").unwrap();
 //!
-//! assert_eq!(headers.get("accept").unwrap().to_str().unwrap(), "text/html");
-//! assert_eq!(headers.get("content-length").unwrap().to_str().unwrap(), "3495");
+//! assert_eq!(
+//!     headers.get("accept").unwrap().to_str().unwrap(),
+//!     "text/html"
+//! );
+//! assert_eq!(
+//!     headers.get("content-length").unwrap().to_str().unwrap(),
+//!     "3495"
+//! );
 //! ```
 
-use crate::error::{ErrorKind, HttpError};
 use core::convert::TryFrom;
 use core::{fmt, slice, str};
 use std::collections::hash_map::Entry;
 use std::collections::{hash_map, HashMap};
+
+use crate::error::{ErrorKind, HttpError};
 
 /// HTTP `Header`, which consists of [`HeaderName`] and [`HeaderValue`].
 ///
@@ -56,6 +63,7 @@ use std::collections::{hash_map, HashMap};
 ///
 /// ```
 /// use core::convert::TryFrom;
+///
 /// use ylong_http::headers::Header;
 ///
 /// // This header name string will be normalized to lowercase.
@@ -97,6 +105,7 @@ impl Header {
     ///
     /// ```
     /// use core::convert::TryFrom;
+    ///
     /// use ylong_http::headers::Header;
     ///
     /// let header = Header::try_from(("Example-Field", "Foo")).unwrap();
@@ -114,6 +123,7 @@ impl Header {
     ///
     /// ```
     /// use core::convert::TryFrom;
+    ///
     /// use ylong_http::headers::Header;
     ///
     /// let header = Header::try_from(("Example-Field", "Foo")).unwrap();
@@ -125,12 +135,14 @@ impl Header {
         &self.value
     }
 
-    /// Consumes this `Header`, get the underlying `HeaderName` and `HeaderValue`.
+    /// Consumes this `Header`, get the underlying `HeaderName` and
+    /// `HeaderValue`.
     ///
     /// # Examples
     ///
     /// ```
     /// use core::convert::TryFrom;
+    ///
     /// use ylong_http::headers::Header;
     ///
     /// let header = Header::try_from(("Example-Field", "Foo")).unwrap();
@@ -312,7 +324,8 @@ impl HeaderValue {
         })
     }
 
-    /// Consume another `HeaderValue`, and then appends it to this `HeaderValue`.
+    /// Consume another `HeaderValue`, and then appends it to this
+    /// `HeaderValue`.
     ///
     /// # Examples
     ///
@@ -530,7 +543,8 @@ pub type HeaderValueIterMut<'a> = slice::IterMut<'a, Vec<u8>>;
 
 /// HTTP `Headers`, which is called [`Fields`] in RFC9110.
 ///
-/// Fields are sent and received within the header and trailer sections of messages.
+/// Fields are sent and received within the header and trailer sections of
+/// messages.
 ///
 /// [`Fields`]: https://httpwg.org/specs/rfc9110.html#fields
 ///
@@ -544,8 +558,14 @@ pub type HeaderValueIterMut<'a> = slice::IterMut<'a, Vec<u8>>;
 /// headers.insert("Content-Length", "3495").unwrap();
 /// headers.append("Accept", "text/plain").unwrap();
 ///
-/// assert_eq!(headers.get("accept").unwrap().to_str().unwrap(), "text/html, text/plain");
-/// assert_eq!(headers.get("content-length").unwrap().to_str().unwrap(), "3495");
+/// assert_eq!(
+///     headers.get("accept").unwrap().to_str().unwrap(),
+///     "text/html, text/plain"
+/// );
+/// assert_eq!(
+///     headers.get("content-length").unwrap().to_str().unwrap(),
+///     "3495"
+/// );
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Headers {
@@ -629,9 +649,9 @@ impl Headers {
     ///
     /// ```
     /// use ylong_http::headers::Headers;
-    ///  
+    ///
     /// let mut headers = Headers::new();
-    /// headers.append("accept","text/html").unwrap();
+    /// headers.append("accept", "text/html").unwrap();
     ///
     /// let value = headers.get("accept");
     /// assert_eq!(value.unwrap().to_str().unwrap(), "text/html");
@@ -677,7 +697,8 @@ impl Headers {
     /// If the input argument could not be successfully converted to a `Header`,
     /// `Err` is returned.
     ///
-    /// If the `Headers` did not have this `HeaderName` present, `None` is returned.
+    /// If the `Headers` did not have this `HeaderName` present, `None` is
+    /// returned.
     ///
     /// If the `Headers` did have this `HeaderName` present, the new
     /// `HeaderValue` is updated, and the old `HeaderValue` is returned.
@@ -789,7 +810,7 @@ impl Headers {
     /// use ylong_http::headers::Headers;
     ///
     /// let mut headers = Headers::new();
-    /// headers.append("accept","text/html").unwrap();
+    /// headers.append("accept", "text/html").unwrap();
     ///
     /// for (_name, _value) in headers.iter() {
     ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -808,7 +829,7 @@ impl Headers {
     /// use ylong_http::headers::Headers;
     ///
     /// let mut headers = Headers::new();
-    /// headers.append("accept","text/html").unwrap();
+    /// headers.append("accept", "text/html").unwrap();
     ///
     /// for (_name, _value) in headers.iter_mut() {
     ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -833,7 +854,7 @@ impl IntoIterator for Headers {
     /// use ylong_http::headers::Headers;
     ///
     /// let mut headers = Headers::new();
-    /// headers.append("accept","text/html").unwrap();
+    /// headers.append("accept", "text/html").unwrap();
     ///
     /// for (_name, _value) in headers.into_iter() {
     ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -874,7 +895,7 @@ impl<'a> IntoIterator for &'a mut Headers {
 /// use ylong_http::headers::Headers;
 ///
 /// let mut headers = Headers::new();
-/// headers.append("accept","text/html").unwrap();
+/// headers.append("accept", "text/html").unwrap();
 ///
 /// for (_name, _value) in headers.iter() {
 ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -894,7 +915,7 @@ pub type HeadersIter<'a> = hash_map::Iter<'a, HeaderName, HeaderValue>;
 /// use ylong_http::headers::Headers;
 ///
 /// let mut headers = Headers::new();
-/// headers.append("accept","text/html").unwrap();
+/// headers.append("accept", "text/html").unwrap();
 ///
 /// for (_name, _value) in headers.iter_mut() {
 ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -914,7 +935,7 @@ pub type HeadersIterMut<'a> = hash_map::IterMut<'a, HeaderName, HeaderValue>;
 /// use ylong_http::headers::Headers;
 ///
 /// let mut headers = Headers::new();
-/// headers.append("accept","text/html").unwrap();
+/// headers.append("accept", "text/html").unwrap();
 ///
 /// for (_name, _value) in headers.into_iter() {
 ///     // Operate on each `HeaderName` and `HeaderValue` pair.
@@ -922,7 +943,8 @@ pub type HeadersIterMut<'a> = hash_map::IterMut<'a, HeaderName, HeaderValue>;
 /// ```
 pub type HeadersIntoIter = hash_map::IntoIter<HeaderName, HeaderValue>;
 
-// HEADER_CHARS is used to check whether char is correct and transfer to lowercase.
+// HEADER_CHARS is used to check whether char is correct and transfer to
+// lowercase.
 #[rustfmt::skip]
 const HEADER_CHARS: [u8; 256] = [
 //  0       1       2       3       4       5       6       7       8       9
@@ -956,8 +978,9 @@ const HEADER_CHARS: [u8; 256] = [
 
 #[cfg(test)]
 mod ut_headers {
-    use crate::headers::{Header, HeaderName, HeaderValue, Headers};
     use std::collections::HashMap;
+
+    use crate::headers::{Header, HeaderName, HeaderValue, Headers};
 
     /// UT test cases for `HeaderName::from_bytes`.
     ///
@@ -1007,7 +1030,8 @@ mod ut_headers {
     ///
     /// # Brief
     /// 1. Creates a `Header`.
-    /// 2. Calls Header::from_raw_parts, name, value and into_parts respectively.
+    /// 2. Calls Header::from_raw_parts, name, value and into_parts
+    ///    respectively.
     /// 3. Checks if the test results are corrent.
     #[test]
     fn ut_header_methods() {
@@ -1065,7 +1089,8 @@ mod ut_headers {
     ///
     /// # Brief
     /// 1. Creates a `HeaderValue`.
-    /// 2. Calls `HeaderValue::is_sensitive` to check if the test results are correct.
+    /// 2. Calls `HeaderValue::is_sensitive` to check if the test results are
+    ///    correct.
     #[test]
     fn ut_header_value_is_sensitive() {
         let mut value = HeaderValue {
@@ -1081,7 +1106,8 @@ mod ut_headers {
     ///
     /// # Brief
     /// 1. Creates a `Headers`.
-    /// 2. Gets the mutable `HeaderValue` by calling `HeaderValue::append_bytes`.
+    /// 2. Gets the mutable `HeaderValue` by calling
+    ///    `HeaderValue::append_bytes`.
     /// 3. Modifies `HeaderValue`.
     /// 3. Checks if the test results are correct.
     #[test]
@@ -1098,7 +1124,8 @@ mod ut_headers {
     ///
     /// # Brief
     /// 1. Creates a `HeaderValue`.
-    /// 2. Adds new value content into `HeaderValue` by calling `HeaderValue::append_bytes`.
+    /// 2. Adds new value content into `HeaderValue` by calling
+    ///    `HeaderValue::append_bytes`.
     /// 3. Checks if the test results are correct.
     #[test]
     fn ut_header_value_append_bytes() {

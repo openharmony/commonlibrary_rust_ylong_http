@@ -11,27 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    body::{
-        mime::{
-            common::{
-                get_content_type_boundary, get_crlf_contain, trim_back_lwsp_if_end_with_lf, XPart,
-            },
-            decode::BoundaryTag,
-            DecodeHeaders, MimeMulti, MimePartDecoder,
-        },
-        TokenStatus,
-    },
-    error::{ErrorKind, HttpError},
-    headers::Headers,
-};
 use core::mem::take;
+
+use crate::body::mime::common::{
+    get_content_type_boundary, get_crlf_contain, trim_back_lwsp_if_end_with_lf, XPart,
+};
+use crate::body::mime::decode::BoundaryTag;
+use crate::body::mime::{DecodeHeaders, MimeMulti, MimePartDecoder};
+use crate::body::TokenStatus;
+use crate::error::{ErrorKind, HttpError};
+use crate::headers::Headers;
 
 type ByteVec<'a> = Result<TokenStatus<(Vec<u8>, &'a [u8]), &'a [u8]>, HttpError>;
 
 // TODO: Increases compatibility for preamble and epilogue.
 
-/// `MimeMultiDecoder` can create a [`MimeMulti`] according to a serialized data.
+/// `MimeMultiDecoder` can create a [`MimeMulti`] according to a serialized
+/// data.
 ///
 /// [`MimeMulti`]: MimeMulti
 ///
@@ -64,8 +60,10 @@ type ByteVec<'a> = Result<TokenStatus<(Vec<u8>, &'a [u8]), &'a [u8]>, HttpError>
 /// ```
 #[derive(Debug, Default, PartialEq)]
 pub struct MimeMultiDecoder {
-    stages: Vec<MultiStage>,         // stack of stage
-    multis: Vec<MimeMulti<'static>>, // stack of multi
+    // stack of stage
+    stages: Vec<MultiStage>,
+    // stack of multi
+    multis: Vec<MimeMulti<'static>>,
 }
 
 impl MimeMultiDecoder {
@@ -74,7 +72,7 @@ impl MimeMultiDecoder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http:: body::MimeMultiDecoder;
+    /// use ylong_http::body::MimeMultiDecoder;
     ///
     /// let mut decoder = MimeMultiDecoder::new();
     /// ```
@@ -141,7 +139,8 @@ impl MimeMultiDecoder {
                 }
             }?;
             remains = rest;
-            // at least has the outermost multi stage, unless is replaced by MultiStage::End, so the last stage can uncheck.
+            // at least has the outermost multi stage, unless is replaced by
+            // MultiStage::End, so the last stage can uncheck.
             if remains.is_empty() && !self.last_stage()?.is_end() {
                 break;
             }
@@ -377,11 +376,15 @@ impl MultiStage {
 
 #[derive(Debug, PartialEq)]
 struct DecodeData {
-    is_finish_first_boundary: bool, // whether read first boundary completely
-    is_outermost: bool,             // whether is outermost multi
+    // whether read first boundary completely
+    is_finish_first_boundary: bool,
+    // whether is outermost multi
+    is_outermost: bool,
     boundary: Vec<u8>,
-    tag: BoundaryTag, // 1 is middle part; 2 is end part
-    src: Vec<u8>,     // src which is need to encode
+    // 1 is middle part; 2 is end part
+    tag: BoundaryTag,
+    // src which is need to encode
+    src: Vec<u8>,
     src_idx: usize,
 }
 
@@ -693,7 +696,8 @@ mod ut_mime_multi_decoder {
     /// # Brief
     /// 1. Creates a `MimeMultiDecoder` by `MimeMultiDecoder::new`.
     /// 2. Uses `MimeMultiDecoder::decode` to decode `MimeMulti`.
-    /// 3. The `MimeMulti` is composed of several parts, and the boundary has LWSP chars.
+    /// 3. The `MimeMulti` is composed of several parts, and the boundary has
+    ///    LWSP chars.
     /// 4. Creates a `MimeMulti` and sets the same parameters to compare.
     /// 5. Checks whether the result is correct.
     #[test]
@@ -930,16 +934,24 @@ mod ut_mime_multi_decoder {
         let buf =
             b"---\r\nkey1:value1\r\n\r\n1111\r\n---\r\nkey2: value2\r\n\r\n2222\r\n-----\r\nabcd";
         let mut decoder = MimeMultiDecoder::new();
-        let (elem, rest) = decoder.decode(&buf[..3]).unwrap(); //---
+
+        //---
+        let (elem, rest) = decoder.decode(&buf[..3]).unwrap();
         assert!(!elem.is_complete());
         assert_eq!(rest, b"");
-        let (elem, rest) = decoder.decode(&buf[3..16]).unwrap(); //\r\nkey1:value1
+
+        //\r\nkey1:value1
+        let (elem, rest) = decoder.decode(&buf[3..16]).unwrap();
         assert!(!elem.is_complete());
         assert_eq!(rest, b"");
-        let (elem, rest) = decoder.decode(&buf[16..31]).unwrap(); //\r\n\r\n1111\r\n---\r\n
+
+        //\r\n\r\n1111\r\n---\r\n
+        let (elem, rest) = decoder.decode(&buf[16..31]).unwrap();
         assert!(!elem.is_complete());
         assert_eq!(rest, b"");
-        let (elem, rest) = decoder.decode(&buf[31..60]).unwrap(); //key2: value2\r\n\r\n2222\r\n-----\r\n
+
+        // key2: value2\r\n\r\n2222\r\n-----\r\n
+        let (elem, rest) = decoder.decode(&buf[31..60]).unwrap();
         assert!(elem.is_complete());
         let multi1 = MimeMulti::builder()
             .set_boundary(b"-".to_vec())
@@ -963,7 +975,9 @@ mod ut_mime_multi_decoder {
             assert_eq!(multi, multi1);
         }
         assert_eq!(rest, b"");
-        let (_elem, rest) = decoder.decode(&buf[60..]).unwrap(); //abcd
+
+        // abcd
+        let (_elem, rest) = decoder.decode(&buf[60..]).unwrap();
         assert_eq!(rest, b"abcd");
     }
 

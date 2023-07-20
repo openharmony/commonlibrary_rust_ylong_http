@@ -11,28 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    bio::BioSlice,
-    check_ptr, check_ret,
-    error::{error_get_lib, error_get_reason, ErrorStack},
-    ffi::{
-        err::{ERR_clear_error, ERR_peek_last_error},
-        pem::PEM_read_bio_X509,
-        x509::{
-            d2i_X509, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new, X509_VERIFY_PARAM_free,
-            X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
-            X509_VERIFY_PARAM_set_hostflags, X509_verify_cert_error_string, STACK_X509, X509_STORE,
-            X509_VERIFY_PARAM,
-        },
-    },
-    foreign::{Foreign, ForeignRef},
-    ssl_init,
-    stack::Stackof,
-};
-use crate::util::c_openssl::ffi::x509::{X509_free, C_X509};
 use core::{ffi, fmt, ptr, str};
-use libc::{c_int, c_long, c_uint};
 use std::net::IpAddr;
+
+use libc::{c_int, c_long, c_uint};
+
+use super::bio::BioSlice;
+use super::error::{error_get_lib, error_get_reason, ErrorStack};
+use super::ffi::err::{ERR_clear_error, ERR_peek_last_error};
+use super::ffi::pem::PEM_read_bio_X509;
+use super::ffi::x509::{
+    d2i_X509, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new, X509_VERIFY_PARAM_free,
+    X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip, X509_VERIFY_PARAM_set_hostflags,
+    X509_verify_cert_error_string, STACK_X509, X509_STORE, X509_VERIFY_PARAM,
+};
+use super::foreign::{Foreign, ForeignRef};
+use super::stack::Stackof;
+use super::{check_ptr, check_ret, ssl_init};
+use crate::util::c_openssl::ffi::x509::{X509_free, C_X509};
 
 foreign_type!(
     type CStruct = C_X509;

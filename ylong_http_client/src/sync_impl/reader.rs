@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::time::{Duration, Instant};
+
 use super::Body;
 use crate::error::HttpClientError;
 use crate::util::Timeout;
 use crate::ErrorKind;
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
-use std::time::{Duration, Instant};
 
 /// A reader used to read all the body data to a specified location and provide
 /// echo function.
@@ -25,7 +26,7 @@ use std::time::{Duration, Instant};
 /// # Examples
 ///
 /// ```
-/// use ylong_http_client::sync_impl::{BodyReader, BodyProcessor, BodyProcessError};
+/// use ylong_http_client::sync_impl::{BodyProcessError, BodyProcessor, BodyReader};
 /// use ylong_http_client::TextBody;
 ///
 /// // Defines a processor, which provides read and echo ability.
@@ -49,7 +50,10 @@ use std::time::{Duration, Instant};
 /// }
 ///
 /// let mut body = TextBody::from_bytes(b"HelloWorld");
-/// let mut processor = Processor { vec: Vec::new(), echo: 0 };
+/// let mut processor = Processor {
+///     vec: Vec::new(),
+///     echo: 0,
+/// };
 /// let _ = BodyReader::new(&mut processor).read_all(&mut body);
 ///
 /// // All data is read.
@@ -87,16 +91,16 @@ impl<T: BodyProcessor> BodyReader<T> {
     /// use ylong_http_client::sync_impl::{BodyReader, DefaultBodyProcessor};
     /// use ylong_http_client::util::Timeout;
     ///
-    /// let reader = BodyReader::new(DefaultBodyProcessor::new())
-    ///     .read_timeout(Timeout::none());
+    /// let reader = BodyReader::new(DefaultBodyProcessor::new()).read_timeout(Timeout::none());
     /// ```
     pub fn read_timeout(mut self, timeout: Timeout) -> Self {
         self.read_timeout = timeout;
         self
     }
 
-    /// Reads all the body data. During the read process, [`BodyProcessor::write`] and
-    /// [`BodyProcessor::progress`] will be called multiple times.
+    /// Reads all the body data. During the read process,
+    /// [`BodyProcessor::write`] and [`BodyProcessor::progress`] will be
+    /// called multiple times.
     ///
     /// [`BodyProcessor::write`]: BodyProcessor::write
     /// [`BodyProcessor::progress`]: BodyProcessor::progress
@@ -104,7 +108,7 @@ impl<T: BodyProcessor> BodyReader<T> {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::sync_impl::{BodyReader, BodyProcessor};
+    /// use ylong_http_client::sync_impl::{BodyProcessor, BodyReader};
     /// use ylong_http_client::TextBody;
     ///
     /// let mut body = TextBody::from_bytes(b"HelloWorld");
@@ -154,7 +158,8 @@ impl Default for BodyReader<DefaultBodyProcessor> {
     }
 }
 
-/// The trait defines methods for processing bodies of HTTP messages. Unlike the async version, this is for synchronous usage.
+/// The trait defines methods for processing bodies of HTTP messages. Unlike the
+/// async version, this is for synchronous usage.
 pub trait BodyProcessor {
     /// Writes the body data read each time to the specified location.
     ///
@@ -217,14 +222,16 @@ impl Default for DefaultBodyProcessor {
 
 #[cfg(test)]
 mod ut_syn_reader {
+    use ylong_http::body::TextBody;
+
     use crate::sync_impl::{BodyReader, DefaultBodyProcessor};
     use crate::util::Timeout;
-    use ylong_http::body::TextBody;
 
     /// UT test cases for `BodyReader::read_timeout`.
     ///
     /// # Brief
-    /// 1. Creates a `BodyReader` with `DefaultBodyProcessor::default` by calling `BodyReader::new`.
+    /// 1. Creates a `BodyReader` with `DefaultBodyProcessor::default` by
+    ///    calling `BodyReader::new`.
     /// 2. Calls `read_timeout`.
     /// 3. Checks if the result is correct.
     #[test]

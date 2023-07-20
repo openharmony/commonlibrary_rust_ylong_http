@@ -11,23 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{Body, StreamData};
-
-use crate::error::{ErrorKind, HttpClientError};
-use crate::{AsyncRead, ReadBuf, Sleep};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::future::Future;
 use std::io::{Cursor, Read};
-use ylong_http::body::TextBodyDecoder;
-use ylong_http::headers::Headers;
 
+use ylong_http::body::TextBodyDecoder;
+#[cfg(feature = "http1_1")]
+use ylong_http::body::{ChunkBodyDecoder, ChunkState};
+use ylong_http::headers::Headers;
 #[cfg(feature = "http1_1")]
 use ylong_http::headers::{HeaderName, HeaderValue};
 
+use super::{Body, StreamData};
+use crate::error::{ErrorKind, HttpClientError};
 use crate::util::normalizer::BodyLength;
-#[cfg(feature = "http1_1")]
-use ylong_http::body::{ChunkBodyDecoder, ChunkState};
+use crate::{AsyncRead, ReadBuf, Sleep};
 
 /// `HttpBody` is the body part of the `Response` returned by `Client::request`.
 /// `HttpBody` implements `Body` trait, so users can call related methods to get
@@ -36,8 +35,8 @@ use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 /// # Examples
 ///
 /// ```no_run
-/// use ylong_http_client::async_impl::{Client, HttpBody, Body};
-/// use ylong_http_client::{Request, EmptyBody};
+/// use ylong_http_client::async_impl::{Body, Client, HttpBody};
+/// use ylong_http_client::{EmptyBody, Request};
 ///
 /// async fn read_body() {
 ///     let client = Client::new();
@@ -563,8 +562,9 @@ impl Chunk {
 
 #[cfg(test)]
 mod ut_async_http_body {
-    use crate::async_impl::http_body::Chunk;
     use ylong_http::body::ChunkBodyDecoder;
+
+    use crate::async_impl::http_body::Chunk;
 
     /// UT test cases for `Chunk::get_trailers`.
     ///

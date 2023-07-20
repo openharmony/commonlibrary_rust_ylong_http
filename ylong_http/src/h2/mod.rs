@@ -49,7 +49,6 @@
 //! [HTTP]: https://www.rfc-editor.org/rfc/rfc9110.html
 //! [HTTP/1.1]: https://www.rfc-editor.org/rfc/rfc9112.html
 //! [TCP]: https://www.rfc-editor.org/rfc/rfc793.html
-//!
 
 mod decoder;
 mod encoder;

@@ -36,7 +36,7 @@ pub(crate) fn encode(input: &[u8]) -> Vec<u8> {
 }
 
 static BASE64_TABLE: [u8; 64] = [
-    //0     1     2     3     4     5     6     7
+    // 0     1     2     3     4     5     6     7
     b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', // 0
     b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P', // 1
     b'Q', b'R', b'S', b'T', b'U', b'V', b'W', b'X', // 2
@@ -54,7 +54,8 @@ mod ut_util_base64 {
     /// UT test cases for `base64::encode`.
     ///
     /// # Brief
-    /// 1. Calls `encode` to parse the string and convert it into `base64` format.
+    /// 1. Calls `encode` to parse the string and convert it into `base64`
+    ///    format.
     /// 2. Checks if the results are correct.
     #[test]
     fn ut_util_base64_encode() {

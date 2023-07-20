@@ -27,8 +27,9 @@
 //! assert_eq!(Method::GET.as_str(), "GET");
 //! ```
 
-use crate::error::{ErrorKind, HttpError};
 use core::convert::TryFrom;
+
+use crate::error::{ErrorKind, HttpError};
 
 /// HTTP `Method` implementation.
 ///
@@ -100,7 +101,8 @@ impl Method {
     /// [`RFC9110 9.3.8`]: https://httpwg.org/specs/rfc9110.html#TRACE
     pub const TRACE: Self = Self(Inner::Trace);
 
-    /// Tries converting &[u8] to `Method`. Only uppercase letters are supported.
+    /// Tries converting &[u8] to `Method`. Only uppercase letters are
+    /// supported.
     ///
     /// # Examples
     ///

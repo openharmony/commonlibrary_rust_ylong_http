@@ -11,15 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::error::Error;
+use std::io::{Read, Write};
+use std::mem::take;
+use std::sync::{Arc, Mutex};
+
 use crate::error::{ErrorKind, HttpClientError};
 use crate::sync_impl::Connector;
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
 use crate::util::pool::{Pool, PoolKey};
 use crate::Uri;
-use std::error::Error;
-use std::io::{Read, Write};
-use std::mem::take;
-use std::sync::{Arc, Mutex};
 
 pub(crate) struct ConnPool<C, S> {
     pool: Pool<PoolKey, Conns<S>>,

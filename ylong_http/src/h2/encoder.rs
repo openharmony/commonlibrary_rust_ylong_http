@@ -14,8 +14,9 @@
 use crate::h2::frame::{FrameFlags, FrameType, Payload, Setting};
 use crate::h2::{Frame, HpackEncoder};
 
-// TODO: Classify encoder errors per RFC specifications into categories like stream or connection errors.
-// Identify specific error types such as Frame_size_error/Protocol Error.
+// TODO: Classify encoder errors per RFC specifications into categories like
+// stream or connection errors. Identify specific error types such as
+// Frame_size_error/Protocol Error.
 #[derive(Debug)]
 pub enum FrameEncoderErr {
     EncodingData,
@@ -28,17 +29,21 @@ pub enum FrameEncoderErr {
 enum FrameEncoderState {
     // The initial state for the frame encoder.
     Idle,
-    // The initial state for encoding the HEADERS frame, including the frame header and the Field Block Fragment.
+    // The initial state for encoding the HEADERS frame, including the frame header and the Field
+    // Block Fragment.
     EncodingHeadersFrame,
-    // The state for encoding the payload of the HEADERS frame, including the header block fragment.
+    // The state for encoding the payload of the HEADERS frame, including the header block
+    // fragment.
     EncodingHeadersPayload,
     // The state for encoding the padding octets for the HEADERS frame, if the PADDED flag is set.
     EncodingHeadersPadding,
     // The state for encoding CONTINUATION frames if the header block exceeds the max_frame_size.
     EncodingContinuationFrames,
-    // The final state, indicating that the HEADERS frame and any necessary CONTINUATION frames have been fully encoded.
+    // The final state, indicating that the HEADERS frame and any necessary CONTINUATION frames
+    // have been fully encoded.
     HeadersComplete,
-    // The initial state for encoding the DATA frame, including the frame header and the Pad Length field (if PADDED flag is set).
+    // The initial state for encoding the DATA frame, including the frame header and the Pad
+    // Length field (if PADDED flag is set).
     EncodingDataHeader,
     // The state for encoding the actual data payload of the DATA frame.
     EncodingDataPayload,
@@ -72,8 +77,9 @@ enum FrameEncoderState {
     DataComplete,
 }
 
-/// A structure for encoding frames into bytes, supporting the serialization of HTTP/2 Frames.
-/// It maintains the state of the current frame being encoded and also handles the fragmentation of frames.
+/// A structure for encoding frames into bytes, supporting the serialization of
+/// HTTP/2 Frames. It maintains the state of the current frame being encoded and
+/// also handles the fragmentation of frames.
 pub struct FrameEncoder {
     current_frame: Option<Frame>,
     max_frame_size: usize,
@@ -90,7 +96,8 @@ pub struct FrameEncoder {
 }
 
 impl FrameEncoder {
-    /// Constructs a new `FrameEncoder` with specified maximum frame size and maximum header list size.
+    /// Constructs a new `FrameEncoder` with specified maximum frame size and
+    /// maximum header list size.
     pub fn new(max_frame_size: usize, max_header_list_size: usize) -> Self {
         FrameEncoder {
             current_frame: None,
@@ -103,17 +110,20 @@ impl FrameEncoder {
             remaining_payload_bytes: 0,
             is_end_stream: false,
             is_end_headers: false,
-            header_payload_buffer: vec![0; 16383], // Initialized to default max frame size.
+            // Initialized to default max frame size.
+            header_payload_buffer: vec![0; 16383],
             header_payload_index: 0,
         }
     }
 
-    /// Sets the current frame to be encoded by the `FrameEncoder`. The state of the encoder is updated based on the payload type of the frame.
+    /// Sets the current frame to be encoded by the `FrameEncoder`. The state of
+    /// the encoder is updated based on the payload type of the frame.
     pub fn set_frame(&mut self, frame: Frame) {
         self.is_end_stream = frame.flags().is_end_stream();
         self.is_end_headers = frame.flags().is_end_headers();
         self.current_frame = Some(frame);
-        self.encoded_bytes = 0; // Reset the encoded bytes counter
+        // Reset the encoded bytes counter
+        self.encoded_bytes = 0;
 
         // Set the initial state based on the frame payload type
         match &self.current_frame {
@@ -121,7 +131,8 @@ impl FrameEncoder {
                 Payload::Headers(headers) => {
                     self.hpack_encoder.set_parts(headers.get_parts());
                     self.header_payload_index = 0;
-                    // TODO: Handle potential scenario where HPACK encoding may not be able to complete output in one go.
+                    // TODO: Handle potential scenario where HPACK encoding may not be able to
+                    // complete output in one go.
                     let payload_size = self.hpack_encoder.encode(&mut self.header_payload_buffer);
                     self.remaining_header_payload = payload_size;
                     self.state = FrameEncoderState::EncodingHeadersFrame;
@@ -141,8 +152,10 @@ impl FrameEncoder {
         }
     }
 
-    /// Encodes the current frame into the given buffer. The state of the encoder determines which part of the frame is currently being encoded.
-    /// This function returns the number of bytes written to the buffer or an error if the encoding process fails.
+    /// Encodes the current frame into the given buffer. The state of the
+    /// encoder determines which part of the frame is currently being encoded.
+    /// This function returns the number of bytes written to the buffer or an
+    /// error if the encoding process fails.
     pub fn encode(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         let mut written_bytes = 0;
 
@@ -292,7 +305,8 @@ impl FrameEncoder {
         Ok(written_bytes)
     }
 
-    /// Updates the provided setting for the current frame if it is a `Settings` frame.
+    /// Updates the provided setting for the current frame if it is a `Settings`
+    /// frame.
     pub fn update_setting(&mut self, setting: Setting) {
         if let Some(frame) = &mut self.current_frame {
             if let Payload::Settings(settings) = frame.payload_mut() {
@@ -315,7 +329,8 @@ impl FrameEncoder {
     fn encode_headers_frame(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::Headers(_) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let remaining_header_bytes = if self.encoded_bytes >= frame_header_size {
                     0
                 } else {
@@ -339,7 +354,8 @@ impl FrameEncoder {
                         4 => {
                             *item = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header.
                         5..=8 => {
                             let stream_id_byte_index = header_byte_index - 5;
                             *item = (frame.stream_id() >> (24 - (8 * stream_id_byte_index))) as u8;
@@ -437,10 +453,12 @@ impl FrameEncoder {
                 let mut new_flags = FrameFlags::empty();
                 if self.remaining_header_payload <= self.max_frame_size {
                     if self.is_end_headers {
-                        new_flags.set_end_headers(true); // Sets the END_HEADERS flag on the last CONTINUATION frame.
+                        // Sets the END_HEADER flag on the last CONTINUATION frame.
+                        new_flags.set_end_headers(true);
                     }
                     if self.is_end_stream {
-                        new_flags.set_end_stream(true); // Sets the END_STREAM flag.
+                        // Sets the END_STREAM flag.
+                        new_flags.set_end_stream(true);
                     }
                 }
                 buf[4] = new_flags.bits();
@@ -482,7 +500,8 @@ impl FrameEncoder {
     fn encode_data_header(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::Data(data_frame) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let remaining_header_bytes = if self.encoded_bytes >= frame_header_size {
                     0
                 } else {
@@ -506,7 +525,8 @@ impl FrameEncoder {
                         4 => {
                             *item = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header.
                         5..=8 => {
                             let stream_id_byte_index = header_byte_index - 5;
                             *item = (frame.stream_id() >> (24 - (8 * stream_id_byte_index))) as u8;
@@ -534,7 +554,8 @@ impl FrameEncoder {
     fn encode_data_payload(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = self.current_frame.as_ref() {
             if let Payload::Data(data_frame) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let encoded_payload_bytes = self.encoded_bytes - frame_header_size;
                 let payload = data_frame.data();
                 let bytes_to_write = self.encode_slice(buf, payload, encoded_payload_bytes);
@@ -572,7 +593,8 @@ impl FrameEncoder {
                 let bytes_to_write = remaining_padding_bytes.min(buf.len());
 
                 for item in buf.iter_mut().take(bytes_to_write) {
-                    *item = 0; // Padding bytes are filled with 0.
+                    // Padding bytes are filled with 0.
+                    *item = 0;
                 }
 
                 self.encoded_bytes += bytes_to_write;
@@ -689,7 +711,8 @@ impl FrameEncoder {
     fn encode_window_update_frame(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::WindowUpdate(_) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let remaining_header_bytes = if self.encoded_bytes >= frame_header_size {
                     0
                 } else {
@@ -699,12 +722,14 @@ impl FrameEncoder {
                 for (buf_index, item) in buf.iter_mut().enumerate().take(bytes_to_write) {
                     let header_byte_index = self.encoded_bytes + buf_index;
                     match header_byte_index {
-                        // The first 3 bytes represent the payload length in the frame header. For WindowUpdate frame, this is always 4 bytes.
+                        // The first 3 bytes represent the payload length in the frame header. For
+                        // WindowUpdate frame, this is always 4 bytes.
                         0..=1 => {
                             *item = 0;
                         }
                         2 => {
-                            *item = 4; // Window Update frame payload size is always 4 bytes.
+                            // Window Update frame payload size is always 4 bytes.
+                            *item = 4;
                         }
                         // The 4th byte represents the frame type in the frame header.
                         3 => {
@@ -714,7 +739,8 @@ impl FrameEncoder {
                         4 => {
                             *item = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header.
                         5..=8 => {
                             let stream_id_byte_index = header_byte_index - 5;
                             *item = (frame.stream_id() >> (24 - (8 * stream_id_byte_index))) as u8;
@@ -727,7 +753,8 @@ impl FrameEncoder {
                 self.encoded_bytes += bytes_to_write;
                 if self.encoded_bytes == frame_header_size {
                     self.state = FrameEncoderState::EncodingWindowUpdatePayload;
-                    self.encoded_bytes = 0; // Resets the encoded_bytes counter here.
+                    // Resets the encoded_bytes counter here.
+                    self.encoded_bytes = 0;
                 }
                 Ok(bytes_to_write)
             } else {
@@ -794,10 +821,12 @@ impl FrameEncoder {
                         4 => {
                             buf[4] = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
-                        // For SETTINGS frames, this should always be 0.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header. For SETTINGS frames, this should
+                        // always be 0.
                         5..=8 => {
-                            buf[buf_index] = 0; // Stream ID should be 0 for SETTINGS frames.
+                            // Stream ID should be 0 for SETTINGS frames.
+                            buf[buf_index] = 0;
                         }
                         _ => {
                             return Err(FrameEncoderErr::InternalError);
@@ -871,7 +900,8 @@ impl FrameEncoder {
     fn encode_priority_frame(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::Priority(_) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let remaining_header_bytes = if self.encoded_bytes >= frame_header_size {
                     0
                 } else {
@@ -895,7 +925,8 @@ impl FrameEncoder {
                         4 => {
                             *item = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header.
                         5..=8 => {
                             let stream_id_byte_index = header_byte_index - 5;
                             *item = (frame.stream_id() >> (24 - (8 * stream_id_byte_index))) as u8;
@@ -921,7 +952,8 @@ impl FrameEncoder {
     fn encode_priority_payload(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::Priority(priority) = frame.payload() {
-                let frame_header_size = 9; // HTTP/2 frame header size is 9 bytes.
+                // HTTP/2 frame header size is 9 bytes.
+                let frame_header_size = 9;
                 let remaining_payload_bytes = 5 - (self.encoded_bytes - frame_header_size);
                 let bytes_to_write = remaining_payload_bytes.min(buf.len());
 
@@ -1060,7 +1092,8 @@ impl FrameEncoder {
                     match header_byte_index {
                         // The first 3 bytes represent the payload length in the frame header.
                         0..=2 => {
-                            let payload_len = 8; // PING payload is always 8 bytes.
+                            // PING payload is always 8 bytes.
+                            let payload_len = 8;
                             buf[buf_index] = ((payload_len >> (16 - (8 * buf_index))) & 0xFF) as u8;
                         }
                         // The 4th byte represents the frame type in the frame header.
@@ -1071,10 +1104,12 @@ impl FrameEncoder {
                         4 => {
                             buf[4] = frame.flags().bits();
                         }
-                        // The last 4 bytes (6th to 9th) represent the stream identifier in the frame header.
-                        // For PING frames, this should always be 0.
+                        // The last 4 bytes (6th to 9th) represent the stream identifier in the
+                        // frame header. For PING frames, this should always
+                        // be 0.
                         5..=8 => {
-                            buf[buf_index] = 0; // Stream ID should be 0 for PING frames.
+                            // Stream ID should be 0 for PING frames.
+                            buf[buf_index] = 0;
                         }
                         _ => {
                             return Err(FrameEncoderErr::InternalError);
@@ -1097,7 +1132,8 @@ impl FrameEncoder {
     fn encode_ping_payload(&mut self, buf: &mut [u8]) -> Result<usize, FrameEncoderErr> {
         if let Some(frame) = &self.current_frame {
             if let Payload::Ping(ping) = frame.payload() {
-                let payload_size = 8usize; // PING payload is always 8 bytes.
+                // PING payload is always 8 bytes.
+                let payload_size = 8usize;
                 let remaining_payload_bytes =
                     payload_size.saturating_sub(self.encoded_bytes.saturating_sub(9usize));
                 let bytes_to_write = remaining_payload_bytes.min(buf.len());
@@ -1265,9 +1301,11 @@ mod ut_frame_encoder {
         let third_encoded = encoder.encode(&mut third_buf).unwrap();
 
         assert_eq!(encoder.state, FrameEncoderState::DataComplete);
-        assert_eq!(first_encoded, 9); // Updated expected value for first_encoded
+        // Updated expected value for first_encoded
+        assert_eq!(first_encoded, 9);
         assert_eq!(second_encoded, 30);
-        assert_eq!(third_encoded, 6); // Updated expected value for third_encoded
+        // Updated expected value for third_encoded
+        assert_eq!(third_encoded, 6);
 
         // Validate the encoded settings
         let mut expected_encoded_settings = vec![0u8; 60];
@@ -1327,25 +1365,33 @@ mod ut_frame_encoder {
 
         assert_eq!(first_buf[0], 0);
         assert_eq!(first_buf[1], 0);
-        assert_eq!(first_buf[2], 8); // payload length
+        // payload length
+        assert_eq!(first_buf[2], 8);
         assert_eq!(first_buf[3], FrameType::Ping as u8);
-        assert_eq!(first_buf[4], 0); // flags
-        assert_eq!(first_buf[5], 0); // stream id
-        assert_eq!(first_buf[6], 0); // stream id
-        assert_eq!(first_buf[7], 0); // stream id
-        assert_eq!(first_buf[8], 0); // stream id
+        // flags
+        assert_eq!(first_buf[4], 0);
+        // stream id
+        assert_eq!(first_buf[5], 0);
+        // stream id
+        assert_eq!(first_buf[6], 0);
+        // stream id
+        assert_eq!(first_buf[7], 0);
+        // stream id
+        assert_eq!(first_buf[8], 0);
 
         for i in 0..8 {
             assert_eq!(second_buf[i], ping_payload[i]);
         }
     }
 
-    /// UT test case for FrameEncoder encoding a sequence of frames: Headers, Data, Headers.
+    /// UT test case for FrameEncoder encoding a sequence of frames: Headers,
+    /// Data, Headers.
     ///
     /// # Brief
     /// 1. Creates a FrameEncoder.
     /// 2. Creates multiple frames including Headers and Data frames.
-    /// 3. Sets each frame for the encoder and encodes them using buffer segments.
+    /// 3. Sets each frame for the encoder and encodes them using buffer
+    ///    segments.
     /// 4. Checks whether the encoding results are correct.
     #[test]
     fn ut_continue_frame_encoding() {
@@ -1418,7 +1464,8 @@ mod ut_frame_encoder {
 
         let frame_flags = FrameFlags::empty();
         let frame = Frame::new(
-            1, // Stream ID can be non-zero for RST_STREAM frames
+            // Stream ID can be non-zero for RST_STREAM frames
+            1,
             frame_flags,
             rst_stream_payload,
         );
@@ -1428,12 +1475,16 @@ mod ut_frame_encoder {
 
         let mut buf = vec![0; 50];
         let first_encoded = frame_encoder.encode(&mut buf).unwrap();
-        assert_eq!(first_encoded, 9 + 4); // 9 bytes for header, 4 bytes for payload
+        // 9 bytes for header, 4 bytes for payload
+        assert_eq!(first_encoded, 9 + 4);
         assert_eq!(buf[0], 0);
-        assert_eq!(buf[2], 4); // payload length should be 4 for RST_STREAM frames
+        // payload length should be 4 for RST_STREAM frames
+        assert_eq!(buf[2], 4);
         assert_eq!(buf[3], FrameType::RstStream as u8);
-        assert_eq!(buf[4], 0); // frame flags should be 0 for RST_STREAM frames
-        assert_eq!(buf[8], 1); // stream ID should be 1 for this test case
+        // frame flags should be 0 for RST_STREAM frames
+        assert_eq!(buf[4], 0);
+        // stream ID should be 1 for this test case
+        assert_eq!(buf[8], 1);
 
         // Check if encoded error code is correct
         assert_eq!(&buf[9..13], &error_code.to_be_bytes());
@@ -1458,7 +1509,8 @@ mod ut_frame_encoder {
 
         let frame_flags = FrameFlags::empty();
         let frame = Frame::new(
-            0, // Stream ID can be zero for WINDOW_UPDATE frames.
+            // Stream ID can be zero for WINDOW_UPDATE frames.
+            0,
             frame_flags,
             window_update_payload,
         );
@@ -1468,12 +1520,16 @@ mod ut_frame_encoder {
 
         let mut buf = vec![0; 50];
         let first_encoded = frame_encoder.encode(&mut buf).unwrap();
-        assert_eq!(first_encoded, 9 + 4); // 9 bytes for header, 4 bytes for payload.
+        // 9 bytes for header, 4 bytes for payload.
+        assert_eq!(first_encoded, 9 + 4);
         assert_eq!(buf[0], 0);
-        assert_eq!(buf[2], 4); // Payload length should be 4 for WINDOW_UPDATE frames.
+        // Payload length should be 4 for WINDOW_UPDATE frames.
+        assert_eq!(buf[2], 4);
         assert_eq!(buf[3], FrameType::WindowUpdate as u8);
-        assert_eq!(buf[4], 0); // Frame flags should be 0 for WINDOW_UPDATE frames.
-        assert_eq!(buf[8], 0); // Stream ID should be 0 for this test case.
+        // Frame flags should be 0 for WINDOW_UPDATE frames.
+        assert_eq!(buf[4], 0);
+        // Stream ID should be 0 for this test case.
+        assert_eq!(buf[8], 0);
 
         // Checks if encoded window size increment is correct.
         assert_eq!(&buf[9..13], &window_size_increment.to_be_bytes());
@@ -1492,7 +1548,8 @@ mod ut_frame_encoder {
     #[test]
     fn ut_priority_frame_encoding() {
         let mut encoder = FrameEncoder::new(4096, 4096);
-        let stream_dependency = 0x7FFFFFFF; // Maximum value for a 31-bit integer
+        // Maximum value for a 31-bit integer
+        let stream_dependency = 0x7FFFFFFF;
         let priority_payload = Priority::new(true, stream_dependency, 15);
 
         let priority_frame =
@@ -1505,20 +1562,33 @@ mod ut_frame_encoder {
         let encoded = encoder.encode(&mut buf).unwrap();
 
         assert_eq!(encoded, 14);
-        assert_eq!(buf[0], 0); // Payload length (most significant byte)
-        assert_eq!(buf[1], 0); // Payload length (middle byte)
-        assert_eq!(buf[2], 5); // Payload length (least significant byte)
+        // Payload length (most significant byte)
+        assert_eq!(buf[0], 0);
+        // Payload length (middle byte)
+        assert_eq!(buf[1], 0);
+        // Payload length (least significant byte)
+        assert_eq!(buf[2], 5);
+        // Frame flags
         assert_eq!(buf[3], FrameType::Priority as u8);
-        assert_eq!(buf[4], 0); // Frame flags
-        assert_eq!(buf[5], 0); // Stream ID (most significant byte)
-        assert_eq!(buf[6], 0); // Stream ID (middle bytes)
-        assert_eq!(buf[7], 0); // Stream ID (middle bytes)
-        assert_eq!(buf[8], 131); // Stream ID (least significant byte)
-        assert_eq!(buf[9], (0x80 | ((stream_dependency >> 24) & 0x7F)) as u8); // Exclusive flag and most significant byte of stream dependency
-        assert_eq!(buf[10], ((stream_dependency >> 16) & 0xFF) as u8); // Stream dependency (middle bytes)
-        assert_eq!(buf[11], ((stream_dependency >> 8) & 0xFF) as u8); // Stream dependency (middle bytes)
-        assert_eq!(buf[12], (stream_dependency & 0xFF) as u8); // Stream dependency (least significant byte)
-        assert_eq!(buf[13], 15); // Weight
+        assert_eq!(buf[4], 0);
+        // Stream ID (most significant byte)
+        assert_eq!(buf[5], 0);
+        // Stream ID (middle bytes)
+        assert_eq!(buf[6], 0);
+        // Stream ID (middle bytes)
+        assert_eq!(buf[7], 0);
+        // Stream ID (least significant byte)
+        assert_eq!(buf[8], 131);
+        // Exclusive flag and most significant byte of stream dependency
+        assert_eq!(buf[9], (0x80 | ((stream_dependency >> 24) & 0x7F)) as u8);
+        // Stream dependency (middle bytes)
+        assert_eq!(buf[10], ((stream_dependency >> 16) & 0xFF) as u8);
+        // Stream dependency (middle bytes)
+        assert_eq!(buf[11], ((stream_dependency >> 8) & 0xFF) as u8);
+        // Stream dependency (least significant byte)
+        assert_eq!(buf[12], (stream_dependency & 0xFF) as u8);
+        // Weight
+        assert_eq!(buf[13], 15);
     }
 
     /// UT test cases for `FrameEncoder` encoding `GOAWAY` frame.
@@ -1564,9 +1634,11 @@ mod ut_frame_encoder {
 
         expected_encoded_goaway[8..13].copy_from_slice(&debug_data[..]);
 
-        assert_eq!(first_buf[0..3], [0u8, 0, 13]); // payload length should be 13 bytes
+        // payload length should be 13 bytes
+        assert_eq!(first_buf[0..3], [0u8, 0, 13]);
         assert_eq!(first_buf[3], FrameType::Goaway as u8);
-        assert_eq!(first_buf[4], 0); // flags
+        // flags
+        assert_eq!(first_buf[4], 0);
 
         // Validate the encoded Last-Stream-ID, Error Code, and debug data
         assert_eq!(second_buf[..], expected_encoded_goaway[..]);

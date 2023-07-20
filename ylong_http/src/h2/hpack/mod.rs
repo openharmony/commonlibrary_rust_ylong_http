@@ -19,7 +19,8 @@
 //! # Introduction
 //! In [HTTP/1.1], header fields are not compressed. As web pages have grown
 //! to require dozens to hundreds of requests, the redundant header fields in
-//! these requests unnecessarily consume bandwidth, measurably increasing latency.
+//! these requests unnecessarily consume bandwidth, measurably increasing
+//! latency.
 //!
 //! [SPDY] initially addressed this redundancy by compressing header fields
 //! using the [DEFLATE] format, which proved very effective at efficiently
@@ -41,7 +42,6 @@
 //! [SPDY]: https://datatracker.ietf.org/doc/html/draft-mbelshe-httpbis-spdy-00
 //! [DEFLATE]: https://www.rfc-editor.org/rfc/rfc1951.html
 //! [CRIME (Compression Ratio Info-leak Made Easy)]: https://en.wikipedia.org/w/index.php?title=CRIME&oldid=660948120
-//!
 
 mod decoder;
 mod encoder;

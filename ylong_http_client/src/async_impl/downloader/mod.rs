@@ -14,17 +14,17 @@
 mod builder;
 mod operator;
 
-use builder::WantsBody;
-use operator::Console;
+use std::time::Instant;
 
 pub use builder::DownloaderBuilder;
+use builder::WantsBody;
+use operator::Console;
 pub use operator::{DownloadFuture, DownloadOperator, ProgressFuture};
+use ylong_http::body::async_impl::Body;
 
 // TODO: Adapter, use Response<HttpBody> later.
 use crate::async_impl::Response;
 use crate::{ErrorKind, HttpClientError, SpeedLimit, Timeout};
-use std::time::Instant;
-use ylong_http::body::async_impl::Body;
 
 /// A downloader that can help you download the response body.
 ///
@@ -88,7 +88,7 @@ use ylong_http::body::async_impl::Body;
 ///         self: Pin<&mut Self>,
 ///         cx: &mut Context<'_>,
 ///         downloaded: u64,
-///         total: Option<u64>
+///         total: Option<u64>,
 ///     ) -> Poll<Result<(), HttpClientError>> {
 ///         // Writes your customize method.
 ///         todo!()
