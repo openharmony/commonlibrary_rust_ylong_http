@@ -11,14 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(all(feature = "async", not(feature = "__tls")))]
+#![cfg(feature = "async")]
 
 #[macro_use]
 mod common;
 
 use ylong_http::body::async_impl::Body as AsyncBody;
 
-use crate::common::{async_build_http_client, init_test_work_runtime, HttpHandle};
+use crate::common::init_test_work_runtime;
 
 /// SDV test cases for `async::Client`.
 ///

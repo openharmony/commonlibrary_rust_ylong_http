@@ -11,10 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
-use ylong_http_client::async_impl::Client;
-
 #[macro_export]
 macro_rules! async_client_test_case {
     (
@@ -40,6 +36,7 @@ macro_rules! async_client_test_case {
             Body: $resp_body: expr,
         },)*
     ) => {{
+        define_service_handle!(HTTPS;);
         set_server_fn!(
             ASYNC;
             $server_fn_name,
@@ -128,6 +125,7 @@ macro_rules! async_client_test_case {
             Body: $resp_body: expr,
         },)*
     ) => {{
+        define_service_handle!(HTTP;);
         set_server_fn!(
             ASYNC;
             $server_fn_name,
@@ -222,7 +220,12 @@ macro_rules! async_client_assert {
             Body: $resp_body: expr,
         },)*
     ) => {{
-        let client = async_build_https_client($tls_config);
+        let client = ylong_http_client::async_impl::Client::builder()
+        .tls_ca_file($tls_config)
+        .danger_accept_invalid_hostnames(true)
+        .build()
+        .unwrap();
+        let client = std::sync::Arc::new(client);
         for _i in 0..$server_num {
             let handle = $handle_vec.pop().expect("No more handles !");
             let client = std::sync::Arc::clone(&client);
@@ -274,7 +277,9 @@ macro_rules! async_client_assert {
             Body: $resp_body: expr,
         },)*
     ) => {{
-        let client = async_build_http_client();
+        //let client = async_build_http_client();
+        let client = ylong_http_client::async_impl::Client::new();
+        let client = std::sync::Arc::new(client);
         for _i in 0..$server_num {
             let mut handle = $handle_vec.pop().expect("No more handles !");
             let client = std::sync::Arc::clone(&client);
@@ -373,20 +378,4 @@ macro_rules! async_client_assertions {
             assert_eq!(&buf[..size], $resp_body.as_bytes(), "Assert response body failed");
         )*
     }
-}
-
-#[cfg(feature = "__tls")]
-pub fn async_build_https_client(tls_config: &str) -> Arc<Client> {
-    let client = ylong_http_client::async_impl::Client::builder()
-        .tls_ca_file(tls_config)
-        .danger_accept_invalid_hostnames(true) // The root-ca is not have SAN hostname.
-        .build()
-        .unwrap();
-    std::sync::Arc::new(client)
-}
-
-#[cfg(not(feature = "__tls"))]
-pub fn async_build_http_client() -> Arc<Client> {
-    let client = ylong_http_client::async_impl::Client::new();
-    Arc::new(client)
 }

@@ -11,33 +11,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(all(feature = "async", feature = "__tls"))]
+#![cfg(feature = "async")]
 
 #[macro_use]
-mod common;
+pub mod tcp_server;
 
-use std::path::PathBuf;
+use tokio::runtime::Runtime;
+use ylong_http::body::async_impl::Body;
 
-use ylong_http_client::Body;
+use crate::tcp_server::{format_header_str, TcpHandle};
 
-use crate::common::init_test_work_runtime;
+fn init_test_work_runtime(thread_num: usize) -> Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(thread_num)
+        .enable_all()
+        .build()
+        .expect("Build runtime failed.")
+}
 
-// TODO: Add doc for sdv tests.
+/// SDV test cases for `async::Client`.
+///
+/// # Brief
+/// 1. Starts a hyper server with the tokio coroutine.
+/// 2. Creates an async::Client.
+/// 3. The client sends a request message.
+/// 4. Verifies the received request on the server.
+/// 5. The server sends a response message.
+/// 6. Verifies the received response on the client.
+/// 7. Shuts down the server.
+/// 8. Repeats the preceding operations to start the next test case.
 #[test]
 fn sdv_async_client_send_request() {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(dir);
-    path.push("tests/file/root-ca.pem");
-
     // `GET` request
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 1,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 2,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -50,14 +61,12 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request.
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 1,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 2,
         Request: {
             Method: "HEAD",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -69,14 +78,12 @@ fn sdv_async_client_send_request() {
     );
 
     // `Post` Request.
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 1,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 2,
         Request: {
             Method: "POST",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -89,14 +96,12 @@ fn sdv_async_client_send_request() {
     );
 
     // `HEAD` request without body.
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 1,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 2,
         Request: {
             Method: "HEAD",
-            Host: "127.0.0.1",
+            Path: "/data",
             Body: "",
         },
         Response: {
@@ -107,14 +112,12 @@ fn sdv_async_client_send_request() {
     );
 
     // `PUT` request.
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 1,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 2,
         Request: {
             Method: "PUT",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -127,20 +130,22 @@ fn sdv_async_client_send_request() {
     );
 }
 
+/// SDV test cases for `async::Client`.
+///
+/// # Brief
+/// 1. Creates a hyper server with the tokio coroutine.
+/// 2. Creates an async::Client.
+/// 3. The client repeatedly sends requests to the the server.
+/// 4. Verifies each response returned by the server.
+/// 5. Shuts down the server.
 #[test]
 fn sdv_client_send_request_repeatedly() {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(dir);
-    path.push("tests/file/root-ca.pem");
-
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+    async_client_test_on_tcp!(
+        HTTP;
         RuntimeThreads: 2,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -152,7 +157,7 @@ fn sdv_client_send_request_repeatedly() {
         },
         Request: {
             Method: "POST",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -165,21 +170,23 @@ fn sdv_client_send_request_repeatedly() {
     );
 }
 
+/// SDV test cases for `async::Client`.
+///
+/// # Brief
+/// 1. Creates an async::Client.
+/// 2. Creates five servers and five coroutine sequentially.
+/// 3. The client sends requests to the created servers in five coroutines.
+/// 4. Verifies the responses returned by each server.
+/// 5. Shuts down the servers.
 #[test]
 fn sdv_client_making_multiple_connections() {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(dir);
-    path.push("tests/file/root-ca.pem");
-
-    async_client_test_case!(
-        HTTPS;
-        ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
-        RuntimeThreads: 2,
+    async_client_test_on_tcp!(
+        HTTP;
+        RuntimeThreads: 10,
         ClientNum: 5,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },

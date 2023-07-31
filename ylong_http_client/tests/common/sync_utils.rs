@@ -35,6 +35,7 @@ macro_rules! sync_client_test_case {
             Body: $resp_body: expr,
         },)*
     ) => {{
+        define_service_handle!(HTTPS;);
         set_server_fn!(
             SYNC;
             ylong_server_fn,
@@ -123,6 +124,7 @@ macro_rules! sync_client_test_case {
             Body: $resp_body: expr,
         },)*
     ) => {{
+        define_service_handle!(HTTP;);
         set_server_fn!(
             SYNC;
             ylong_server_fn,

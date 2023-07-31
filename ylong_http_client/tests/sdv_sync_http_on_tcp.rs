@@ -14,13 +14,11 @@
 #![cfg(feature = "sync")]
 
 #[macro_use]
-mod common;
-
-use std::sync::Arc;
+mod tcp_server;
 
 use ylong_http_client::sync_impl::Body;
 
-use crate::common::init_test_work_runtime;
+use crate::tcp_server::{format_header_str, TcpHandle};
 
 /// SDV test cases for `sync::Client`.
 ///
@@ -32,15 +30,13 @@ use crate::common::init_test_work_runtime;
 /// 5. Verifies the response returned by the server.
 /// 6. Shuts down the server.
 #[test]
-fn sdv_synchronized_client_send_request() {
+fn sdv_synchronized_client_send_request_to_tcp() {
     // `PUT` request.
-    sync_client_test_case!(
+    sync_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "PUT",
-            Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -63,14 +59,12 @@ fn sdv_synchronized_client_send_request() {
 /// 5. Verifies each response returned by the server.
 /// 6. Shuts down the server.
 #[test]
-fn sdv_synchronized_client_send_request_repeatedly() {
-    sync_client_test_case!(
+fn sdv_synchronized_client_send_request_repeatedly_to_tcp() {
+    sync_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "GET",
-            Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -82,8 +76,7 @@ fn sdv_synchronized_client_send_request_repeatedly() {
         },
         Request: {
             Method: "POST",
-            Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
+            Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -92,6 +85,34 @@ fn sdv_synchronized_client_send_request_repeatedly() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "12",
             Body: "METHOD POST!",
+        },
+    );
+}
+
+/// SDV test cases for `sync::Client`.
+///
+/// # Brief
+/// 1. Creates a sync::Client.
+/// 2. Creates five servers and five client thread sequentially.
+/// 3. The client sends requests to the created servers in five thread.
+/// 4. Verifies the responses returned by each server.
+/// 5. Shuts down the servers.
+#[test]
+fn sdv_client_making_multiple_connections() {
+    sync_client_test_on_tcp!(
+        HTTP;
+        ClientNum: 5,
+        Request: {
+            Method: "GET",
+            Path: "/data",
+            Header: "Content-Length", "6",
+            Body: "Hello!",
+        },
+        Response: {
+            Status: 201,
+            Version: "HTTP/1.1",
+            Header: "Content-Length", "11",
+            Body: "METHOD GET!",
         },
     );
 }
