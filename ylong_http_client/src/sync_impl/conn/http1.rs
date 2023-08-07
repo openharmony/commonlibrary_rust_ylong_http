@@ -100,13 +100,13 @@ where
         let chunked = part
             .headers
             .get("Transfer-Encoding")
-            .map(|v| v.to_str().unwrap_or(String::new()))
+            .map(|v| v.to_str().unwrap_or_default())
             .and_then(|s| s.find("chunked"))
             .is_some();
         let content_length = part
             .headers
             .get("Content-Length")
-            .map(|v| v.to_str().unwrap_or(String::new()))
+            .map(|v| v.to_str().unwrap_or_default())
             .and_then(|s| s.parse::<usize>().ok());
 
         let is_trailer = part.headers.get("Trailer").is_some();
