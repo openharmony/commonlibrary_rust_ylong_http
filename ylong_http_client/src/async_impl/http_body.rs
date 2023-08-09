@@ -231,10 +231,12 @@ impl UntilClose {
                         return Poll::Pending;
                     }
                     Poll::Ready(Err(e)) => {
+                        // If IO error occurs, shutdowns `io` before return.
+                        io.shutdown();
                         return Poll::Ready(Err(HttpClientError::new_with_cause(
                             ErrorKind::BodyTransfer,
                             Some(e),
-                        )))
+                        )));
                     }
                 }
             }
@@ -339,10 +341,12 @@ impl Text {
                         return Poll::Pending;
                     }
                     Poll::Ready(Err(e)) => {
+                        // If IO error occurs, shutdowns `io` before return.
+                        io.shutdown();
                         return Poll::Ready(Err(HttpClientError::new_with_cause(
                             ErrorKind::BodyTransfer,
                             Some(e),
-                        )))
+                        )));
                     }
                 }
             }
@@ -434,10 +438,12 @@ impl Chunk {
                     return Poll::Pending;
                 }
                 Poll::Ready(Err(e)) => {
+                    // If IO error occurs, shutdowns `io` before return.
+                    io.shutdown();
                     return Poll::Ready(Err(HttpClientError::new_with_cause(
                         ErrorKind::BodyTransfer,
                         Some(e),
-                    )))
+                    )));
                 }
             }
         }
