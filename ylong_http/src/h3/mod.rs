@@ -12,3 +12,8 @@
 // limitations under the License.
 
 // TODO: `HTTP/3` Module.
+
+mod qpack;
+mod parts;
+mod pseudo;
+mod error;
