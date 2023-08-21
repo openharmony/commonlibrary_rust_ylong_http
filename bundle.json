@@ -6,37 +6,48 @@
   "homePage": "https://gitee.com/openharmony",
   "repository": "https://gitee.com/openharmony/commonlibrary_rust_ylong_http",
   "license": "Apache License 2.0",
-  "language": "",
-  "private": false,
-  "scripts": {},
-  "envs": [],
-  "dirs": [],
-  "author": {},
-  "contributors": [],
+  "language": "Rust",
+  "segment": {
+    "destPath": "commonlibrary/rust/ylong_http"
+  },
+  "licensePath": "COPYING",
+  "readmePath": {
+    "en": "README.md",
+    "zh": "README_zh.md"
+  },
   "component": {
     "name": "ylong_http",
     "subsystem": "commonlibrary",
     "features": [],
+    "adapted_system_type": [
+      "standard"
+    ],
     "rom": "100KB",
     "ram": "~200KB",
     "deps": {
+      "components": [
+        "ylong_runtime"
+      ],
       "third_party": [
-          "openssl",
-          "ylong_runtime"
+        "openssl"
       ]
     },
     "build": {
-      "sub_component": [],
+      "sub_component": [
+        "//commonlibrary/rust/ylong_http/ylong_http:ylong_http"
+      ],
       "inner_kits": [
         {
+          "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_inner",
           "header": {
             "header_base": [],
             "header_files": []
-          },
-          "name": "//commonlibrary/rust/ylong_http/ylong_http_client:ylong_http_client_inner"
+          }
         }
       ],
-      "test": []
+      "test": [
+        "//commonlibrary/rust/ylong_http/ylong_http_client:unittest"
+      ]
     }
   }
 }
