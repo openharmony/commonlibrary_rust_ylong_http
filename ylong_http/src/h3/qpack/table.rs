@@ -49,7 +49,7 @@ impl<'a> TableSearcher<'a> {
     }
 
     pub(crate) fn find_index_name_dynamic(&self, header: &Field, value: &str) -> Option<TableIndex> {
-        match self.dynamic.index(header, value) {
+        match self.dynamic.index_name(header, value) {
             x @ Some(TableIndex::FieldName(_)) => x,
             _ => Some(TableIndex::None),
         }
@@ -117,11 +117,16 @@ impl DynamicTable {
         self.capacity / 32
     }
     /// Updates `DynamicTable` by a given `Header` and value pair.
-    pub(crate) fn update(&mut self, field: Field, value: String) {
+    pub(crate) fn update(&mut self, field: Field, value: String)-> Option<TableIndex> {
+        self.insert_count += 1;
         self.size += field.len() + value.len() + 32;
-        self.queue.push_back((field, value));
+        self.queue.push_back((field.clone(), value.clone()));
         self.ref_count.insert(self.queue.len() + self.remove_count - 1, 0);
         self.fit_size();
+        match self.index(&field, &value) {
+            x  => x,
+            _ => Some(TableIndex::None),
+        }
     }
 
     pub(crate) fn have_enough_space(&self, field: &Field, value: &String) -> bool {
@@ -164,11 +169,24 @@ impl DynamicTable {
 
     /// Tries get the index of a `Header`.
     fn index(&self, header: &Field, value: &str) -> Option<TableIndex> {
+        // find latest
         let mut index = None;
         for (n, (h, v)) in self.queue.iter().enumerate() {
             match (header == h, value == v, &index) {
-                (true, true, _) => return Some(TableIndex::Field(n + self.remove_count)),
-                (true, false, None) => index = Some(TableIndex::FieldName(n + self.remove_count)),
+                (true, true, _) => index = Some(TableIndex::Field(n + self.remove_count)),
+                _ => {}
+            }
+        }
+        index
+    }
+
+
+    fn index_name(&self, header: &Field, value: &str) -> Option<TableIndex> {
+        // find latest
+        let mut index = None;
+        for (n, (h, v)) in self.queue.iter().enumerate() {
+            match (header == h, value == v, &index) {
+                (true, _, _) => index = Some(TableIndex::FieldName(n + self.remove_count)),
                 _ => {}
             }
         }
@@ -185,7 +203,7 @@ impl DynamicTable {
 
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub(crate) enum TableIndex {
     Field(usize),
     FieldName(usize),
@@ -367,6 +385,7 @@ impl StaticTable {
         match (field, value) {
             (Field::Authority, _) => Some(TableIndex::FieldName(0)),
             (Field::Path, "/") => Some(TableIndex::Field(1)),
+            (Field::Path, _) => Some(TableIndex::FieldName(1)),
             (Field::Method, "CONNECT") => Some(TableIndex::Field(15)),
             (Field::Method, "DELETE") => Some(TableIndex::Field(16)),
             (Field::Method, "GET") => Some(TableIndex::Field(17)),
@@ -374,8 +393,10 @@ impl StaticTable {
             (Field::Method, "OPTIONS") => Some(TableIndex::Field(19)),
             (Field::Method, "POST") => Some(TableIndex::Field(20)),
             (Field::Method, "PUT") => Some(TableIndex::Field(21)),
+            (Field::Method, _) => Some(TableIndex::FieldName(15)),
             (Field::Scheme, "http") => Some(TableIndex::Field(22)),
             (Field::Scheme, "https") => Some(TableIndex::Field(23)),
+            (Field::Scheme, _) => Some(TableIndex::FieldName(22)),
             (Field::Status, "103") => Some(TableIndex::Field(24)),
             (Field::Status, "200") => Some(TableIndex::Field(25)),
             (Field::Status, "304") => Some(TableIndex::Field(26)),
@@ -390,10 +411,13 @@ impl StaticTable {
             (Field::Status, "421") => Some(TableIndex::Field(69)),
             (Field::Status, "425") => Some(TableIndex::Field(70)),
             (Field::Status, "500") => Some(TableIndex::Field(71)),
+            (Field::Status, _) => Some(TableIndex::FieldName(24)),
             (Field::Other(s), v) => match (s.as_str(), v) {
                 ("age", "0") => Some(TableIndex::Field(2)),
+                ("age", _) => Some(TableIndex::FieldName(2)),
                 ("content-disposition", _) => Some(TableIndex::FieldName(3)),
                 ("content-length", "0") => Some(TableIndex::Field(4)),
+                ("content-length", _) => Some(TableIndex::FieldName(4)),
                 ("cookie", _) => Some(TableIndex::FieldName(5)),
                 ("date", _) => Some(TableIndex::FieldName(6)),
                 ("etag", _) => Some(TableIndex::FieldName(7)),
@@ -406,19 +430,26 @@ impl StaticTable {
                 ("set-cookie", _) => Some(TableIndex::FieldName(14)),
                 ("accept", "*/*") => Some(TableIndex::Field(29)),
                 ("accept", "application/dns-message") => Some(TableIndex::Field(30)),
+                ("accept", _) => Some(TableIndex::FieldName(29)),
                 ("accept-encoding", "gzip, deflate, br") => Some(TableIndex::Field(31)),
+                ("accept-encoding", _) => Some(TableIndex::FieldName(31)),
                 ("accept-ranges", "bytes") => Some(TableIndex::Field(32)),
+                ("accept-ranges", _) => Some(TableIndex::FieldName(32)),
                 ("access-control-allow-headers", "cache-control") => Some(TableIndex::Field(33)),
                 ("access-control-allow-headers", "content-type") => Some(TableIndex::Field(34)),
+                ("access-control-allow-headers", _) => Some(TableIndex::FieldName(33)),
                 ("access-control-allow-origin", "*") => Some(TableIndex::Field(35)),
+                ("access-control-allow-origin", _) => Some(TableIndex::FieldName(35)),
                 ("cache-control", "max-age=0") => Some(TableIndex::Field(36)),
                 ("cache-control", "max-age=2592000") => Some(TableIndex::Field(37)),
                 ("cache-control", "max-age=604800") => Some(TableIndex::Field(38)),
                 ("cache-control", "no-cache") => Some(TableIndex::Field(39)),
                 ("cache-control", "no-store") => Some(TableIndex::Field(40)),
                 ("cache-control", "public, max-age=31536000") => Some(TableIndex::Field(41)),
+                ("cache-control", _) => Some(TableIndex::FieldName(36)),
                 ("content-encoding", "br") => Some(TableIndex::Field(42)),
                 ("content-encoding", "gzip") => Some(TableIndex::Field(43)),
+                ("content-encoding", _) => Some(TableIndex::FieldName(42)),
                 ("content-type", "application/dns-message") => Some(TableIndex::Field(44)),
                 ("content-type", "application/javascript") => Some(TableIndex::Field(45)),
                 ("content-type", "application/json") => Some(TableIndex::Field(46)),
@@ -430,41 +461,60 @@ impl StaticTable {
                 ("content-type", "text/html; charset=utf-8") => Some(TableIndex::Field(52)),
                 ("content-type", "text/plain") => Some(TableIndex::Field(53)),
                 ("content-type", "text/plain;charset=utf-8") => Some(TableIndex::Field(54)),
+                ("content-type", _) => Some(TableIndex::FieldName(44)),
                 ("range", "bytes=0-") => Some(TableIndex::Field(55)),
+                ("range", _) => Some(TableIndex::FieldName(55)),
                 ("strict-transport-security", "max-age=31536000") => Some(TableIndex::Field(56)),
                 ("strict-transport-security", "max-age=31536000; includesubdomains") => Some(TableIndex::Field(57)),
                 ("strict-transport-security", "max-age=31536000; includesubdomains; preload") => Some(TableIndex::Field(58)),
+                ("strict-transport-security", _) => Some(TableIndex::FieldName(56)),
                 ("vary", "accept-encoding") => Some(TableIndex::Field(59)),
                 ("vary", "origin") => Some(TableIndex::Field(60)),
+                ("vary", _) => Some(TableIndex::FieldName(59)),
                 ("x-content-type-options", "nosniff") => Some(TableIndex::Field(61)),
+                ("x-content-type-options", _) => Some(TableIndex::FieldName(61)),
                 ("x-xss-protection", "1; mode=block") => Some(TableIndex::Field(62)),
+                ("x-xss-protection", _) => Some(TableIndex::FieldName(62)),
                 ("accept-language", _) => Some(TableIndex::FieldName(72)),
                 ("access-control-allow-credentials", "FALSE") => Some(TableIndex::Field(73)),
                 ("access-control-allow-credentials", "TRUE") => Some(TableIndex::Field(74)),
+                ("access-control-allow-credentials", _) => Some(TableIndex::FieldName(73)),
                 ("access-control-allow-headers", "*") => Some(TableIndex::Field(75)),
+                ("access-control-allow-headers", _) => Some(TableIndex::FieldName(75)),
                 ("access-control-allow-methods", "get") => Some(TableIndex::Field(76)),
                 ("access-control-allow-methods", "get, post, options") => Some(TableIndex::Field(77)),
                 ("access-control-allow-methods", "options") => Some(TableIndex::Field(78)),
+                ("access-control-allow-methods", _) => Some(TableIndex::FieldName(76)),
                 ("access-control-expose-headers", "content-length") => Some(TableIndex::Field(79)),
+                ("access-control-expose-headers", _) => Some(TableIndex::FieldName(79)),
                 ("access-control-request-headers", "content-type") => Some(TableIndex::Field(80)),
+                ("access-control-request-headers", _) => Some(TableIndex::FieldName(80)),
                 ("access-control-request-method", "get") => Some(TableIndex::Field(81)),
                 ("access-control-request-method", "post") => Some(TableIndex::Field(82)),
+                ("access-control-request-method", _) => Some(TableIndex::FieldName(81)),
                 ("alt-svc", "clear") => Some(TableIndex::Field(83)),
+                ("alt-svc", _) => Some(TableIndex::FieldName(83)),
                 ("authorization", _) => Some(TableIndex::FieldName(84)),
                 ("content-security-policy", "script-src 'none'; object-src 'none'; base-uri 'none'") => Some(TableIndex::Field(85)),
+                ("content-security-policy", _) => Some(TableIndex::FieldName(85)),
                 ("early-data", "1") => Some(TableIndex::Field(86)),
+                ("early-data", _) => Some(TableIndex::FieldName(86)),
                 ("expect-ct", _) => Some(TableIndex::FieldName(87)),
                 ("forwarded", _) => Some(TableIndex::FieldName(88)),
                 ("if-range", _) => Some(TableIndex::FieldName(89)),
                 ("origin", _) => Some(TableIndex::FieldName(90)),
                 ("purpose", "prefetch") => Some(TableIndex::Field(91)),
+                ("purpose", _) => Some(TableIndex::FieldName(91)),
                 ("server", _) => Some(TableIndex::FieldName(92)),
                 ("timing-allow-origin", "*") => Some(TableIndex::Field(93)),
+                ("timing-allow-origin", _) => Some(TableIndex::FieldName(93)),
                 ("upgrade-insecure-requests", "1") => Some(TableIndex::Field(94)),
+                ("upgrade-insecure-requests", _) => Some(TableIndex::FieldName(94)),
                 ("user-agent", _) => Some(TableIndex::FieldName(95)),
                 ("x-forwarded-for", _) => Some(TableIndex::FieldName(96)),
                 ("x-frame-options", "deny") => Some(TableIndex::Field(97)),
                 ("x-frame-options", "sameorigin") => Some(TableIndex::Field(98)),
+                ("x-frame-options", _) => Some(TableIndex::FieldName(97)),
                 _ => None,
             },
             _ => None,

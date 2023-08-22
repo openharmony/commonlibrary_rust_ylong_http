@@ -2,6 +2,7 @@ use std::arch::asm;
 use std::cmp::{max, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::result;
+use std::sync::Arc;
 use crate::h3::error::ErrorCode::QPACK_DECODER_STREAM_ERROR;
 use crate::h3::error::H3Error;
 use crate::h3::parts::Parts;
@@ -16,17 +17,18 @@ pub(crate) struct ReprEncoder<'a> {
     table: &'a mut DynamicTable,
     iter: Option<PartsIter>,
     state: Option<ReprEncodeState>,
+    draining_index: usize,
 }
 
 
 impl<'a> ReprEncoder<'a> {
     /// Creates a new, empty `ReprEncoder`.
-    pub(crate) fn new(table: &'a mut DynamicTable) -> Self {
+    pub(crate) fn new(table: &'a mut DynamicTable, draining_index: usize) -> Self {
         Self {
             table,
             iter: None,
             state: None,
-
+            draining_index,
         }
     }
 
@@ -44,15 +46,20 @@ impl<'a> ReprEncoder<'a> {
 
     /// Decodes the contents of `self.iter` and `self.state`. The result will be
     /// written to `dst` and the length of the decoded content will be returned.
-    pub(crate) fn encode(&mut self, encoder_buffer: &mut [u8], stream_buffer: &mut [u8], stream_reference: &mut VecDeque<Option<usize>>) -> (usize, usize) {
+    pub(crate) fn encode(&mut self, encoder_buffer: &mut [u8],
+                         stream_buffer: &mut [u8],
+                         stream_reference: &mut VecDeque<Option<usize>>,
+                         is_insert: &mut bool,
+                         allow_post: bool,
+    ) -> (usize, usize) {
         let mut cur_encoder = 0;
         let mut cur_stream = 0;
         if let Some(mut iter) = self.iter.take() {
             while let Some((h, v)) = iter.next() {
-                let searcher = TableSearcher::new(self.table);
+                let searcher = TableSearcher::new(&self.table);
                 println!("h: {:?}, v: {:?}", h, v);
-                let mut stream_result: Result<usize, ReprEncodeState> = Result::Err(ReprEncodeState::Indexed(Indexed::new(0, false)));
-                let mut encoder_result: Result<usize, ReprEncodeState> = Result::Err(ReprEncodeState::Indexed(Indexed::new(0, false)));
+                let mut stream_result: Result<usize, ReprEncodeState> = Result::Ok(0);
+                let mut encoder_result: Result<usize, ReprEncodeState> = Result::Ok(0);
                 let static_index = searcher.find_index_static(&h, &v);
                 if static_index != Some(TableIndex::None) {
                     if let Some(TableIndex::Field(index)) = static_index {
@@ -60,35 +67,61 @@ impl<'a> ReprEncoder<'a> {
                         stream_result = Indexed::new(index, true).encode(&mut stream_buffer[cur_stream..]);
                     }
                 } else {
-                    let dynamic_index = searcher.find_index_dynamic(&h, &v);
+                    let mut dynamic_index = searcher.find_index_dynamic(&h, &v);
                     let static_name_index = searcher.find_index_name_static(&h, &v);
                     let mut dynamic_name_index = Some(TableIndex::None);
-                    if dynamic_index == Some(TableIndex::None) {
+                    if dynamic_index == Some(TableIndex::None) || !self.should_index(&dynamic_index) {
+                        // if index is close to eviction, drop it and use duplicate
+                        let dyn_index = dynamic_index.clone();
+                        dynamic_index = Some(TableIndex::None);
+
                         if static_name_index == Some(TableIndex::None) {
                             dynamic_name_index = searcher.find_index_name_dynamic(&h, &v);
                         }
 
-                        if self.should_index(&h, &v) && self.table.have_enough_space(&h, &v) {
-                            encoder_result = match (&static_name_index, &dynamic_name_index) {
-                                // insert with name reference in static table
-                                (Some(TableIndex::FieldName(index)), _) => {
-                                    InsertWithName::new(index.clone(), v.clone().into_bytes(), false, true).encode(&mut encoder_buffer[cur_encoder..])
+                        if self.table.have_enough_space(&h, &v) {
+                            *is_insert = true;
+                            println!("should_index: {}", self.should_index(&dyn_index));
+                            if !self.should_index(&dyn_index) {
+                                if let Some(TableIndex::Field(index)) = dyn_index {
+                                    encoder_result = Duplicate::new(self.table.insert_count - index.clone() - 1).encode(&mut encoder_buffer[cur_encoder..]);
                                 }
-                                // insert with name reference in dynamic table
-                                (_, Some(TableIndex::FieldName(index))) => {
-                                    // convert abs index to rel index
-                                    InsertWithName::new(self.table.insert_count - index.clone() - 1, v.clone().into_bytes(), false, false).encode(&mut encoder_buffer[cur_encoder..])
-                                }
-                                // insert with literal name
-                                (_, _) => {
-                                    InsertWithLiteral::new(h.clone().into_string().into_bytes(), v.clone().into_bytes(), false).encode(&mut encoder_buffer[cur_encoder..])
+                            } else {
+                                encoder_result = match (&static_name_index, &dynamic_name_index, self.should_index(&dynamic_name_index)) {
+                                    // insert with name reference in static table
+                                    (Some(TableIndex::FieldName(index)), _, _) => {
+                                        InsertWithName::new(index.clone(), v.clone().into_bytes(), false, true).encode(&mut encoder_buffer[cur_encoder..])
+                                    }
+                                    // insert with name reference in dynamic table
+                                    (_, Some(TableIndex::FieldName(index)), true) => {
+                                        // convert abs index to rel index
+                                        InsertWithName::new(self.table.insert_count - index.clone() - 1, v.clone().into_bytes(), false, false).encode(&mut encoder_buffer[cur_encoder..])
+                                    }
+                                    // Duplicate
+                                    (_, Some(TableIndex::FieldName(index)), false) => {
+                                        Duplicate::new(index.clone()).encode(&mut encoder_buffer[cur_encoder..])
+                                    }
+                                    // insert with literal name
+                                    (_, _, _) => {
+                                        InsertWithLiteral::new(h.clone().into_string().into_bytes(), v.clone().into_bytes(), false).encode(&mut encoder_buffer[cur_encoder..])
+                                    }
                                 }
                             };
-                            // update dynamic table
-                            self.table.insert_count += 1;
-                            self.table.update(h.clone(), v.clone());
+                            if self.table.size() + h.len() + v.len() + 32 >= self.table.capacity() {
+                                self.draining_index += 1;
+                            }
+                            let index = self.table.update(h.clone(), v.clone());
+                            if allow_post {
+                                if let Some(TableIndex::Field(x)) = index {
+                                    dynamic_index = Some(TableIndex::Field(x));
+                                }
+                                if let Some(TableIndex::FieldName(index)) = index {
+                                    dynamic_name_index = Some(TableIndex::FieldName(index));
+                                }
+                            }
                         }
                     }
+
                     if dynamic_index == Some(TableIndex::None) {
                         if dynamic_name_index != Some(TableIndex::None) {
                             //Encode with name reference in dynamic table
@@ -104,7 +137,6 @@ impl<'a> ReprEncoder<'a> {
                                     stream_result = IndexingWithName::new(self.table.known_received_count - index - 1, v.clone().into_bytes(), false, false, false).encode(&mut stream_buffer[cur_stream..]);
                                 }
                             }
-
                         } else {
                             // Encode with name reference in static table
                             // or Encode as Literal
@@ -119,16 +151,15 @@ impl<'a> ReprEncoder<'a> {
                     } else {
                         assert!(dynamic_index != Some(TableIndex::None));
                         // Encode with index in dynamic table
-                        if let Some(TableIndex::FieldName(index)) = dynamic_name_index {
+                        if let Some(TableIndex::Field(index)) = dynamic_index {
                             // use post-base index
                             stream_reference.push_back(Some(index));
                             if let Some(count) = self.table.ref_count.get(&index) {
                                 self.table.ref_count.insert(index, count + 1);
                             }
-                            if self.table.known_received_count <= index{
+                            if self.table.known_received_count <= index {
                                 stream_result = IndexedWithPostName::new(index - self.table.known_received_count).encode(&mut stream_buffer[cur_stream..]);
-                            }
-                            else {
+                            } else {
                                 stream_result = Indexed::new(self.table.known_received_count - index - 1, false).encode(&mut stream_buffer[cur_stream..]);
                             }
                         }
@@ -160,6 +191,7 @@ impl<'a> ReprEncoder<'a> {
                 }
             }
         }
+
         (cur_encoder, cur_stream)
     }
     /// ## 2.1.1.1. Avoiding Prohibited Insertions
@@ -189,12 +221,26 @@ impl<'a> ReprEncoder<'a> {
     /// |                                 |          |
     /// Insertion Point                 Draining Index  Dropping
     /// Point
-    pub(crate) fn should_index(&self, header: &Field, value: &str) -> bool {
-        //todo: add condition to modify the algorithm
-        true
+    pub(crate) fn should_index(&self, index: &Option<TableIndex>) -> bool {
+        match index {
+            Some(TableIndex::Field(x)) => {
+                if *x < self.draining_index {
+                    return false;
+                }
+                return true;
+            }
+            Some(TableIndex::FieldName(x)) => {
+                if *x < self.draining_index {
+                    return false;
+                }
+                return true;
+            }
+            _ => {
+                return true;
+            }
+        }
     }
 }
-
 
 
 pub(crate) struct ReprEncStateHolder {
@@ -231,8 +277,28 @@ pub(crate) enum ReprEncodeState {
     IndexingWithPostName(IndexingWithPostName),
     IndexingWithLiteral(IndexingWithLiteral),
     IndexedWithPostName(IndexedWithPostName),
+    Duplicate(Duplicate),
 }
 
+pub(crate) struct Duplicate {
+    index: Integer,
+}
+
+impl Duplicate {
+    fn from(index: Integer) -> Self {
+        Self { index }
+    }
+
+    fn new(index: usize) -> Self {
+        Self { index: Integer::index(0x00, index, PrefixMask::DUPLICATE.0) }
+    }
+
+    fn encode(self, dst: &mut [u8]) -> Result<usize, ReprEncodeState> {
+        self.index
+            .encode(dst)
+            .map_err(|e| ReprEncodeState::Duplicate(Duplicate::from(e)))
+    }
+}
 
 pub(crate) struct Indexed {
     index: Integer,
@@ -259,6 +325,7 @@ impl Indexed {
             .map_err(|e| ReprEncodeState::Indexed(Indexed::from(e)))
     }
 }
+
 
 pub(crate) struct IndexedWithPostName {
     index: Integer,
@@ -606,10 +673,11 @@ state_def!(
     DecoderInstruction,
     DecInstIndex
 );
-pub(crate) struct DecInstDecoder<'a>{
+pub(crate) struct DecInstDecoder<'a> {
     buf: &'a [u8],
     state: Option<InstDecodeState>,
 }
+
 pub(crate) struct InstDecStateHolder {
     state: Option<InstDecodeState>,
 }
@@ -623,6 +691,7 @@ impl InstDecStateHolder {
         self.state.is_none()
     }
 }
+
 impl<'a> DecInstDecoder<'a> {
     pub(crate) fn new(buf: &'a [u8]) -> Self {
         Self { buf, state: None }
@@ -660,8 +729,9 @@ impl<'a> DecInstDecoder<'a> {
 state_def!(DecInstIndexInner, (DecoderInstPrefixBit, usize), InstFirstByte, InstTrailingBytes);
 
 pub(crate) struct DecInstIndex {
-    inner: DecInstIndexInner
+    inner: DecInstIndexInner,
 }
+
 impl DecInstIndex {
     fn new() -> Self {
         Self::from_inner(InstFirstByte.into())
@@ -672,10 +742,10 @@ impl DecInstIndex {
     fn decode(self, buf: &mut &[u8]) -> DecResult<DecoderInstruction, InstDecodeState> {
         match self.inner.decode(buf) {
             DecResult::Decoded((DecoderInstPrefixBit::ACK, index)) => {
-                DecResult::Decoded(DecoderInstruction::Ack { stream_id:index })
+                DecResult::Decoded(DecoderInstruction::Ack { stream_id: index })
             }
             DecResult::Decoded((DecoderInstPrefixBit::STREAMCANCEL, index)) => {
-                DecResult::Decoded(DecoderInstruction::StreamCancel { stream_id:index })
+                DecResult::Decoded(DecoderInstruction::StreamCancel { stream_id: index })
             }
             DecResult::Decoded((DecoderInstPrefixBit::INSERTCOUNTINCREMENT, index)) => {
                 DecResult::Decoded(DecoderInstruction::InsertCountIncrement { increment: index })

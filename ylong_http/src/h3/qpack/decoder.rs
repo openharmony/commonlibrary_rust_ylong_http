@@ -55,15 +55,16 @@ impl<'a> QpackDecoder<'a> {
                         }
                         EncoderInstruction::InsertWithIndex { mid_bit, name, value } => {
                             let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("value: {}", value_str);
+                            println!("InsertWithIndex value: {}", value_str);
                             updater.update_table(mid_bit, name, value)?;
                         }
                         EncoderInstruction::InsertWithLiteral { mid_bit, name, value } => {
                             let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("value: {}", value_str);
+                            println!("InsertWithLiteral value: {}", value_str);
                             updater.update_table(mid_bit, name, value)?;
                         }
                         EncoderInstruction::Duplicate { index } => {
+                            println!("Duplicate index: {}", index);
                             updater.duplicate(index)?;
                         }
                     }
@@ -93,29 +94,28 @@ impl<'a> QpackDecoder<'a> {
                 Some(repr) => {
                     match repr {
                         Representation::FieldSectionPrefix { require_insert_count, signal, delta_base } => {
-                            if require_insert_count.0 == 0{
+                            if require_insert_count.0 == 0 {
                                 self.require_insert_count = 0;
-                            }
-                            else {
+                            } else {
                                 let max_entries = self.table.max_entries();
                                 let full_range = 2 * max_entries;
                                 let max_value = self.table.insert_count + max_entries;
                                 let max_wrapped = (max_value / full_range) * full_range;
                                 self.require_insert_count = max_wrapped + require_insert_count.0 - 1;
-                                if self.require_insert_count > max_value{
+                                println!("self.require_insert_count: {}", self.require_insert_count);
+                                if self.require_insert_count > max_value {
                                     self.require_insert_count -= full_range;
                                 }
-
                             }
-                            self.require_insert_count = require_insert_count.0;
-                            println!("require_insert_count: {}", require_insert_count.0);
+                            println!("require_insert_count: {}", self.require_insert_count);
                             println!("signal: {}", signal);
                             println!("delta_base: {}", delta_base.0);
                             if signal {
-                                self.base = require_insert_count.0 - delta_base.0 - 1;
+                                self.base = self.require_insert_count - delta_base.0 - 1;
                             } else {
-                                self.base = require_insert_count.0 + delta_base.0;
+                                self.base = self.require_insert_count + delta_base.0;
                             }
+                            println!("base: {}", self.base);
                             searcher.base = self.base;
                             //todo:block
                         }
@@ -226,7 +226,7 @@ impl<'a> Updater<'a> {
     fn duplicate(&mut self, index: usize) -> Result<(), H3Error> {
         let table_searcher = TableSearcher::new(self.table);
         let (f, v) = table_searcher
-            .find_field_dynamic(self.table.insert_count - index)
+            .find_field_dynamic(self.table.insert_count - index -1)
             .ok_or(H3Error::ConnectionError(QPACK_ENCODER_STREAM_ERROR))?;
         self.table.update(f, v);
         Ok(())
@@ -248,7 +248,7 @@ impl<'a> Updater<'a> {
                         .ok_or(H3Error::ConnectionError(QPACK_ENCODER_STREAM_ERROR))?
                 } else {
                     searcher
-                        .find_field_name_dynamic(insert_count - index)
+                        .find_field_name_dynamic(insert_count - index - 1)
                         .ok_or(H3Error::ConnectionError(QPACK_ENCODER_STREAM_ERROR))?
                 }
             }
@@ -296,27 +296,30 @@ impl<'a> Searcher<'a> {
     }
 
     fn search_indexed(&mut self, mid_bit: MidBit, index: usize) -> Result<(), H3Error> {
-        let table_searcher = TableSearcher::new(self.table);
+        let table_searcher = TableSearcher::new(&mut self.table);
         if let Some(true) = mid_bit.t {
             let (f, v) = table_searcher
                 .find_field_static(index)
                 .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?;
+
             self.lines.parts.update(f, v);
             return Ok(());
         } else {
             let (f, v) = table_searcher
-                .find_field_dynamic(self.base - index - 1)
+                .find_field_dynamic(self.base - index-1)
                 .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?;
+
             self.lines.parts.update(f, v);
             return Ok(());
         }
     }
 
     fn search_post_indexed(&mut self, index: usize) -> Result<(), H3Error> {
-        let table_searcher = TableSearcher::new(self.table);
+        let table_searcher = TableSearcher::new(&mut self.table);
         let (f, v) = table_searcher
             .find_field_dynamic(self.base + index)
             .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?;
+        print!("search_res: {:#?}", v);
         self.check_field_list_size(&f, &v)?;
         self.lines.parts.update(f, v);
         return Ok(());
@@ -354,7 +357,7 @@ impl<'a> Searcher<'a> {
         let h = match name {
             Name::Index(index) => {
                 if repr == ReprPrefixBit::LITERALWITHINDEXING {
-                    let searcher = TableSearcher::new(self.table);
+                    let searcher = TableSearcher::new(&self.table);
                     if let Some(true) = mid_bit.t {
                         searcher
                             .find_field_name_static(index)
@@ -365,7 +368,7 @@ impl<'a> Searcher<'a> {
                             .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?
                     }
                 } else {
-                    let searcher = TableSearcher::new(self.table);
+                    let searcher = TableSearcher::new(&self.table);
                     searcher
                         .find_field_name_dynamic(self.base + index)
                         .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?
@@ -409,13 +412,14 @@ mod ut_qpack_decoder {
 
     #[test]
     fn ut_qpack_decoder() {
-        // test_indexed_static();
-        // test_indexed_dynamic();
-        // test_post_indexed_dynamic();
-        // test_literal_indexing_static();
-        // test_literal_indexing_dynamic();
-        // test_literal_post_indexing_dynamic();
-        // test_literal_with_literal_name();
+        rfc9204_test_cases();
+        test_indexed_static();
+        test_indexed_dynamic();
+        test_post_indexed_dynamic();
+        test_literal_indexing_static();
+        test_literal_indexing_dynamic();
+        test_literal_post_indexing_dynamic();
+        test_literal_with_literal_name();
         test_setcap();
         macro_rules! check_pseudo {
             (
@@ -483,6 +487,86 @@ mod ut_qpack_decoder {
             };
         }
 
+
+        fn rfc9204_test_cases() {
+            literal_field_line_with_name_reference();
+            dynamic_table();
+            speculative_insert();
+            duplicate_instruction_stream_cancellation();
+            dynamic_table_insert_eviction();
+            fn literal_field_line_with_name_reference() {
+                let mut dynamic_table = DynamicTable::with_capacity(4096);
+
+                qpack_test_case!(
+                QpackDecoder::new(MAX_HEADER_LIST_SIZE,&mut dynamic_table),
+                    "0000510b2f696e6465782e68746d6c",
+                    { None, None, Some("/index.html"), None, None },
+                    { 0 }
+                );
+            }
+            fn dynamic_table() {
+                let mut dynamic_table = DynamicTable::with_capacity(4096);
+                let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
+                decoder.decode_ins(decode("3fbd01c00f7777772e6578616d706c652e636f6dc10c2f73616d706c652f70617468").unwrap().as_slice());
+                qpack_test_case!(
+                decoder,
+                    "03811011",
+                    { Some("www.example.com"), None, Some("/sample/path"), None, None },
+                    { 0 }
+                );
+            }
+            fn speculative_insert() {
+                let mut dynamic_table = DynamicTable::with_capacity(4096);
+                let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
+                decoder.decode_ins(decode("4a637573746f6d2d6b65790c637573746f6d2d76616c7565").unwrap().as_slice());
+                qpack_test_case!(
+                decoder,
+                    "028010",
+                    { "custom-key"=>"custom-value" },
+                    { 0 }
+                );
+            }
+            fn duplicate_instruction_stream_cancellation() {
+                println!("duplicate_instruction_stream_cancellation");
+                let mut dynamic_table = DynamicTable::with_capacity(4096);
+                dynamic_table.update(Field::Authority,String::from("www.example.com"));
+                dynamic_table.update(Field::Path,String::from("/sample/path"));
+                dynamic_table.update(Field::Other(String::from("custom-key")),String::from("custom-value"));
+                dynamic_table.ref_count.insert(0, 0); //Acked
+                dynamic_table.ref_count.insert(1, 0); //Acked
+                dynamic_table.ref_count.insert(2, 0); //Acked
+                dynamic_table.known_received_count = 3;
+                let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
+                decoder.decode_ins(decode("02").unwrap().as_slice());
+                qpack_test_case!(
+                decoder,
+                    "058010c180",
+                    { Some("www.example.com"), None, Some("/"), None, None },
+                    { "custom-key"=>"custom-value" },
+                    { 0 }
+                );
+            }
+            fn dynamic_table_insert_eviction(){
+                let mut dynamic_table = DynamicTable::with_capacity(4096);
+                dynamic_table.update(Field::Authority,String::from("www.example.com"));
+                dynamic_table.update(Field::Path,String::from("/sample/path"));
+                dynamic_table.update(Field::Other(String::from("custom-key")),String::from("custom-value"));
+                dynamic_table.update(Field::Authority,String::from("www.example.com"));
+                dynamic_table.ref_count.insert(0, 0); //Acked
+                dynamic_table.ref_count.insert(1, 0); //Acked
+                dynamic_table.ref_count.insert(2, 0); //Acked
+                dynamic_table.known_received_count = 3;
+                let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
+                decoder.decode_ins(decode("810d637573746f6d2d76616c756532").unwrap().as_slice());
+                qpack_test_case!(
+                decoder,
+                    "068111",
+                    { "custom-key"=>"custom-value2" },
+                    { 0 }
+                );
+            }
+        }
+
         fn test_indexed_static()
         {
             let mut dynamic_table = DynamicTable::with_capacity(4096);
@@ -507,7 +591,7 @@ mod ut_qpack_decoder {
                 //require_insert_count=2, signal=false, delta_base=0
                 //so base=2
                 //rel_index=1 (abs=2(base)-1-1=0)
-                "020081",
+                "030081",
                 {"custom-field"=>"custom-value"},
                 { 0 }
             );
@@ -527,7 +611,7 @@ mod ut_qpack_decoder {
                 //require_insert_count=3, signal=true, delta_base=2
                 //so base = 3-2-1 = 0
                 //rel_index=1 (abs=0(base)+1=1)
-                "038211",
+                "048211",
                 {"custom2-field"=>"custom2-value"},
                 { 0 }
             );
@@ -555,7 +639,7 @@ mod ut_qpack_decoder {
                 //require_insert_count=2, signal=false, delta_base=0
                 //so base=2
                 //rel_index=1 (abs=2(base)-1-1=0)
-                "0200610d637573746f6d312d76616c7565",
+                "0300610d637573746f6d312d76616c7565",
                 {"custom-field"=>"custom1-value"},
                 { 0 }
             );
@@ -576,7 +660,7 @@ mod ut_qpack_decoder {
                 //require_insert_count=3, signal=true, delta_base=2
                 //so base = 3-2-1 = 0
                 //rel_index=1 (abs=0(base)+1=1)
-                "0382010d637573746f6d312d76616c7565",
+                "0482010d637573746f6d312d76616c7565",
                 {"custom2-field"=>"custom1-value"},
                 { 0 }
             );

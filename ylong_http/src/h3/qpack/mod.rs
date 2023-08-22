@@ -136,6 +136,7 @@ impl ReprPrefixBit {
     /// Unlike Hpack, QPACK has some special value for the first byte of an integer.
     /// Like T indicating whether the reference is into the static or dynamic table.
     pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
+        println!("process mid: {:b}", byte);
         match self.0 {
             0x80 => MidBit { n: None, t: Some((byte & 0x40) != 0), h: None },
             0x40 => MidBit { n: Some((byte & 0x20) != 0), t: Some((byte & 0x10) != 0), h: None },
