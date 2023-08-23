@@ -1,3 +1,15 @@
+// Copyright (c) 2023 Huawei Device Co., Ltd.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use std::arch::asm;
 use std::cmp::{max, Ordering};
 use std::collections::{HashMap, VecDeque};
@@ -57,7 +69,6 @@ impl<'a> ReprEncoder<'a> {
         if let Some(mut iter) = self.iter.take() {
             while let Some((h, v)) = iter.next() {
                 let searcher = TableSearcher::new(&self.table);
-                println!("h: {:?}, v: {:?}", h, v);
                 let mut stream_result: Result<usize, ReprEncodeState> = Result::Ok(0);
                 let mut encoder_result: Result<usize, ReprEncodeState> = Result::Ok(0);
                 let static_index = searcher.find_index_static(&h, &v);
@@ -81,7 +92,6 @@ impl<'a> ReprEncoder<'a> {
 
                         if self.table.have_enough_space(&h, &v) {
                             *is_insert = true;
-                            println!("should_index: {}", self.should_index(&dyn_index));
                             if !self.should_index(&dyn_index) {
                                 if let Some(TableIndex::Field(index)) = dyn_index {
                                     encoder_result = Duplicate::new(self.table.insert_count - index.clone() - 1).encode(&mut encoder_buffer[cur_encoder..]);
@@ -714,7 +724,6 @@ impl<'a> DecInstDecoder<'a> {
             // `Representation`, `Ok(None)` will be returned. Users need to call
             // `save` to save the current state to a `ReprDecStateHolder`.
             DecResult::NeedMore(state) => {
-                println!("NeedMore");
                 self.state = Some(state);
                 Ok(None)
             }

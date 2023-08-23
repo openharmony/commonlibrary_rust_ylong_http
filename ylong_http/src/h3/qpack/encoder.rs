@@ -1,3 +1,15 @@
+// Copyright (c) 2023 Huawei Device Co., Ltd.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 use std::collections::{HashMap, VecDeque};
 use crate::h3::error::ErrorCode::QPACK_DECODER_STREAM_ERROR;
 use crate::h3::error::H3Error;
@@ -51,7 +63,6 @@ impl QpackEncoder {
                 Some(inst) => {
                     match inst {
                         DecoderInstruction::Ack { stream_id } => {
-                            println!("stream_id: {}", stream_id);
                             assert_eq!(stream_id, self.stream_id);
                             loop {// ack an field section's all index
                                 let ack_index = self.stream_reference.pop_front();
@@ -71,12 +82,10 @@ impl QpackEncoder {
                             self.table.known_received_count += 1;
                         }
                         DecoderInstruction::StreamCancel { stream_id } => {
-                            println!("stream_id: {}", stream_id);
                             assert_eq!(stream_id, self.stream_id);
                             return Ok(Some(DecoderInst::StreamCancel));
                         }
                         DecoderInstruction::InsertCountIncrement { increment } => {
-                            println!("increment: {}", increment);
                             self.table.known_received_count += increment;
                         }
                     }
@@ -182,7 +191,6 @@ mod ut_qpack_encoder {
                 let mut _encoder = $enc;
                 let mut stream_buf = [0u8; $len];
                 let mut stream_cur = 0;
-                println!("size: {}", _encoder.table.size());
                 $(
                     let mut parts = Parts::new();
                     parts.update($h, $v);
@@ -200,12 +208,7 @@ mod ut_qpack_encoder {
                     stream_cur += cur_prefix;
                 }
                 let result = decode($res).unwrap();
-                println!("stream_cur: {:#?}", stream_cur);
-                println!("stream buf: {:#?}", stream_buf);
-                println!("stream result: {:#?}", result);
-                println!("encoder buf: {:#?}", $encoder_buf[..$encoder_cur].to_vec().as_slice());
                 if let Some(res) = decode($encoder_res){
-                    println!("encoder result: {:#?}", res);
                     assert_eq!($encoder_buf[..$encoder_cur].to_vec().as_slice(), res.as_slice());
                 }
                 assert_eq!(stream_cur, $len);

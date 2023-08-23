@@ -1,3 +1,16 @@
+// Copyright (c) 2023 Huawei Device Co., Ltd.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::mem::take;
 use crate::h3::error::ErrorCode::{QPACK_DECOMPRESSION_FAILED, QPACK_ENCODER_STREAM_ERROR};
 use crate::h3::error::H3Error;
@@ -50,21 +63,15 @@ impl<'a> QpackDecoder<'a> {
                 Some(inst) => {
                     match inst {
                         EncoderInstruction::SetCap { capacity } => {
-                            println!("capacity: {}", capacity);
                             updater.update_capacity(capacity)?;
                         }
                         EncoderInstruction::InsertWithIndex { mid_bit, name, value } => {
-                            let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("InsertWithIndex value: {}", value_str);
                             updater.update_table(mid_bit, name, value)?;
                         }
                         EncoderInstruction::InsertWithLiteral { mid_bit, name, value } => {
-                            let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("InsertWithLiteral value: {}", value_str);
                             updater.update_table(mid_bit, name, value)?;
                         }
                         EncoderInstruction::Duplicate { index } => {
-                            println!("Duplicate index: {}", index);
                             updater.duplicate(index)?;
                         }
                     }
@@ -102,54 +109,31 @@ impl<'a> QpackDecoder<'a> {
                                 let max_value = self.table.insert_count + max_entries;
                                 let max_wrapped = (max_value / full_range) * full_range;
                                 self.require_insert_count = max_wrapped + require_insert_count.0 - 1;
-                                println!("self.require_insert_count: {}", self.require_insert_count);
                                 if self.require_insert_count > max_value {
                                     self.require_insert_count -= full_range;
                                 }
                             }
-                            println!("require_insert_count: {}", self.require_insert_count);
-                            println!("signal: {}", signal);
-                            println!("delta_base: {}", delta_base.0);
                             if signal {
                                 self.base = self.require_insert_count - delta_base.0 - 1;
                             } else {
                                 self.base = self.require_insert_count + delta_base.0;
                             }
-                            println!("base: {}", self.base);
                             searcher.base = self.base;
                             //todo:block
                         }
                         Representation::Indexed { mid_bit, index } => {
-                            println!("T: {:#?}", mid_bit.t);
-                            println!("N: {:#?}", mid_bit.n);
-                            println!("H: {:#?}", mid_bit.h);
-                            println!("index: {}", index);
                             searcher.search(Representation::Indexed { mid_bit, index })?;
                         }
                         Representation::IndexedWithPostIndex { index } => {
-                            println!("post index: {}", index);
                             searcher.search(Representation::IndexedWithPostIndex { index })?;
                         }
                         Representation::LiteralWithIndexing { mid_bit, name, value } => {
-                            // convert value to str according to ascii
-                            let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("value: {}", value_str);
                             searcher.search_literal_with_indexing(mid_bit, name, value)?;
                         }
                         Representation::LiteralWithPostIndexing { mid_bit, name, value } => {
-                            let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("value: {}", value_str);
                             searcher.search_literal_with_post_indexing(mid_bit, name, value)?;
                         }
                         Representation::LiteralWithLiteralName { mid_bit, name, value } => {
-                            if let Name::Literal(_name) = name.clone() {
-                                let name_str = String::from_utf8(_name.clone()).unwrap();
-                                println!("name: {}", name_str);
-                            } else {
-                                print!("error");
-                            }
-                            let value_str = String::from_utf8(value.clone()).unwrap();
-                            println!("value: {}", value_str);
                             searcher.search_listeral_with_literal(mid_bit, name, value)?;
                         }
                     }
@@ -319,7 +303,6 @@ impl<'a> Searcher<'a> {
         let (f, v) = table_searcher
             .find_field_dynamic(self.base + index)
             .ok_or(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))?;
-        print!("search_res: {:#?}", v);
         self.check_field_list_size(&f, &v)?;
         self.lines.parts.update(f, v);
         return Ok(());
@@ -438,7 +421,6 @@ mod ut_qpack_decoder {
             ($qpack: expr $(, $input: literal)*) => {{
                 $(
                     let text = decode($input).unwrap();
-                    println!("text: {:#?}", text);
                     assert!($qpack.decode_repr(text.as_slice()).is_ok());
                 )*
                 let mut ack = [0u8; 20];
@@ -527,7 +509,6 @@ mod ut_qpack_decoder {
                 );
             }
             fn duplicate_instruction_stream_cancellation() {
-                println!("duplicate_instruction_stream_cancellation");
                 let mut dynamic_table = DynamicTable::with_capacity(4096);
                 dynamic_table.update(Field::Authority,String::from("www.example.com"));
                 dynamic_table.update(Field::Path,String::from("/sample/path"));
@@ -682,9 +663,7 @@ mod ut_qpack_decoder {
             let mut dynamic_table = DynamicTable::with_capacity(4096);
             let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
             let text = decode("3f7f").unwrap();
-            println!("text: {:#?}", text);
             decoder.decode_ins(text.as_slice());
-            print!("capacity: {}", dynamic_table.capacity());
             assert_eq!(dynamic_table.capacity(), 158);
         }
     }
