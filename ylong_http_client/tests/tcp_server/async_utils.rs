@@ -15,7 +15,6 @@
 macro_rules! async_client_test_on_tcp {
     (
         HTTP;
-        RuntimeThreads: $thread_num: expr,
         $(ClientNum: $client_num: expr,)?
         $(Request: {
             Method: $method: expr,
@@ -35,7 +34,6 @@ macro_rules! async_client_test_on_tcp {
         },)*
     ) => {{
 
-        let runtime = init_test_work_runtime($thread_num);
         // The number of servers may be variable based on the number of servers set by the user.
         // However, cliipy checks that the variable does not need to be variable.
         #[allow(unused_mut, unused_assignments)]
@@ -46,7 +44,6 @@ macro_rules! async_client_test_on_tcp {
         start_tcp_server!(
             ASYNC;
             ServerNum: server_num,
-            Runtime: runtime,
             Handles: handles_vec,
             $(Request: {
                 Method: $method,
@@ -69,7 +66,6 @@ macro_rules! async_client_test_on_tcp {
         let mut shut_downs = vec![];
         async_client_assert_on_tcp!(
             HTTP;
-            Runtime: runtime,
             ServerNum: server_num,
             Handles: handles_vec,
             ShutDownHandles: shut_downs,
@@ -92,7 +88,7 @@ macro_rules! async_client_test_on_tcp {
         );
 
         for shutdown_handle in shut_downs {
-            runtime.block_on(shutdown_handle).expect("Runtime wait for server shutdown failed");
+            ylong_runtime::block_on(shutdown_handle).expect("Runtime wait for server shutdown failed");
         }
     }};
 
@@ -102,7 +98,6 @@ macro_rules! async_client_test_on_tcp {
 macro_rules! async_client_assert_on_tcp {
     (
         HTTP;
-        Runtime: $runtime: expr,
         ServerNum: $server_num: expr,
         Handles: $handle_vec: expr,
         ShutDownHandles: $shut_downs: expr,
@@ -128,7 +123,7 @@ macro_rules! async_client_assert_on_tcp {
         for _i in 0..$server_num {
             let handle = $handle_vec.pop().expect("No more handles !");
             let client = std::sync::Arc::clone(&client);
-            let shutdown_handle = $runtime.spawn(async move {
+            let shutdown_handle = ylong_runtime::spawn(async move {
                 async_client_assertions_on_tcp!(
                     ServerHandle: handle,
                     ClientRef: client,
