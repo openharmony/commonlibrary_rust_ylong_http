@@ -13,7 +13,7 @@ keywords = ["ylong", "http", "client"]
 ylong_http = { path = "../ylong_http", features = ["full"] }
 libc = { version = "0.2.134", optional = true }
 tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"], optional = true }
-# ylong_runtime = { path = "../runtime/ylong_runtime", features = ["net", "sync", "fs", "macros", "time"], optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
 
 [dev-dependencies]
 hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }
@@ -36,8 +36,8 @@ http1_1 = ["ylong_http/http1_1"]        # Uses HTTP/1.1.
 http2 = ["ylong_http/http2"]            # Uses HTTP/2.
 http3 = []                              # Uses HTTP/3.
 
-tokio_base = ["tokio"]                  # Uses tokio runtime.
-ylong_base = []                         # Uses ylong runtime.
+tokio_base = ["tokio", "ylong_http/tokio_base"]                  # Uses tokio runtime.
+ylong_base = ["ylong_runtime", "ylong_http/ylong_base"]          # Uses ylong runtime.
 
 tls_default = ["c_openssl_3_0"]
 __tls = []                              # Not open to user, only mark to use tls for developer.
@@ -118,7 +118,7 @@ required-features = ["sync", "http1_1", "__tls", "tokio_base"]
 [[test]]
 name = "sdv_async_http_on_tcp"
 path = "./tests/sdv_async_http_on_tcp.rs"
-required-features = ["async", "http1_1", "tokio_base"]
+required-features = ["async", "http1_1", "ylong_base"]
 
 [[test]]
 name = "sdv_sync_http_on_tcp"
