@@ -11,12 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::origin::{FromAsyncReader, FromBytes, FromReader};
-use super::{async_impl, sync_impl};
-use crate::body::origin::FromAsyncBody;
-use crate::error::{ErrorKind, HttpError};
-use crate::headers::{Header, HeaderName, HeaderValue, Headers};
-use crate::{AsyncRead, AsyncReadExt, ReadBuf};
 use core::convert::Infallible;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
@@ -28,16 +22,24 @@ use std::convert::{TryFrom, TryInto};
 use std::future::Future;
 use std::io::{Error, Read};
 
-/// A chunk body is used to encode body to send message by chunk in `HTTP/1.1` format.
+use super::origin::{FromAsyncReader, FromBytes, FromReader};
+use super::{async_impl, sync_impl};
+use crate::body::origin::FromAsyncBody;
+use crate::error::{ErrorKind, HttpError};
+use crate::headers::{Header, HeaderName, HeaderValue, Headers};
+use crate::{AsyncRead, AsyncReadExt, ReadBuf};
+
+/// A chunk body is used to encode body to send message by chunk in `HTTP/1.1`
+/// format.
 ///
-/// This chunk body encoder supports you to use the chunk encode method multiple times to output
-/// the result in multiple bytes slices.
+/// This chunk body encoder supports you to use the chunk encode method multiple
+/// times to output the result in multiple bytes slices.
 ///
 /// # Examples
 ///
 /// ```
-/// use ylong_http::body::ChunkBody;
 /// use ylong_http::body::sync_impl::Body;
+/// use ylong_http::body::ChunkBody;
 ///
 /// let content = "aaaaa bbbbb ccccc ddddd";
 /// // Gets `ChunkBody`
@@ -87,15 +89,20 @@ struct StatusVar {
 
 // Data encoding status
 enum DataState {
-    Partial,  // Data encode is processing
-    Complete, // Data encode is completed
-    Finish,   // Data encode is finished and return result
+    // Data encode is processing
+    Partial,
+    // Data encode is completed
+    Complete,
+    // Data encode is finished and return result
+    Finish,
 }
 
 // Component encoding status
 enum TokenStatus<T, E> {
-    Complete(T), // The current component is completely encoded.
-    Partial(E),  // The current component is partially encoded.
+    // The current component is completely encoded.
+    Complete(T), 
+    // The current component is partially encoded.
+    Partial(E),  
 }
 
 type Token<T> = TokenStatus<usize, T>;
@@ -759,7 +766,8 @@ impl ChunkExt {
 }
 
 /// Decode state of the chunk buffer.
-/// When chunks in the buffer end in different elements, `ChunkBodyDecoder` returns different `ChunkState`, as shown in the following figure:
+/// When chunks in the buffer end in different elements, `ChunkBodyDecoder`
+/// returns different `ChunkState`, as shown in the following figure:
 /// > ```trust
 /// > Meta:     `chunk-size [ chunk-ext ] CRLF`
 /// > Partial:  `chunk-size [ chunk-ext ] CRLF chunk-data`
@@ -864,9 +872,9 @@ impl<'a> IntoIterator for Chunks<'a> {
 }
 
 /// Chunk instance, Indicates a chunk.
-/// After a decode, the `ChunkBodyDecoder` returns a `Chunk` regardless of whether a chunk is completely decoded.
-/// The decode status is recorded by the `state` variable.
-///
+/// After a decode, the `ChunkBodyDecoder` returns a `Chunk` regardless of
+/// whether a chunk is completely decoded. The decode status is recorded by the
+/// `state` variable.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Chunk<'a> {
     id: usize,
@@ -897,7 +905,8 @@ impl Chunk<'_> {
     }
 
     /// Get the size of chunk-data,
-    /// If the size part of a chunk is not completely decoded, the value of size is 0.
+    /// If the size part of a chunk is not completely decoded, the value of size
+    /// is 0.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -920,9 +929,10 @@ impl Chunk<'_> {
 }
 
 /// Chunk decoder.
-/// The decoder decode only all chunks and last-chunk in chunk-body and does not decode subsequent trailer-section.
-/// The decoder maintains a state saving decode phase.
-/// When a chunk is not completely decoded or a decoding exception occurs, the state is not reset.
+/// The decoder decode only all chunks and last-chunk in chunk-body and does not
+/// decode subsequent trailer-section. The decoder maintains a state saving
+/// decode phase. When a chunk is not completely decoded or a decoding exception
+/// occurs, the state is not reset.
 pub struct ChunkBodyDecoder {
     chunk_num: usize,
     total_size: usize,
@@ -967,9 +977,10 @@ impl ChunkBodyDecoder {
     }
 
     /// Decode interface of the chunk decoder.
-    /// It transfers a u8 slice pointing to the chunk data and returns the data of a chunk and the remaining data.
-    /// When the data in the u8 slice is not completely decoded for a chunk,
-    /// An empty u8 slice is returned for the remaining data.
+    /// It transfers a u8 slice pointing to the chunk data and returns the data
+    /// of a chunk and the remaining data. When the data in the u8 slice is
+    /// not completely decoded for a chunk, An empty u8 slice is returned
+    /// for the remaining data.
     ///
     /// # Examples
     ///
@@ -982,13 +993,25 @@ impl ChunkBodyDecoder {
     ///             000; message = last\r\n\
     ///             \r\n\
     ///             "
-    ///         .as_bytes();
+    /// .as_bytes();
     /// let (chunks, rest) = decoder.decode(chunk_body_bytes).unwrap();
     /// assert_eq!(chunks.iter().len(), 2);
     /// let chunk = chunks.iter().next().unwrap();
     /// assert_eq!(
-    ///     (chunk.id(), chunk.state(), chunk.size(), chunk.extension(), chunk.data()),
-    ///     (0, &ChunkState::Finish, 5, &ChunkExt::new(), "hello".as_bytes())
+    ///     (
+    ///         chunk.id(),
+    ///         chunk.state(),
+    ///         chunk.size(),
+    ///         chunk.extension(),
+    ///         chunk.data()
+    ///     ),
+    ///     (
+    ///         0,
+    ///         &ChunkState::Finish,
+    ///         5,
+    ///         &ChunkExt::new(),
+    ///         "hello".as_bytes()
+    ///     )
     /// );
     /// ```
     pub fn decode<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunks<'a>, &'a [u8]), HttpError> {
@@ -1185,7 +1208,8 @@ impl ChunkBodyDecoder {
             match b {
                 b'\r' => {
                     if self.cr_meet {
-                        // TODO Check whether the state machine needs to be reused after the parsing fails and whether the state machine status needs to be adjusted.
+                        // TODO Check whether the state machine needs to be reused after the parsing
+                        // fails and whether the state machine status needs to be adjusted.
                         return Err(ErrorKind::InvalidInput.into());
                     }
                     self.cr_meet = true;
@@ -1615,7 +1639,8 @@ mod ut_chunk {
             \r\n\
             "
         .as_bytes();
-        let res = decoder.decode(&chunk_body_bytes[..1]); // 5
+        // 5
+        let res = decoder.decode(&chunk_body_bytes[..1]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1626,8 +1651,8 @@ mod ut_chunk {
             trailer: None,
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
-
-        let res = decoder.decode(&chunk_body_bytes[1..2]); // 5\r
+        // 5\r
+        let res = decoder.decode(&chunk_body_bytes[1..2]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1638,8 +1663,8 @@ mod ut_chunk {
             trailer: None,
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
-
-        let res = decoder.decode(&chunk_body_bytes[2..2]); // 5\r
+        // 5\r
+        let res = decoder.decode(&chunk_body_bytes[2..2]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1650,8 +1675,8 @@ mod ut_chunk {
             trailer: None,
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
-
-        let res = decoder.decode(&chunk_body_bytes[2..3]); // 5\r\n
+        // 5\r\n
+        let res = decoder.decode(&chunk_body_bytes[2..3]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1663,7 +1688,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[3..5]); // 5\r\nhe
+        // 5\r\nhe
+        let res = decoder.decode(&chunk_body_bytes[3..5]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1675,7 +1701,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[5..9]); // 5\r\nhello\r
+        // 5\r\nhello\r
+        let res = decoder.decode(&chunk_body_bytes[5..9]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1687,7 +1714,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[9..9]); // 5\r\nhello\r
+        // 5\r\nhello\r
+        let res = decoder.decode(&chunk_body_bytes[9..9]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1699,7 +1727,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[9..10]); // 5\r\nhello\r\n
+        // 5\r\nhello\r\n
+        let res = decoder.decode(&chunk_body_bytes[9..10]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
@@ -1711,7 +1740,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[10..13]); // 5\r\nhello\r\nC ;
+        // 5\r\nhello\r\nC ;
+        let res = decoder.decode(&chunk_body_bytes[10..13]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 1,
@@ -1723,7 +1753,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[13..27]); // 5\r\nhello\r\nC ; type = text ;
+        // 5\r\nhello\r\nC ; type = text ;
+        let res = decoder.decode(&chunk_body_bytes[13..27]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 1,
@@ -1735,7 +1766,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[27..36]); // 5\r\nhello\r\nC ; type = text ;end = !\r\n
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\n
+        let res = decoder.decode(&chunk_body_bytes[27..36]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 1,
@@ -1747,7 +1779,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[36..50]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n
+        let res = decoder.decode(&chunk_body_bytes[36..50]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 1,
@@ -1759,7 +1792,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[50..51]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n0
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n0
+        let res = decoder.decode(&chunk_body_bytes[50..51]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 2,
@@ -1771,7 +1805,8 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[51..54]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000;
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000;
+        let res = decoder.decode(&chunk_body_bytes[51..54]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 2,
@@ -1783,7 +1818,9 @@ mod ut_chunk {
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8],)));
 
-        let res = decoder.decode(&chunk_body_bytes[54..71]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message = last\r\n
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message =
+        // last\r\n
+        let res = decoder.decode(&chunk_body_bytes[54..71]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 2,
@@ -1794,8 +1831,9 @@ mod ut_chunk {
             trailer: Some(&[] as &[u8]),
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8])));
-
-        let res = decoder.decode(&chunk_body_bytes[71..87]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message = last\r\nTrailer: value\r\n
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message =
+        // last\r\nTrailer: value\r\n
+        let res = decoder.decode(&chunk_body_bytes[71..87]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 3,
@@ -1806,8 +1844,9 @@ mod ut_chunk {
             trailer: Some("Trailer: value".as_bytes()),
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8])));
-
-        let res = decoder.decode(&chunk_body_bytes[87..119]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message = last\r\nTrailer: value\r\n\another-trainer: another-value\r\n\
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000;
+        // message = last\r\nTrailer: value\r\n\another-trainer: another-value\r\n\
+        let res = decoder.decode(&chunk_body_bytes[87..119]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 3,
@@ -1818,8 +1857,9 @@ mod ut_chunk {
             trailer: Some("another-trainer: another-value".as_bytes()),
         });
         assert_eq!(res, Ok((chunks, &[] as &[u8])));
-
-        let res = decoder.decode(&chunk_body_bytes[119..121]); // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000; message = last\r\nTrailer: value\r\n\another-trainer: another-value\r\n\r\n\
+        // 5\r\nhello\r\nC ; type = text ;end = !\r\nhello world!\r\n000;
+        // message = last\r\nTrailer: value\r\n\another-trainer: another-value\r\n\r\n\
+        let res = decoder.decode(&chunk_body_bytes[119..121]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 3,
@@ -1850,7 +1890,9 @@ mod ut_chunk {
             \r\n\
             "
         .as_bytes();
-        let (chunks, remaining) = decoder.decode(chunk_body_bytes).unwrap(); // 5
+
+        // 5
+        let (chunks, remaining) = decoder.decode(chunk_body_bytes).unwrap();
         let mut iter = chunks.iter();
         let chunk = Chunk {
             id: 0,
@@ -1901,7 +1943,9 @@ mod ut_chunk {
             \r\n\
             "
         .as_bytes();
-        let (chunks, remaining) = decoder.decode(chunk_body_bytes).unwrap(); // 5
+
+        // 5
+        let (chunks, remaining) = decoder.decode(chunk_body_bytes).unwrap();
         let mut iter = chunks.into_iter();
         let chunk = Chunk {
             id: 0,
@@ -1950,7 +1994,9 @@ mod ut_chunk {
             "
         .as_bytes();
         let mut decoder = ChunkBodyDecoder::new();
-        let res = decoder.decode(chunk_body_bytes); // 5
+
+        // 5
+        let res = decoder.decode(chunk_body_bytes);
         assert_eq!(res, Err(ErrorKind::InvalidInput.into()));
     }
 
@@ -1972,7 +2018,9 @@ mod ut_chunk {
             "
         .as_bytes();
         let mut decoder = ChunkBodyDecoder::new();
-        let res = decoder.decode(chunk_body_bytes); // 5
+
+        // 5
+        let res = decoder.decode(chunk_body_bytes);
         assert_eq!(res, Err(ErrorKind::InvalidInput.into()));
     }
 
@@ -1993,7 +2041,8 @@ mod ut_chunk {
             "
         .as_bytes();
         let mut decoder = ChunkBodyDecoder::new();
-        let res = decoder.decode(chunk_body_bytes); // 5
+        // 5
+        let res = decoder.decode(chunk_body_bytes);
         assert_eq!(res, Err(ErrorKind::InvalidInput.into()));
     }
 
@@ -2015,7 +2064,9 @@ mod ut_chunk {
             \r\n\
             "
         .as_bytes();
-        let (chunks, _) = decoder.decode(chunk_body_bytes).unwrap(); // 5
+
+        // 5
+        let (chunks, _) = decoder.decode(chunk_body_bytes).unwrap();
         assert_eq!(chunks.iter().len(), 3);
         let chunk = chunks.iter().next().unwrap();
         assert_eq!(

@@ -11,15 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::ErrorKind;
-use crate::error::HttpClientError;
-use crate::util;
 use ylong_http::headers::Headers;
 use ylong_http::request::method::Method;
 use ylong_http::request::uri::Uri;
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::Response;
+
+use crate::error::{ErrorKind, HttpClientError};
+use crate::util;
 
 /// Redirect strategy supports limited times of redirection and no redirect
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -258,14 +258,15 @@ impl Redirect {
 
 #[cfg(test)]
 mod ut_redirect {
-    use crate::redirect::Redirect;
-    use crate::util::config::Redirect as setting_redirect;
-    use crate::util::redirect::{RedirectStatus, RedirectStrategy, TriggerKind};
     use ylong_http::h1::ResponseDecoder;
     use ylong_http::request::uri::Uri;
     use ylong_http::request::Request;
     use ylong_http::response::status::StatusCode;
     use ylong_http::response::Response;
+
+    use crate::redirect::Redirect;
+    use crate::util::config::Redirect as setting_redirect;
+    use crate::util::redirect::{RedirectStatus, RedirectStrategy, TriggerKind};
     /// UT test cases for `Redirect::check_redirect`.
     ///
     /// # Brief

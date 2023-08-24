@@ -11,18 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::c_openssl::foreign::{Foreign, ForeignRef, ForeignRefWrapper};
-use core::{
-    borrow::Borrow,
-    marker::PhantomData,
-    mem::forget,
-    ops::{Deref, DerefMut, Range},
-};
+use core::borrow::Borrow;
+use core::marker::PhantomData;
+use core::mem::forget;
+use core::ops::{Deref, DerefMut, Range};
+
 use libc::c_int;
 
 use super::ffi::stack::{
     OPENSSL_sk_free, OPENSSL_sk_num, OPENSSL_sk_pop, OPENSSL_sk_value, OPENSSL_STACK,
 };
+use crate::c_openssl::foreign::{Foreign, ForeignRef, ForeignRefWrapper};
 
 pub(crate) trait Stackof: Foreign {
     type StackType;

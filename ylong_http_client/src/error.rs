@@ -17,7 +17,8 @@
 use core::fmt::{Debug, Display, Formatter};
 use std::error::Error;
 
-/// The structure encapsulates errors that can be encountered when working with the HTTP client.
+/// The structure encapsulates errors that can be encountered when working with
+/// the HTTP client.
 pub struct HttpClientError {
     kind: ErrorKind,
     cause: Option<Box<dyn Error + Send + Sync>>,

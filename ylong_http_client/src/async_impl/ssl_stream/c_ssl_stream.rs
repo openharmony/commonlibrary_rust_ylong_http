@@ -11,19 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::ssl_stream::{check_io_to_poll, Wrapper};
-use crate::util::c_openssl::{
-    error::ErrorStack,
-    ssl::{self, ShutdownResult, Ssl, SslErrorCode},
-};
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
-use core::{
-    future,
-    pin::Pin,
-    ptr, slice,
-    task::{Context, Poll},
-};
+use core::pin::Pin;
+use core::task::{Context, Poll};
+use core::{future, ptr, slice};
 use std::io::{self, Read, Write};
+
+use crate::async_impl::ssl_stream::{check_io_to_poll, Wrapper};
+use crate::util::c_openssl::error::ErrorStack;
+use crate::util::c_openssl::ssl::{self, ShutdownResult, Ssl, SslErrorCode};
+use crate::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// An asynchronous version of [`openssl::ssl::SslStream`].
 #[derive(Debug)]
@@ -129,12 +125,14 @@ where
     fn poll_shutdown(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<io::Result<()>> {
         // Shuts down the session.
         match self.as_mut().with_context(ctx, |s| s.shutdown()) {
-            // Sends a close notify message to the peer, after which `ShutdownResult::Sent` is returned.
-            // Awaits the receipt of a close notify message from the peer, after which `ShutdownResult::Received` is returned.
+            // Sends a close notify message to the peer, after which `ShutdownResult::Sent` is
+            // returned. Awaits the receipt of a close notify message from the peer,
+            // after which `ShutdownResult::Received` is returned.
             Ok(ShutdownResult::Sent) | Ok(ShutdownResult::Received) => {}
             // The SSL session has been closed.
             Err(ref e) if e.code() == SslErrorCode::ZERO_RETURN => {}
-            // When the underlying BIO could not satisfy the needs of SSL_shutdown() to continue the handshake
+            // When the underlying BIO could not satisfy the needs of SSL_shutdown() to continue the
+            // handshake
             Err(ref e)
                 if e.code() == SslErrorCode::WANT_READ || e.code() == SslErrorCode::WANT_WRITE =>
             {

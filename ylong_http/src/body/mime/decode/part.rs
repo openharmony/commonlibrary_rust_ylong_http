@@ -11,28 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    body::{
-        mime::{
-            common::{get_crlf_contain, trim_back_lwsp_if_end_with_lf, trim_front_lwsp},
-            decode::BoundaryTag,
-            DecodeHeaders, MimePart, PartStatus,
-        },
-        TokenStatus,
-    },
-    error::{ErrorKind, HttpError},
-    headers::Headers,
-};
 use core::mem::take;
+
+use crate::body::mime::common::{get_crlf_contain, trim_back_lwsp_if_end_with_lf, trim_front_lwsp};
+use crate::body::mime::decode::BoundaryTag;
+use crate::body::mime::{DecodeHeaders, MimePart, PartStatus};
+use crate::body::TokenStatus;
+use crate::error::{ErrorKind, HttpError};
+use crate::headers::Headers;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct MimePartDecoder {
-    stage: PartStatus, // Encode stage now
+    // Encode stage now
+    stage: PartStatus,
     headers_decoder: DecodeHeaders,
     part: MimePart<'static>,
-    boundary: Vec<u8>, // boundary
+    // boundary
+    boundary: Vec<u8>,
     tag: BoundaryTag,
-    src_idx: usize, // marks last "\n"
+    // marks last "\n"
+    src_idx: usize,
 }
 
 impl MimePartDecoder {
@@ -84,7 +82,8 @@ impl MimePartDecoder {
             let rest = match self.stage {
                 PartStatus::Start => self.start_decode(remains),
                 PartStatus::Headers => self.headers_decode(remains),
-                PartStatus::Crlf => Ok(remains), // not use
+                // not use
+                PartStatus::Crlf => Ok(remains),
                 PartStatus::Body => self.body_decode(remains),
                 PartStatus::End => {
                     results = TokenStatus::Complete(take(&mut self.part));
@@ -170,10 +169,8 @@ impl MimePartDecoder {
 
 #[cfg(test)]
 mod ut_mime_part_decoder {
-    use crate::body::{
-        mime::{MimePart, MimePartDecoder},
-        TokenStatus,
-    };
+    use crate::body::mime::{MimePart, MimePartDecoder};
+    use crate::body::TokenStatus;
 
     /// UT test cases for `MimePartDecoder::decode`.
     ///
@@ -337,15 +334,18 @@ mod ut_mime_part_decoder {
         let buf = b"name1:value1\r\nname2:value2\r\n\r\nabcd\r\n--abc\r\nabcd";
         let mut decoder = MimePartDecoder::new();
         decoder.set_boundary(b"abc".to_vec());
-        let (elem, rest) = decoder.decode(&buf[0..3]).unwrap(); // nam
+        // nam
+        let (elem, rest) = decoder.decode(&buf[0..3]).unwrap();
         assert!(!elem.is_complete());
         assert_eq!(rest, b"");
 
-        let (elem, rest) = decoder.decode(&buf[3..30]).unwrap(); // e1:value1\r\nname2:value2\r\n\r\n
+        // e1:value1\r\nname2:value2\r\n\r\n
+        let (elem, rest) = decoder.decode(&buf[3..30]).unwrap();
         assert!(!elem.is_complete());
         assert_eq!(rest, b"");
 
-        let (elem, rest) = decoder.decode(&buf[30..]).unwrap(); // abcd\r\n--abc\r\nabcd
+        // abcd\r\n--abc\r\nabcd
+        let (elem, rest) = decoder.decode(&buf[30..]).unwrap();
         assert!(elem.is_complete());
         let part1 = MimePart::builder()
             .header("name1", "value1")

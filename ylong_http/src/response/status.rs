@@ -20,9 +20,10 @@
 //!
 //! [`Status Codes`]: https://httpwg.org/specs/rfc9110.html#status.codes
 
-use crate::error::{ErrorKind, HttpError};
 use core::convert::TryFrom;
 use core::fmt::{Display, Formatter};
+
+use crate::error::{ErrorKind, HttpError};
 
 /// HTTP [`Status Codes`] implementation.
 ///

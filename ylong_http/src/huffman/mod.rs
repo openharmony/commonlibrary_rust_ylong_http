@@ -35,9 +35,9 @@
 
 mod consts;
 
-use consts::{HUFFMAN_DECODE, HUFFMAN_ENCODE};
-
 use core::cmp::Ordering;
+
+use consts::{HUFFMAN_DECODE, HUFFMAN_ENCODE};
 
 /// Converts a string to a Huffman code, and then put it into the
 /// specified `Vec<u8>`.
@@ -68,7 +68,8 @@ pub(crate) fn huffman_encode(src: &[u8], dst: &mut Vec<u8>) {
     // +--------------------------------+-----------------+
 
     let mut state = 0u64;
-    // The initial value of `unfilled` is equal to the number of bits in the `state`.
+    // The initial value of `unfilled` is equal to the number of bits in the
+    // `state`.
     let mut unfilled = 64;
 
     for byte in src.iter() {
@@ -117,8 +118,8 @@ pub(crate) fn huffman_encode(src: &[u8], dst: &mut Vec<u8>) {
     }
 }
 
-/// Converts a Huffman code into a literal string at one time, and then put it into the
-/// specified `Vec<u8>`.
+/// Converts a Huffman code into a literal string at one time, and then put it
+/// into the specified `Vec<u8>`.
 ///
 /// The algorithm comes from crate [h2].
 ///
@@ -355,7 +356,8 @@ mod ut_huffman {
     ///
     /// # Brief
     /// 1. Creates a `HuffmanDecoder`.
-    /// 1. Calls `decode` and `finish` function, passing in the specified parameters.
+    /// 1. Calls `decode` and `finish` function, passing in the specified
+    ///    parameters.
     /// 2. Checks if the test results are correct.
     #[test]
     fn ut_huffman_decoder() {

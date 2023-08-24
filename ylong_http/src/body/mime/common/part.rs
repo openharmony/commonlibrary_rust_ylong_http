@@ -11,20 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::headers::{HeaderName, HeaderValue};
-use crate::AsyncRead;
-use crate::{
-    body::mime::{MixFrom, CR, LF},
-    error::HttpError,
-    headers::{Header, Headers},
-};
-use core::{convert::TryFrom, mem::take};
+use core::convert::TryFrom;
+use core::mem::take;
 use std::io::Read;
 
-/// `MimePart` is a body part of a Composite MIME body which is defined in [`RFC2046`]: \
-/// The body must then contain one or more body parts, each preceded by a boundary
-/// delimiter line, and the last one followed by a closing boundary delimiter line.
-/// Each body part then consists of a header area, a blank line, and a body area. \
+use crate::body::mime::{MixFrom, CR, LF};
+use crate::error::HttpError;
+use crate::headers::{Header, HeaderName, HeaderValue, Headers};
+use crate::AsyncRead;
+
+/// `MimePart` is a body part of a Composite MIME body which is defined in
+/// [`RFC2046`]:  The body must then contain one or more body parts, each
+/// preceded by a boundary delimiter line, and the last one followed by a
+/// closing boundary delimiter line. Each body part then consists of a header
+/// area, a blank line, and a body area.
 ///
 /// `MimePart` can be built by [`MimePartBuilder`], then sets headers and body.
 ///
@@ -60,7 +60,8 @@ pub struct MimePart<'a> {
     //
     // OCTET := <any 0-255 octet value>
     pub(crate) headers: Headers,
-    pub(crate) body: MixFrom<'a>, // all use for encode; owned use for decode
+    // all use for encode; owned use for decode
+    pub(crate) body: MixFrom<'a>,
 }
 
 impl<'a> MimePart<'a> {
@@ -203,8 +204,8 @@ impl<'a> MimePart<'a> {
     }
 }
 
-/// `MimePartBuilder` can set a body part of a Composite MIME body [`MimePart`]. \
-/// `MimePartBuilder` can set headers and body, then builds a [`MimePart`]. \
+/// `MimePartBuilder` can set a body part of a Composite MIME body [`MimePart`].
+/// `MimePartBuilder` can set headers and body, then builds a [`MimePart`].
 ///
 /// [`MimePart`]: MimePart
 ///
@@ -247,7 +248,8 @@ impl<'a> MimePartBuilder<'a> {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http::{body::MimePartBuilder, headers::Headers};
+    /// use ylong_http::body::MimePartBuilder;
+    /// use ylong_http::headers::Headers;
     ///
     /// let part = MimePartBuilder::new().set_headers({
     ///     let mut headers = Headers::new();
@@ -348,7 +350,8 @@ impl<'a> MimePartBuilder<'a> {
         self
     }
 
-    /// Sets body to the MIME body part, the read content is from a synchronous reader.
+    /// Sets body to the MIME body part, the read content is from a synchronous
+    /// reader.
     ///
     /// # Examples
     ///
@@ -368,7 +371,8 @@ impl<'a> MimePartBuilder<'a> {
         self
     }
 
-    /// Sets body to the MIME body part, the read content is from a asynchronous reader.
+    /// Sets body to the MIME body part, the read content is from a asynchronous
+    /// reader.
     pub fn body_from_async_reader<T>(mut self, data: T) -> Self
     where
         T: AsyncRead + Send + Sync + Unpin + 'static,
@@ -413,10 +417,8 @@ pub(crate) enum PartStatus {
 
 #[cfg(test)]
 mod ut_mime_part {
-    use crate::{
-        body::{MimePart, MimePartBuilder},
-        headers::Headers,
-    };
+    use crate::body::{MimePart, MimePartBuilder};
+    use crate::headers::Headers;
 
     /// UT test cases for `MimePartBuilder::new`.
     ///

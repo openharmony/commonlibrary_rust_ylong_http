@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::mem::take;
+
 use crate::h2::error::ErrorCode;
 use crate::h2::hpack::representation::{
     Name, ReprDecStateHolder, ReprDecodeState, ReprDecoder, Representation,
 };
 use crate::h2::hpack::table::{DynamicTable, Header, TableSearcher};
 use crate::h2::{H2Error, Parts};
-use core::mem::take;
 
 // A structure used to store header lines and octets lengths of header lines.
 struct HeaderLines {
@@ -49,7 +50,8 @@ impl HpackDecoder {
         }
     }
 
-    /// Users can call `decode` multiple times to decode the byte stream in segments.
+    /// Users can call `decode` multiple times to decode the byte stream in
+    /// segments.
     pub(crate) fn decode(&mut self, buf: &[u8]) -> Result<(), H2Error> {
         // Initialize ReprDecoder.
         let mut decoder = ReprDecoder::new(buf);
@@ -85,7 +87,8 @@ impl HpackDecoder {
     }
 }
 
-/// `Updater` is used to update `DynamicTable` `PseudoHeaders` and `HttpHeaderMap`.
+/// `Updater` is used to update `DynamicTable` `PseudoHeaders` and
+/// `HttpHeaderMap`.
 struct Updater<'a> {
     header_list_size: usize,
     table: &'a mut DynamicTable,

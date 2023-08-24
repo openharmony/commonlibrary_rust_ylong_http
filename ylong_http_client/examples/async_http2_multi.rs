@@ -11,10 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This is a simple asynchronous HTTP client example in concurrent scenarios using the ylong_http_client crate.
-//! It demonstrates creating a client, making a request, and reading the response asynchronously.
+//! This is a simple asynchronous HTTP client example in concurrent scenarios
+//! using the ylong_http_client crate. It demonstrates creating a client, making
+//! a request, and reading the response asynchronously.
 
 use std::sync::Arc;
+
 use ylong_http_client::async_impl::{Body, ClientBuilder};
 use ylong_http_client::{HttpClientError, RequestBuilder, StatusCode, TextBody, Version};
 

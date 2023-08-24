@@ -10,7 +10,7 @@ keywords = ["ylong", "http"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http1_1", "tokio_base","huffman","http3"]
+default = []
 full = [
     "http1_1",
     "http2",
@@ -23,11 +23,11 @@ http3 = []          # Uses HTTP/3.
 huffman = []        # Uses Huffman encoding in `Hpack` and `Qpack`.
 
 tokio_base = ["tokio"]     # Uses asynchronous components of `tokio`
-ylong_base = []            # Uses asynchronous components of `ylong`
+ylong_base = ["ylong_runtime"]            # Uses asynchronous components of `ylong`
 
 [dependencies]
 tokio = { version = "1.20.1", features = ["io-util"], optional = true }
-# ylong_runtime = { path = "../runtime/ylong_runtime", optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_runtime.git", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.20.1", features = ["io-util", "rt-multi-thread", "macros"] }

@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ops::{Deref, DerefMut};
+
 use super::{Frame, H2Error};
 use crate::error::ErrorKind::H2;
 use crate::h2;
@@ -22,7 +24,6 @@ use crate::h2::frame::{
 };
 use crate::h2::{frame, HpackDecoder, Parts, Setting, Settings};
 use crate::headers::Headers;
-use std::ops::{Deref, DerefMut};
 
 const FRAME_HEADER_LENGTH: usize = 9;
 const DEFAULT_MAX_FRAME_SIZE: u32 = 2 << 13;
@@ -32,7 +33,8 @@ const DEFAULT_MAX_HEADER_LIST_SIZE: usize = 16 << 20;
 const MAX_INITIAL_WINDOW_SIZE: usize = (1 << 31) - 1;
 
 /// A set of consecutive Frames.
-/// When Headers Frames or Continuation Frames are not End Headers, they are represented as `FrameKind::Partial`.
+/// When Headers Frames or Continuation Frames are not End Headers, they are
+/// represented as `FrameKind::Partial`.
 ///
 /// - use `Frames` iterator.
 ///
@@ -52,7 +54,7 @@ const MAX_INITIAL_WINDOW_SIZE: usize = (1 << 31) - 1;
 /// # Examples
 ///
 /// ```
-///  use ylong_http::h2::Frames;
+/// use ylong_http::h2::Frames;
 ///
 /// # fn get_frames_into_iter(frames: Frames) {
 /// let mut iter = frames.into_iter();
@@ -145,7 +147,8 @@ impl core::iter::IntoIterator for Frames {
     }
 }
 
-/// When Headers Frames or Continuation Frames are not End Headers, they are represented as `FrameKind::Partial`.
+/// When Headers Frames or Continuation Frames are not End Headers, they are
+/// represented as `FrameKind::Partial`.
 pub enum FrameKind {
     /// PUSH_PROMISE or HEADRS frame parsing completed.
     Complete(Frame),
@@ -164,7 +167,7 @@ pub enum FrameKind {
 /// decoder.set_max_header_list_size(30);
 /// let data_frame_bytes = &[0, 0, 5, 0, 0, 0, 0, 0, 1, b'h', b'e', b'l', b'l', b'o'];
 /// let decoded_frames = decoder.decode(data_frame_bytes).unwrap();
-/// let frame_kind =decoded_frames.iter().next().unwrap();
+/// let frame_kind = decoded_frames.iter().next().unwrap();
 /// ```
 pub struct FrameDecoder {
     buffer: Vec<u8>,
@@ -176,7 +179,8 @@ pub struct FrameDecoder {
     // 9-byte header information of the current frame
     header: FrameHeader,
     hpack: HpackDecoderLayer,
-    // The Headers Frame flags information is saved to ensure the continuity between Headers Frames and Continuation Frames.
+    // The Headers Frame flags information is saved to ensure the continuity between Headers Frames
+    // and Continuation Frames.
     continuations: Continuations,
 }
 
@@ -306,7 +310,8 @@ impl Frames {
 }
 
 impl FrameDecoder {
-    /// `FrameDecoder` constructor. Three parameters are defined in SETTINGS Frame.
+    /// `FrameDecoder` constructor. Three parameters are defined in SETTINGS
+    /// Frame.
     pub fn new() -> Self {
         FrameDecoder::default()
     }
@@ -373,7 +378,8 @@ impl FrameDecoder {
         &mut self,
         buf: &'a [u8],
     ) -> Result<Option<(&'a [u8], FrameKind)>, H2Error> {
-        // Frames of other types or streams are not allowed between Headers Frame and Continuation Frame.
+        // Frames of other types or streams are not allowed between Headers Frame and
+        // Continuation Frame.
         if !self.continuations.is_end_headers
             && (self.header.stream_id != self.continuations.stream_id
                 || self.header.frame_type != 9)
@@ -714,7 +720,9 @@ impl FrameDecoder {
             self.continuations.is_end_headers = false;
             self.continuations.stream_id = self.header.stream_id;
 
-            // TODO Performance optimization, The storage structure Vec is optimized. When a complete field block exists in the buffer, fragments do not need to be copied to the Vec.
+            // TODO Performance optimization, The storage structure Vec is optimized. When a
+            // complete field block exists in the buffer, fragments do not need to be copied
+            // to the Vec.
             self.hpack
                 .hpack_decode(&buf[fragment_start_index..fragment_end_index])?;
             Ok(FrameKind::Partial)
@@ -1257,7 +1265,8 @@ mod ut_frame_decoder {
             FrameKind: frames_iter.next().expect("take next frame from iterator failed !"),
         );
 
-        // continuation is ("content-length", "9"), so it will append to headers' content-length because of repeat.
+        // continuation is ("content-length", "9"), so it will append to headers'
+        // content-length because of repeat.
         check_complete_frame!(
             @header;
             FrameKind: frames_iter.next().expect("take next frame from iterator failed !"),
@@ -1284,7 +1293,8 @@ mod ut_frame_decoder {
     ///
     /// # Brief
     ///
-    /// Test the function of inserting HEADERS of other streams between HEADERS and CONTINUATION of the same stream.
+    /// Test the function of inserting HEADERS of other streams between HEADERS
+    /// and CONTINUATION of the same stream.
     /// 1. Creates a `FrameDecoder`.
     /// 2. Calls its `FrameDecoder::decode` method.
     /// 3. Checks the results.
@@ -1305,7 +1315,8 @@ mod ut_frame_decoder {
     ///
     /// # Brief
     ///
-    /// Test the function of inserting CONTINUATION of other streams between HEADERS and CONTINUATION of the same stream.
+    /// Test the function of inserting CONTINUATION of other streams between
+    /// HEADERS and CONTINUATION of the same stream.
     /// 1. Creates a `FrameDecoder`.
     /// 2. Calls its `FrameDecoder::decode` method.
     /// 3. Checks the results.
@@ -1326,7 +1337,8 @@ mod ut_frame_decoder {
     ///
     /// # Brief
     ///
-    /// Test a complete Request HEADERS Frames with padding and priority, the purpose is to test the method of `FrameFlags`.
+    /// Test a complete Request HEADERS Frames with padding and priority, the
+    /// purpose is to test the method of `FrameFlags`.
     ///
     /// 1. Creates a `FrameDecoder`.
     /// 2. Calls its `FrameDecoder::decode` method.
@@ -1384,7 +1396,8 @@ mod ut_frame_decoder {
             }
         }
 
-        // Tests the case where the payload length is not 8, which should return an error.
+        // Tests the case where the payload length is not 8, which should return an
+        // error.
         decoder.header.payload_length = 7;
         let result = decoder.decode_ping_payload(ping_payload);
         assert!(matches!(
@@ -1405,12 +1418,16 @@ mod ut_frame_decoder {
     ///
     /// # Brief
     ///
-    /// This test case checks the behavior of the `decode_priority_payload` method in two scenarios.
+    /// This test case checks the behavior of the `decode_priority_payload`
+    /// method in two scenarios.
     ///
     /// 1. Creates a `FrameDecoder`.
-    /// 2. Calls its `decode_priority_payload` method with a valid `priority_payload`.
-    /// 3. Verifies the method correctly decodes the payload and returns the expected values.
-    /// 4. Sets the `stream_id` in the header to 0 and checks if the method returns an error as expected.
+    /// 2. Calls its `decode_priority_payload` method with a valid
+    ///    `priority_payload`.
+    /// 3. Verifies the method correctly decodes the payload and returns the
+    ///    expected values.
+    /// 4. Sets the `stream_id` in the header to 0 and checks if the method
+    ///    returns an error as expected.
     #[test]
     fn ut_decode_priority_payload() {
         let mut decoder = FrameDecoder::new();
@@ -1449,12 +1466,16 @@ mod ut_frame_decoder {
     ///
     /// # Brief
     ///
-    /// This test case checks the behavior of the `decode_goaway_payload` method in two scenarios.
+    /// This test case checks the behavior of the `decode_goaway_payload` method
+    /// in two scenarios.
     ///
     /// 1. Creates a `FrameDecoder`.
-    /// 2. Calls its `decode_goaway_payload` method with a valid `goaway_payload`.
-    /// 3. Verifies the method correctly decodes the payload and returns the expected values.
-    /// 4. Sets the `stream_id` in the header to a non-zero value and checks if the method returns an error as expected.
+    /// 2. Calls its `decode_goaway_payload` method with a valid
+    ///    `goaway_payload`.
+    /// 3. Verifies the method correctly decodes the payload and returns the
+    ///    expected values.
+    /// 4. Sets the `stream_id` in the header to a non-zero value and checks if
+    ///    the method returns an error as expected.
     #[test]
     fn ut_decode_goaway_payload() {
         let mut decoder = FrameDecoder::new();
@@ -1525,7 +1546,8 @@ mod ut_frame_decoder {
             }
         }
 
-        // Tests the case where the payload length is not 4, which should return an error.
+        // Tests the case where the payload length is not 4, which should return an
+        // error.
         decoder.header.payload_length = 5;
         let result = decoder.decode_window_update_payload(window_update_payload);
         assert!(matches!(
@@ -1566,7 +1588,8 @@ mod ut_frame_decoder {
             }
         }
 
-        // Tests the case where the payload length is not 4, which should return an error.
+        // Tests the case where the payload length is not 4, which should return an
+        // error.
         decoder.header.payload_length = 5;
         let result = decoder.decode_reset_payload(reset_payload);
         assert!(matches!(
@@ -1602,8 +1625,8 @@ mod ut_frame_decoder {
             stream_id: 0x0,
         };
 
-        // Mock a settings payload: [0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01]
-        // Setting 1: Header Table Size, Value: 128
+        // Mock a settings payload: [0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x00, 0x02,
+        // 0x00, 0x00, 0x00, 0x01] Setting 1: Header Table Size, Value: 128
         // Setting 2: Enable Push, Value: 1
         let settings_payload = &[
             0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01,
@@ -1625,7 +1648,8 @@ mod ut_frame_decoder {
         }
 
         // Test the case where the settings frame is an acknowledgment.
-        // For this, we should set the ACK flag (0x1) and the payload length should be 0.
+        // For this, we should set the ACK flag (0x1) and the payload length should be
+        // 0.
         decoder.header = FrameHeader {
             payload_length: 0,
             frame_type: 0x4,
@@ -1646,7 +1670,8 @@ mod ut_frame_decoder {
             }
         }
 
-        // Tests the case where the payload length is not a multiple of 6, which should return an error.
+        // Tests the case where the payload length is not a multiple of 6, which should
+        // return an error.
         decoder.header.payload_length = 5;
         let result = decoder.decode_settings_payload(settings_payload);
         assert!(matches!(
@@ -1696,7 +1721,8 @@ mod ut_frame_decoder {
             FrameKind::Partial => {}
         }
 
-        // Tests the case where the payload length is less than the promised_stream_id size, which should return an error.
+        // Tests the case where the payload length is less than the promised_stream_id
+        // size, which should return an error.
         decoder.header.payload_length = 3;
         let result = decoder.decode_push_promise_payload(push_promise_payload);
         assert!(matches!(
@@ -1785,7 +1811,8 @@ mod ut_frame_decoder {
             Err(H2Error::ConnectionError(ErrorCode::ProtocolError))
         ));
 
-        // Test the case where the id is for an InitialWindowSize, but the value is too large
+        // Test the case where the id is for an InitialWindowSize, but the value is too
+        // large
         let result = get_setting(4, 2usize.pow(31) as u32);
         assert!(matches!(
             result,

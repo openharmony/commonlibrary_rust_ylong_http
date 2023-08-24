@@ -18,8 +18,9 @@
 //!
 //! [`URI`]: https://httpwg.org/specs/rfc9110.html#uri.references
 
-use crate::error::{ErrorKind, HttpError};
 use core::convert::{Infallible, TryFrom, TryInto};
+
+use crate::error::{ErrorKind, HttpError};
 
 // Maximum uri length.
 const MAX_URI_LEN: usize = (u16::MAX - 1) as usize;
@@ -469,12 +470,12 @@ impl UriBuilder {
     /// use ylong_http::request::uri::UriBuilder;
     ///
     /// let uri = UriBuilder::new()
-    ///             .scheme("http")
-    ///             .authority("example.com:80")
-    ///             .path("/foo")
-    ///             .query("a=1")
-    ///             .build()
-    ///             .unwrap();
+    ///     .scheme("http")
+    ///     .authority("example.com:80")
+    ///     .path("/foo")
+    ///     .query("a=1")
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn build(self) -> Result<Uri, HttpError> {
         self.unprocessed
@@ -946,7 +947,8 @@ fn scheme_token(bytes: &[u8]) -> Result<(Option<Scheme>, &[u8]), InvalidUri> {
         Some((0, _)) => return Err(InvalidUri::InvalidScheme),
         _ => return Ok((None, bytes)),
     };
-    // Currently, only HTTP and HTTPS are supported. Therefore, you need to verify the scheme content.
+    // Currently, only HTTP and HTTPS are supported. Therefore, you need to verify
+    // the scheme content.
     if bytes[..pos].eq_ignore_ascii_case(b"http") {
         Ok((Some(Protocol::Http.into()), &bytes[HTTP_SCHEME_LENGTH..]))
     } else if bytes[..pos].eq_ignore_ascii_case(b"https") {
@@ -985,7 +987,8 @@ fn authority_token(bytes: &[u8]) -> Result<(Option<Authority>, &[u8]), InvalidUr
                     }
                 }
             }
-            // TODO According to RFC3986, the character @ can be one of the reserved characters, which needs to be improved after being familiar with the rules.
+            // TODO According to RFC3986, the character @ can be one of the reserved characters,
+            // which needs to be improved after being familiar with the rules.
             b'@' => {
                 return Err(InvalidUri::UriContainUserinfo);
             }

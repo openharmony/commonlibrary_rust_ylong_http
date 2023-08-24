@@ -11,16 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::Connector;
-use crate::error::HttpClientError;
-use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
-use crate::util::pool::{Pool, PoolKey};
-use crate::{AsyncRead, AsyncWrite};
-use crate::{ErrorKind, HttpConfig, HttpVersion, Uri};
 use std::error::Error;
 use std::future::Future;
 use std::mem::take;
 use std::sync::{Arc, Mutex};
+
+use crate::async_impl::Connector;
+use crate::error::HttpClientError;
+use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
+use crate::util::pool::{Pool, PoolKey};
+use crate::{AsyncRead, AsyncWrite, ErrorKind, HttpConfig, HttpVersion, Uri};
 
 pub(crate) struct ConnPool<C, S> {
     pool: Pool<PoolKey, Conns<S>>,
@@ -93,7 +93,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
             #[cfg(feature = "http2")]
             HttpVersion::Http2PriorKnowledge => {
                 {
-                    // The lock `h2_occupation` is used to prevent multiple coroutines from sending Requests at the same time under concurrent conditions,
+                    // The lock `h2_occupation` is used to prevent multiple coroutines from sending
+                    // Requests at the same time under concurrent conditions,
                     // resulting in the creation of multiple tcp connections
                     let _lock = self.h2_occupation.lock().await;
                     if let Some(conn) = self.get_exist_conn() {

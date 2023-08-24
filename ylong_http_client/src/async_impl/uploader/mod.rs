@@ -14,14 +14,14 @@
 mod builder;
 mod operator;
 
-pub use builder::{UploaderBuilder, WantsReader};
-pub use operator::{Console, UploadOperator};
-
-use crate::{AsyncRead, ReadBuf};
-use crate::{ErrorKind, HttpClientError};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+pub use builder::{UploaderBuilder, WantsReader};
+pub use operator::{Console, UploadOperator};
 use ylong_http::body::async_impl::Body;
+
+use crate::{AsyncRead, ErrorKind, HttpClientError, ReadBuf};
 
 /// An uploader that can help you upload the request body.
 ///
@@ -70,7 +70,7 @@ use ylong_http::body::async_impl::Body;
 ///         self: Pin<&mut Self>,
 ///         cx: &mut Context<'_>,
 ///         uploaded: u64,
-///         total: Option<u64>
+///         total: Option<u64>,
 ///     ) -> Poll<Result<(), HttpClientError>> {
 ///         todo!()
 ///     }
@@ -78,7 +78,10 @@ use ylong_http::body::async_impl::Body;
 ///
 /// // Creates a default `Uploader` based on `MyUploadOperator`.
 /// // Configures your uploader by using `UploaderBuilder`.
-/// let uploader = Uploader::builder().reader("HelloWorld".as_bytes()).operator(MyUploadOperator).build();
+/// let uploader = Uploader::builder()
+///     .reader("HelloWorld".as_bytes())
+///     .operator(MyUploadOperator)
+///     .build();
 /// # }
 /// ```
 pub struct Uploader<R, T> {
@@ -89,7 +92,8 @@ pub struct Uploader<R, T> {
 }
 
 impl<R: AsyncRead + Unpin> Uploader<R, Console> {
-    /// Creates an `Uploader` with a `Console` operator which displays process on console.
+    /// Creates an `Uploader` with a `Console` operator which displays process
+    /// on console.
     ///
     /// # Examples
     ///

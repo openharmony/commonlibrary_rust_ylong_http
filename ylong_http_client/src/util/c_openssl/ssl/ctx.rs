@@ -11,32 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{filetype::SslFiletype, method::SslMethod, version::SslVersion};
-use crate::{
-    c_openssl::{
-        ffi::ssl::{
-            SSL_CTX_free, SSL_CTX_get_cert_store, SSL_CTX_set_default_verify_paths,
-            SSL_CTX_set_verify,
-        },
-        x509::{X509Store, X509StoreRef},
-    },
-    util::c_openssl::{
-        check_ptr, check_ret,
-        error::ErrorStack,
-        ffi::ssl::{
-            SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
-            SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list, SSL_CTX_set_ciphersuites,
-            SSL_CTX_up_ref, SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file,
-            SSL_CTX,
-        },
-        foreign::{Foreign, ForeignRef},
-        ssl_init,
-        x509::{X509Ref, X509},
-    },
-};
 use core::{fmt, mem, ptr};
+use std::ffi::CString;
+use std::path::Path;
+
 use libc::{c_int, c_long, c_uint, c_void};
-use std::{ffi::CString, path::Path};
+
+use super::filetype::SslFiletype;
+use super::method::SslMethod;
+use super::version::SslVersion;
+use crate::c_openssl::ffi::ssl::{
+    SSL_CTX_free, SSL_CTX_get_cert_store, SSL_CTX_set_default_verify_paths, SSL_CTX_set_verify,
+};
+use crate::c_openssl::x509::{X509Store, X509StoreRef};
+use crate::util::c_openssl::error::ErrorStack;
+use crate::util::c_openssl::ffi::ssl::{
+    SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
+    SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list, SSL_CTX_set_ciphersuites, SSL_CTX_up_ref,
+    SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file, SSL_CTX,
+};
+use crate::util::c_openssl::foreign::{Foreign, ForeignRef};
+use crate::util::c_openssl::x509::{X509Ref, X509};
+use crate::util::c_openssl::{check_ptr, check_ret, ssl_init};
 
 const SSL_CTRL_EXTRA_CHAIN_CERT: c_int = 14;
 
@@ -193,8 +189,9 @@ impl SslContextBuilder {
 
     /// Loads a leaf certificate from a file.
     ///
-    /// Only a single certificate will be loaded - use `add_extra_chain_cert` to add the remainder
-    /// of the certificate chain, or `set_certificate_chain_file` to load the entire chain from a
+    /// Only a single certificate will be loaded - use `add_extra_chain_cert` to
+    /// add the remainder of the certificate chain, or
+    /// `set_certificate_chain_file` to load the entire chain from a
     /// single file.
     pub(crate) fn set_certificate_file<P>(
         &mut self,
@@ -222,9 +219,9 @@ impl SslContextBuilder {
 
     /// Loads a certificate chain from file into ctx.
     /// The certificates must be in PEM format and must be sorted starting with
-    /// the subject's certificate (actual client or server certificate), followed
-    /// by intermediate CA certificates if applicable, and ending at the highest
-    /// level (root) CA.
+    /// the subject's certificate (actual client or server certificate),
+    /// followed by intermediate CA certificates if applicable, and ending
+    /// at the highest level (root) CA.
     pub(crate) fn set_certificate_chain_file<P>(&mut self, file: P) -> Result<(), ErrorStack>
     where
         P: AsRef<Path>,
@@ -243,7 +240,8 @@ impl SslContextBuilder {
             .map(|_| ())
     }
 
-    /// Sets the protocols to sent to the server for Application Layer Protocol Negotiation (ALPN).
+    /// Sets the protocols to sent to the server for Application Layer Protocol
+    /// Negotiation (ALPN).
     pub(crate) fn set_alpn_protos(&mut self, protocols: &[u8]) -> Result<(), ErrorStack> {
         assert!(protocols.len() <= c_uint::max_value() as usize);
 

@@ -18,13 +18,14 @@
 //!
 //! # Introduction
 //! Integers are used to represent name indexes, header field indexes, or
-//! string lengths. An integer representation can start anywhere within an octet.
-//! To allow for optimized processing, an integer representation always finishes
-//! at the end of an octet.
+//! string lengths. An integer representation can start anywhere within an
+//! octet. To allow for optimized processing, an integer representation always
+//! finishes at the end of an octet.
+
+use core::cmp::Ordering;
 
 use crate::h2::error::ErrorCode;
 use crate::h2::H2Error;
-use core::cmp::Ordering;
 
 /// `IntegerDecoder` implementation according to `Pseudocode to decode an
 /// integer I` in `RFC7541 section-5.1`.
@@ -157,7 +158,8 @@ mod ut_integer {
     ///
     /// # Brief
     /// 1. Creates an `IntegerDecoder`.
-    /// 2. Calls `IntegerDecoder::first_byte()` an `IntegerDecoder::next_byte()`,
+    /// 2. Calls `IntegerDecoder::first_byte()` an
+    ///    `IntegerDecoder::next_byte()`,
     /// passing in the specified parameters.
     /// 3. Checks if the test results are correct.
     #[test]
@@ -205,7 +207,8 @@ mod ut_integer {
     ///
     /// # Brief
     /// 1. Creates an `IntegerEncoder`.
-    /// 2. Calls `IntegerEncoder::first_byte()` and `IntegerEncoder::next_byte()`,
+    /// 2. Calls `IntegerEncoder::first_byte()` and
+    ///    `IntegerEncoder::next_byte()`,
     /// passing in the specified parameters.
     /// 3. Checks if the test results are correct.
     #[test]

@@ -11,26 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    body::{
-        async_impl,
-        mime::{
-            common::{data_copy, SizeResult, TokenStatus},
-            EncodeHeaders, MixFrom, PartStatus,
-        },
-        sync_impl, MimePart,
-    },
-    error::{ErrorKind, HttpError},
-};
-use crate::{AsyncRead, ReadBuf};
-use core::{
-    convert::TryFrom,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use core::convert::TryFrom;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use std::io::Read;
 
-/// `MimePartEncoder` can get a [`MimePart`] to encode into data that can be transmitted.
+use crate::body::mime::common::{data_copy, SizeResult, TokenStatus};
+use crate::body::mime::{EncodeHeaders, MixFrom, PartStatus};
+use crate::body::{async_impl, sync_impl, MimePart};
+use crate::error::{ErrorKind, HttpError};
+use crate::{AsyncRead, ReadBuf};
+
+/// `MimePartEncoder` can get a [`MimePart`] to encode into data that can be
+/// transmitted.
 ///
 /// [`MimePart`]: MimePart
 ///
@@ -63,11 +56,14 @@ use std::io::Read;
 /// ```
 #[derive(Debug)]
 pub struct MimePartEncoder<'a> {
-    stage: PartStatus, // Encode stage now
+    // Encode stage now
+    stage: PartStatus,
     headers_encode: EncodeHeaders,
     body: Option<MixFrom<'a>>,
-    src: Vec<u8>,   // src which is need to encode
-    src_idx: usize, // index of src
+    // src which is need to encode
+    src: Vec<u8>,
+    // index of src
+    src_idx: usize,
 }
 
 impl<'a> MimePartEncoder<'a> {
@@ -80,9 +76,7 @@ impl<'a> MimePartEncoder<'a> {
     /// ```
     /// use ylong_http::body::{MimePart, MimePartEncoder};
     ///
-    /// let part = MimePart::builder()
-    ///     .build()
-    ///     .unwrap();
+    /// let part = MimePart::builder().build().unwrap();
     /// let part_encoder = MimePartEncoder::from_part(part);
     /// ```
     pub fn from_part(part: MimePart<'a>) -> Self {
@@ -108,7 +102,8 @@ impl<'a> MimePartEncoder<'a> {
             PartStatus::Headers => {
                 self.stage = PartStatus::Crlf;
                 if self.body.is_some() {
-                    self.src = b"\r\n".to_vec(); // has body, so has Crlf
+                    // has body, so has Crlf
+                    self.src = b"\r\n".to_vec();
                 } else {
                     self.src = vec![];
                 }
@@ -116,7 +111,8 @@ impl<'a> MimePartEncoder<'a> {
             }
             PartStatus::Crlf => {
                 self.stage = PartStatus::Body;
-                self.src_idx = 0; // Just record index
+                // Just record index
+                self.src_idx = 0;
             }
             PartStatus::Body => {
                 self.stage = PartStatus::End;
@@ -232,10 +228,8 @@ impl async_impl::Body for MimePartEncoder<'_> {
 
 #[cfg(test)]
 mod ut_mime_part_encoder {
-    use crate::{
-        body::{async_impl, sync_impl, MimePart, MimePartEncoder},
-        headers::Headers,
-    };
+    use crate::body::{async_impl, sync_impl, MimePart, MimePartEncoder};
+    use crate::headers::Headers;
 
     /// UT test cases for `syn::Body::data` of `MimePartEncoder`.
     ///

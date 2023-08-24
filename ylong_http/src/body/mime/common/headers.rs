@@ -11,20 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    body::{
-        mime::{
-            common::{consume_crlf, data_copy, trim_front_lwsp, BytesResult, TokenResult},
-            CR, LF,
-        },
-        TokenStatus,
-    },
-    error::{ErrorKind, HttpError},
-    h1::response::decoder::{HEADER_NAME_BYTES, HEADER_VALUE_BYTES},
-    headers::{HeaderName, HeaderValue, Headers},
-};
 use core::mem::take;
 use std::collections::hash_map::IntoIter;
+
+use crate::body::mime::common::{
+    consume_crlf, data_copy, trim_front_lwsp, BytesResult, TokenResult,
+};
+use crate::body::mime::{CR, LF};
+use crate::body::TokenStatus;
+use crate::error::{ErrorKind, HttpError};
+use crate::h1::response::decoder::{HEADER_NAME_BYTES, HEADER_VALUE_BYTES};
+use crate::headers::{HeaderName, HeaderValue, Headers};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum HeaderStatus {
@@ -172,7 +169,8 @@ impl DecodeHeaders {
             let rest = match self.stage {
                 HeaderStatus::Start => self.start_decode(remains),
                 HeaderStatus::Name => self.name_decode(remains),
-                HeaderStatus::Colon => Ok(remains), // not use
+                // not use
+                HeaderStatus::Colon => Ok(remains),
                 HeaderStatus::Value => self.value_decode(remains),
                 HeaderStatus::Crlf => self.crlf_decode(remains),
                 HeaderStatus::End => {
@@ -293,7 +291,8 @@ impl DecodeHeaders {
     fn get_header_name(buf: &[u8]) -> BytesResult {
         for (i, b) in buf.iter().enumerate() {
             if *b == b':' {
-                return Ok(TokenStatus::Complete((&buf[..i], &buf[i + 1..]))); // match "k:v" or "k: v"
+                // match "k:v" or "k: v"
+                return Ok(TokenStatus::Complete((&buf[..i], &buf[i + 1..])));
             } else if !HEADER_NAME_BYTES[*b as usize] {
                 return Err(ErrorKind::InvalidInput.into());
             }
@@ -316,10 +315,9 @@ impl DecodeHeaders {
 
 #[cfg(test)]
 mod ut_decode_headers {
-    use crate::{
-        body::{mime::common::headers::DecodeHeaders, TokenStatus},
-        headers::Headers,
-    };
+    use crate::body::mime::common::headers::DecodeHeaders;
+    use crate::body::TokenStatus;
+    use crate::headers::Headers;
 
     /// UT test cases for `DecodeHeaders::decode`.
     ///
@@ -456,19 +454,23 @@ mod ut_decode_headers {
     fn ut_decode_headers_decode3() {
         let buf = b"name1:value1\r\nname2:value2\r\n\r\naaaa";
         let mut decoder = DecodeHeaders::new();
-        let (headers, rest) = decoder.decode(&buf[0..3]).unwrap(); // nam
+        // nam
+        let (headers, rest) = decoder.decode(&buf[0..3]).unwrap();
         assert_eq!(headers, TokenStatus::Partial(()));
         assert_eq!(std::str::from_utf8(rest).unwrap(), "");
 
-        let (headers, rest) = decoder.decode(&buf[3..13]).unwrap(); // e1:value1\r
+        // e1:value1\r
+        let (headers, rest) = decoder.decode(&buf[3..13]).unwrap();
         assert_eq!(headers, TokenStatus::Partial(()));
         assert_eq!(std::str::from_utf8(rest).unwrap(), "");
 
-        let (headers, rest) = decoder.decode(&buf[13..29]).unwrap(); // \nname2:value2\r\n\r
+        // \nname2:value2\r\n\r
+        let (headers, rest) = decoder.decode(&buf[13..29]).unwrap();
         assert_eq!(headers, TokenStatus::Partial(()));
         assert_eq!(std::str::from_utf8(rest).unwrap(), "");
 
-        let (headers, rest) = decoder.decode(&buf[29..30]).unwrap(); // \n
+        // \n
+        let (headers, rest) = decoder.decode(&buf[29..30]).unwrap();
         assert_eq!(
             headers,
             TokenStatus::Complete({
@@ -480,7 +482,8 @@ mod ut_decode_headers {
         );
         assert_eq!(std::str::from_utf8(rest).unwrap(), "");
 
-        let (headers, rest) = decoder.decode(&buf[30..34]).unwrap(); // aaaa
+        // aaaa
+        let (headers, rest) = decoder.decode(&buf[30..34]).unwrap();
         assert_eq!(headers, TokenStatus::Complete(Headers::new()));
         assert_eq!(std::str::from_utf8(rest).unwrap(), "aaaa");
     }

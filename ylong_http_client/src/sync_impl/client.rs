@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use ylong_http::request::uri::Uri;
+// TODO: Adapter, remove this later.
+use ylong_http::response::Response;
+
 use super::{Body, Connector, HttpBody, HttpConnector};
 use crate::error::HttpClientError;
 use crate::sync_impl::conn;
@@ -18,13 +22,10 @@ use crate::sync_impl::pool::ConnPool;
 use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
-use crate::util::{ClientConfig, HttpConfig, HttpVersion, Proxy, Timeout};
-use crate::util::{ConnectorConfig, Redirect};
+use crate::util::{
+    ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
+};
 use crate::Request;
-use ylong_http::request::uri::Uri;
-
-// TODO: Adapter, remove this later.
-use ylong_http::response::Response;
 
 /// HTTP synchronous client implementation. Users can use `Client` to
 /// send `Request` synchronously. `Client` depends on a `Connector` that
@@ -34,7 +35,7 @@ use ylong_http::response::Response;
 ///
 /// ```no_run
 /// use ylong_http_client::sync_impl::Client;
-/// use ylong_http_client::{Request, EmptyBody};
+/// use ylong_http_client::{EmptyBody, Request};
 ///
 /// // Creates a new `Client`.
 /// let client = Client::new();
@@ -54,7 +55,8 @@ pub struct Client<C: Connector> {
 }
 
 impl Client<HttpConnector> {
-    /// Creates a new, default `Client`, which uses [`sync_impl::HttpConnector`].
+    /// Creates a new, default `Client`, which uses
+    /// [`sync_impl::HttpConnector`].
     ///
     /// [`sync_impl::HttpConnector`]: HttpConnector
     ///
@@ -101,7 +103,7 @@ impl<C: Connector> Client<C> {
     ///
     /// ```no_run
     /// use ylong_http_client::sync_impl::Client;
-    /// use ylong_http_client::{Request, EmptyBody};
+    /// use ylong_http_client::{EmptyBody, Request};
     ///
     /// let client = Client::new();
     /// let response = client.request(Request::new(EmptyBody));
@@ -420,9 +422,7 @@ impl ClientBuilder {
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
     /// let builder = ClientBuilder::new()
-    ///     .tls_cipher_list(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    ///     .tls_cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
     /// ```
     pub fn tls_cipher_list(mut self, list: &str) -> Self {
         self.tls = self.tls.cipher_list(list);
@@ -441,26 +441,24 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_cipher_suites(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    /// let builder = ClientBuilder::new().tls_cipher_suites(
+    ///     "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+    /// );
     /// ```
     pub fn tls_cipher_suites(mut self, list: &str) -> Self {
         self.tls = self.tls.cipher_suites(list);
         self
     }
 
-    /// Controls the use of built-in system certificates during certificate validation.
-    /// Default to `true` -- uses built-in system certs.
+    /// Controls the use of built-in system certificates during certificate
+    /// validation. Default to `true` -- uses built-in system certs.
     ///
     /// # Examples
     ///
     /// ```
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_built_in_root_certs(false);
+    /// let builder = ClientBuilder::new().tls_built_in_root_certs(false);
     /// ```
     pub fn tls_built_in_root_certs(mut self, is_use: bool) -> Self {
         self.tls = self.tls.build_in_root_certs(is_use);
@@ -480,8 +478,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .danger_accept_invalid_certs(true);
+    /// let builder = ClientBuilder::new().danger_accept_invalid_certs(true);
     /// ```
     pub fn danger_accept_invalid_certs(mut self, is_invalid: bool) -> Self {
         self.tls = self.tls.danger_accept_invalid_certs(is_invalid);
@@ -502,8 +499,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .danger_accept_invalid_hostnames(true);
+    /// let builder = ClientBuilder::new().danger_accept_invalid_hostnames(true);
     /// ```
     pub fn danger_accept_invalid_hostnames(mut self, is_invalid: bool) -> Self {
         self.tls = self.tls.danger_accept_invalid_hostnames(is_invalid);
@@ -519,8 +515,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::sync_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_sni(true);
+    /// let builder = ClientBuilder::new().tls_sni(true);
     /// ```
     pub fn tls_sni(mut self, is_set_sni: bool) -> Self {
         self.tls = self.tls.sni(is_set_sni);
@@ -536,10 +531,11 @@ impl Default for ClientBuilder {
 
 #[cfg(test)]
 mod ut_syn_client {
-    use crate::sync_impl::Client;
     use ylong_http::body::TextBody;
     use ylong_http::request::uri::Uri;
     use ylong_http::request::Request;
+
+    use crate::sync_impl::Client;
 
     /// UT test cases for `Client::request`.
     ///
@@ -575,7 +571,8 @@ mod ut_syn_client {
     ///
     /// # Brief
     /// 1. Creates a `Client` by calling `Client::builder`.
-    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build` respectively.
+    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build`
+    ///    respectively.
     /// 3. Checks if the result is correct.
     #[cfg(feature = "__tls")]
     #[test]

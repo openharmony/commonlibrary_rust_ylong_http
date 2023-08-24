@@ -11,12 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::c_openssl::error::ErrorStack;
 use core::fmt;
+use std::error::Error;
+use std::io;
+
 use libc::c_int;
-use std::{error::Error, io};
 
 use super::MidHandshakeSslStream;
+use crate::c_openssl::error::ErrorStack;
 
 #[derive(Debug)]
 pub(crate) struct SslError {

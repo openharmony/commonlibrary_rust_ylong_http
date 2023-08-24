@@ -11,13 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::convert::TryFrom;
+
 use crate::error::HttpError;
 use crate::h2::{ErrorCode, H2Error, Parts, PseudoHeaders};
 use crate::headers;
-use std::convert::TryFrom;
 
 /// Mask for the END_STREAM flag.
-/// When set, indicates that the sender will not send further frames for this stream.
+/// When set, indicates that the sender will not send further frames for this
+/// stream.
 pub(crate) const END_STREAM_MASK: u8 = 0x01;
 
 /// Mask for the RST_STREAM flag.
@@ -25,7 +27,8 @@ pub(crate) const END_STREAM_MASK: u8 = 0x01;
 pub(crate) const RST_STREAM_MASK: u8 = 0x03;
 
 /// Mask for the END_HEADERS flag.
-/// When set, indicates that this frame contains an entire header block and not a fragment.
+/// When set, indicates that this frame contains an entire header block and not
+/// a fragment.
 pub(crate) const END_HEADERS_MASK: u8 = 0x04;
 
 /// Mask for the PADDED flag.
@@ -33,15 +36,17 @@ pub(crate) const END_HEADERS_MASK: u8 = 0x04;
 pub(crate) const PADDED_MASK: u8 = 0x08;
 
 /// Mask for the HEADERS_PRIORITY flag.
-/// When set, indicates that the headers frame also contains the priority information.
+/// When set, indicates that the headers frame also contains the priority
+/// information.
 pub(crate) const HEADERS_PRIORITY_MASK: u8 = 0x20;
 
 /// Mask for the ACK flag
 pub(crate) const ACK_MASK: u8 = 0x1;
 
-/// HTTP/2 frame structure, including the stream ID, flags, and payload information.
-/// The frame type information is represented by the `Payload` type.
-/// This structure represents the fundamental unit of communication in HTTP/2.
+/// HTTP/2 frame structure, including the stream ID, flags, and payload
+/// information. The frame type information is represented by the `Payload`
+/// type. This structure represents the fundamental unit of communication in
+/// HTTP/2.
 #[derive(Clone)]
 pub struct Frame {
     id: StreamId,
@@ -90,8 +95,9 @@ pub enum Payload {
     PushPromise(PushPromise),
 }
 
-/// Enum representing the different settings that can be included in a SETTINGS frame.
-/// Each setting has a different role in the HTTP/2 communication process.
+/// Enum representing the different settings that can be included in a SETTINGS
+/// frame. Each setting has a different role in the HTTP/2 communication
+/// process.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Setting {
     /// SETTINGS_HEADER_TABLE_SIZE
@@ -137,14 +143,16 @@ pub struct Priority {
 }
 
 /// The RST_STREAM frame allows for immediate termination of a stream.
-/// RST_STREAM is sent to request cancellation of a stream or to indicate an error situation.
+/// RST_STREAM is sent to request cancellation of a stream or to indicate an
+/// error situation.
 #[derive(Clone)]
 pub struct RstStream {
     error_code: u32,
 }
 
 /// Represents the PING frame payload.
-/// The PING frame is a mechanism for measuring a minimal round-trip time from the sender.
+/// The PING frame is a mechanism for measuring a minimal round-trip time from
+/// the sender.
 #[derive(Clone)]
 pub struct Ping {
     /// The opaque data of PING
@@ -152,14 +160,16 @@ pub struct Ping {
 }
 
 /// Represents the SETTINGS frame payload.
-/// The SETTINGS frame conveys configuration parameters that affect how endpoints communicate.
+/// The SETTINGS frame conveys configuration parameters that affect how
+/// endpoints communicate.
 #[derive(Clone)]
 pub struct Settings {
     settings: Vec<Setting>,
 }
 
 /// Represents the GOAWAY frame payload.
-/// The GOAWAY frame is used to initiate shutdown of a connection or to signal serious error conditions.
+/// The GOAWAY frame is used to initiate shutdown of a connection or to signal
+/// serious error conditions.
 #[derive(Clone)]
 pub struct Goaway {
     error_code: u32,
@@ -175,7 +185,8 @@ pub struct WindowUpdate {
 }
 
 /// Represents the PUSH_PROMISE frame payload.
-/// The PUSH_PROMISE frame is used to notify the peer endpoint in advance of streams the sender intends to initiate.
+/// The PUSH_PROMISE frame is used to notify the peer endpoint in advance of
+/// streams the sender intends to initiate.
 #[derive(Clone)]
 pub struct PushPromise {
     promised_stream_id: u32,
@@ -193,7 +204,8 @@ impl Frame {
         self.id
     }
 
-    /// Constructs a new `Frame` with the given `StreamId`, `FrameFlags`, `Payload`.
+    /// Constructs a new `Frame` with the given `StreamId`, `FrameFlags`,
+    /// `Payload`.
     pub fn new(id: StreamId, flags: FrameFlags, payload: Payload) -> Self {
         Frame { id, flags, payload }
     }
@@ -280,8 +292,8 @@ impl FrameFlags {
 }
 
 impl Payload {
-    /// Returns a reference to the Headers if the Payload is of the Headers variant.
-    /// If the Payload is not of the Headers variant, returns None.
+    /// Returns a reference to the Headers if the Payload is of the Headers
+    /// variant. If the Payload is not of the Headers variant, returns None.
     pub(crate) fn as_headers(&self) -> Option<&Headers> {
         if let Payload::Headers(headers) = self {
             Some(headers)
@@ -290,8 +302,9 @@ impl Payload {
         }
     }
 
-    /// Returns the type of the frame (`FrameType`) that this payload would be associated with.
-    /// The returned `FrameType` is determined based on the variant of the Payload.
+    /// Returns the type of the frame (`FrameType`) that this payload would be
+    /// associated with. The returned `FrameType` is determined based on the
+    /// variant of the Payload.
     pub fn frame_type(&self) -> FrameType {
         match self {
             Payload::Headers(_) => FrameType::Headers,
@@ -364,7 +377,8 @@ impl Settings {
     /// Returns the total length of the settings when encoded.
     pub fn encoded_len(&self) -> usize {
         let settings_count = self.settings.len();
-        let setting_size = 6; // Each setting has a 2-byte ID and a 4-byte value
+        // Each setting has a 2-byte ID and a 4-byte value
+        let setting_size = 6;
         settings_count * setting_size
     }
 }
@@ -421,10 +435,10 @@ impl SettingsBuilder {
     /// use ylong_http::h2::SettingsBuilder;
     ///
     /// let settings = SettingsBuilder::new()
-    /// .enable_push(true)
-    /// .header_table_size(4096)
-    /// .max_frame_size(2 << 13)
-    /// .build();
+    ///     .enable_push(true)
+    ///     .header_table_size(4096)
+    ///     .max_frame_size(2 << 13)
+    ///     .build();
     /// ```
     pub fn build(self) -> Settings {
         Settings::new(self.settings)
@@ -438,7 +452,8 @@ impl Default for SettingsBuilder {
 }
 
 impl Goaway {
-    /// Creates a new Goaway instance with the provided error code, last stream ID, and debug data.
+    /// Creates a new Goaway instance with the provided error code, last stream
+    /// ID, and debug data.
     pub fn new(error_code: u32, last_stream_id: StreamId, debug_data: Vec<u8>) -> Self {
         Goaway {
             error_code,
@@ -464,12 +479,14 @@ impl Goaway {
 
     /// Returns the total length of the Goaway frame when encoded.
     pub fn encoded_len(&self) -> usize {
-        8 + self.debug_data.len() // 4-byte Last-Stream-ID + 4-byte Error Code + Debug Data length
+        8 + self.debug_data.len() // 4-byte Last-Stream-ID + 4-byte Error Code +
+                                  // Debug Data length
     }
 }
 
 impl WindowUpdate {
-    /// Creates a new WindowUpdate instance with the provided window size increment.
+    /// Creates a new WindowUpdate instance with the provided window size
+    /// increment.
     pub fn new(window_size_increment: u32) -> Self {
         WindowUpdate {
             window_size_increment,
@@ -488,7 +505,8 @@ impl WindowUpdate {
 }
 
 impl Priority {
-    /// Creates a new Priority instance with the provided exclusive flag, stream dependency, and weight.
+    /// Creates a new Priority instance with the provided exclusive flag, stream
+    /// dependency, and weight.
     pub fn new(exclusive: bool, stream_dependency: u32, weight: u8) -> Self {
         Priority {
             exclusive,
@@ -566,8 +584,10 @@ mod ut_frame {
     /// 1. Creates a `SettingsBuilder`.
     /// 2. Sets various setting parameters using builder methods.
     /// 3. Builds a `Settings` object.
-    /// 4. Gets a reference to the underlying `Vec<Setting>` from the `Settings` object.
-    /// 5. Iterates over each setting in the `Vec<Setting>` and checks whether it matches the expected value.
+    /// 4. Gets a reference to the underlying `Vec<Setting>` from the `Settings`
+    ///    object.
+    /// 5. Iterates over each setting in the `Vec<Setting>` and checks whether
+    ///    it matches the expected value.
     #[test]
     fn ut_settings_builder() {
         let settings = SettingsBuilder::new()
@@ -578,11 +598,16 @@ mod ut_frame {
             .build();
 
         let mut setting_iter = settings.get_settings().iter();
-        assert_eq!(setting_iter.next(), Some(&Setting::HeaderTableSize(4096))); // Check that the first setting is as expected
-        assert_eq!(setting_iter.next(), Some(&Setting::EnablePush(true))); // Check that the second setting is as expected
-        assert_eq!(setting_iter.next(), Some(&Setting::MaxFrameSize(16384))); // Check that the third setting is as expected
-        assert_eq!(setting_iter.next(), Some(&Setting::MaxHeaderListSize(8192))); // Check that the fourth setting is as expected
-        assert_eq!(setting_iter.next(), None); // Check that there are no more settings
+        // Check that the first setting is as expected
+        assert_eq!(setting_iter.next(), Some(&Setting::HeaderTableSize(4096)));
+        // Check that the second setting is as expected
+        assert_eq!(setting_iter.next(), Some(&Setting::EnablePush(true)));
+        // Check that the third setting is as expected
+        assert_eq!(setting_iter.next(), Some(&Setting::MaxFrameSize(16384)));
+        // Check that the fourth setting is as expected
+        assert_eq!(setting_iter.next(), Some(&Setting::MaxHeaderListSize(8192)));
+        // Check that there are no more settings
+        assert_eq!(setting_iter.next(), None);
     }
 
     /// UT test cases for `Ping`.
@@ -600,7 +625,8 @@ mod ut_frame {
     /// UT test cases for `Setting`.
     ///
     /// # Brief
-    /// 1. Creates a `Setting` instance for each possible variant with a specific value.
+    /// 1. Creates a `Setting` instance for each possible variant with a
+    ///    specific value.
     /// 2. Checks if the identifier of the `Setting` instance is correct.
     #[test]
     fn ut_setting() {

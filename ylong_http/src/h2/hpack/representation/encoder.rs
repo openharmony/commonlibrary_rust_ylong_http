@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::cmp::Ordering;
+use std::collections::hash_map::IntoIter;
+
 use crate::h2::hpack::integer::IntegerEncoder;
 use crate::h2::hpack::representation::PrefixIndexMask;
 use crate::h2::hpack::table::{DynamicTable, Header, TableIndex, TableSearcher};
 use crate::h2::{Parts, PseudoHeaders};
 use crate::headers::HeadersIntoIter;
-use core::cmp::Ordering;
-use std::collections::hash_map::IntoIter;
 
 /// Encoder implementation for decoding representation. The encode interface
 /// supports segmented writing.
@@ -115,7 +116,8 @@ impl<'a> ReprEncoder<'a> {
     }
 }
 
-/// `ReprEncStateHolder` is used to save the intermediate results of the `ReprEncoder`.
+/// `ReprEncStateHolder` is used to save the intermediate results of the
+/// `ReprEncoder`.
 pub(crate) struct ReprEncStateHolder {
     iter: Option<PartsIter>,
     state: Option<ReprEncodeState>,

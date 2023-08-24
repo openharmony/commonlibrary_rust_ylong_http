@@ -11,14 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::origin::{FromAsyncReader, FromBytes, FromReader};
-use super::{async_impl, sync_impl};
-use crate::body::origin::FromAsyncBody;
-use crate::{AsyncRead, ReadBuf};
 use core::cmp::min;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::io::{Error, Read};
+
+use super::origin::{FromAsyncReader, FromBytes, FromReader};
+use super::{async_impl, sync_impl};
+use crate::body::origin::FromAsyncBody;
+use crate::{AsyncRead, ReadBuf};
 
 /// `TextBody` is used to represent the body of plain text type.
 ///
@@ -38,7 +39,8 @@ use std::io::{Error, Read};
 /// let body = TextBody::from_bytes(text.as_bytes());
 /// ```
 ///
-/// This type of `TextBody` implements both [`sync_impl::Body`] and [`async_impl::Body`].
+/// This type of `TextBody` implements both [`sync_impl::Body`] and
+/// [`async_impl::Body`].
 ///
 /// # Read From Reader
 ///
@@ -76,8 +78,9 @@ use std::io::{Error, Read};
 ///
 /// # Read Body Content
 ///
-/// After you have created a `TextBody`, you can use the methods of [`sync_impl::Body`]
-/// or [`async_impl::Body`] to read data, like the examples below:
+/// After you have created a `TextBody`, you can use the methods of
+/// [`sync_impl::Body`] or [`async_impl::Body`] to read data, like the examples
+/// below:
 ///
 /// sync:
 ///
@@ -386,7 +389,8 @@ impl TextBodyDecoder {
 }
 
 /// Decode result of a text buffer.
-/// The `state` records the decode status, and the data records the decoded data.
+/// The `state` records the decode status, and the data records the decoded
+/// data.
 #[derive(Debug)]
 pub struct Text<'a> {
     state: TextState,
@@ -394,7 +398,8 @@ pub struct Text<'a> {
 }
 
 impl<'a> Text<'a> {
-    /// Checks whether this `Text` contains the last valid part of the body data.
+    /// Checks whether this `Text` contains the last valid part of the body
+    /// data.
     ///
     /// # Examples
     ///
@@ -539,7 +544,8 @@ mod ut_text {
     ///
     /// # Brief
     /// 1. Creates a `TextBody<FromBytes<'_>>`.
-    /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    /// 2. Calls its `async_impl::Body::data` method and then checks the
+    ///    results.
     #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_text_body_from_bytes_asyn_data() {
@@ -588,11 +594,13 @@ mod ut_text {
         assert_eq!(&buf[..size], b"d!");
     }
 
-    /// UT test cases for `async_impl::Body::data` of `TextBody<FromAsyncReader<T>>`.
+    /// UT test cases for `async_impl::Body::data` of
+    /// `TextBody<FromAsyncReader<T>>`.
     ///
     /// # Brief
     /// 1. Creates a `TextBody<FromAsyncReader<T>>`.
-    /// 2. Calls its `async_impl::Body::data` method and then checks the results.
+    /// 2. Calls its `async_impl::Body::data` method and then checks the
+    ///    results.
     #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_text_body_from_async_reader_asyn_data() {

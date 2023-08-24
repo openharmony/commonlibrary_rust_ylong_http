@@ -13,12 +13,13 @@
 
 // TODO: Remove this file later.
 
-use crate::{ErrorKind, HttpClientError, Uri};
 use ylong_http::request::method::Method;
 use ylong_http::request::uri::Scheme;
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::ResponsePart;
+
+use crate::{ErrorKind, HttpClientError, Uri};
 
 pub(crate) struct RequestFormatter<'a, T> {
     part: &'a mut Request<T>,
