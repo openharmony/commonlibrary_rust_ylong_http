@@ -13,19 +13,19 @@
 
 import("//build/ohos.gni")
 
-ohos_rust_static_library("lib") {
-  crate_name = "ylong_http"
-  crate_type = "rlib"
-  crate_root = "src/lib.rs"
-
+ohos_rust_static_library("ylong_http") {
   subsystem_name = "commonlibrary"
   part_name = "ylong_http"
 
-  sources = [ "src/lib.rs" ]
-  deps = [ "//third_party/rust/crates/tokio/tokio:lib" ]
+  crate_name = "ylong_http"
+  edition = "2021"
+
   features = [
     "default",
     "http1_1",
-    "tokio_base",
+    "ylong_base",
   ]
+
+  sources = [ "src/lib.rs" ]
+  external_deps = [ "ylong_runtime:ylong_runtime" ]
 }
