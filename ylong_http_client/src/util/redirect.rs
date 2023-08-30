@@ -259,6 +259,7 @@ impl Redirect {
 #[cfg(test)]
 mod ut_redirect {
     use ylong_http::h1::ResponseDecoder;
+    use ylong_http::headers::Headers;
     use ylong_http::request::uri::Uri;
     use ylong_http::request::Request;
     use ylong_http::response::status::StatusCode;
@@ -267,6 +268,26 @@ mod ut_redirect {
     use crate::redirect::Redirect;
     use crate::util::config::Redirect as setting_redirect;
     use crate::util::redirect::{RedirectStatus, RedirectStrategy, TriggerKind};
+
+    /// UT test cases for `Redirect::remove_sensitive_headers`.
+    ///
+    /// # Brief
+    /// 1. Creates `next uri`, `pre uri` by calling `Headers::default`,
+    ///    `Uri::from_bytes`
+    /// 2. Uses `redirect::remove_sensitive_headers` to check whether headers
+    ///    remove sensitive info.
+    /// 3. Checks whether the authorization is removed.
+    #[test]
+    fn ut_remove_sensitive_headers() {
+        let mut headers = Headers::default();
+        let next_uri = Uri::from_bytes(b"http://example1.com:80/foo?a=1").unwrap();
+        let uri_content = Uri::from_bytes(b"http://example2.com:80/foo?a=1").unwrap();
+        let pre_uri = vec![uri_content];
+        Redirect::remove_sensitive_headers(&mut headers, &next_uri, &pre_uri);
+        let auth = headers.get("authorization");
+        assert!(auth.is_none());
+    }
+
     /// UT test cases for `Redirect::check_redirect`.
     ///
     /// # Brief
@@ -280,6 +301,7 @@ mod ut_redirect {
         let res = Redirect::check_redirect(code, &mut request);
         assert!(res);
     }
+
     /// UT test cases for `Redirect::get_trigger_kind`.
     ///
     /// # Brief
@@ -307,6 +329,7 @@ mod ut_redirect {
         );
         assert!(res.is_ok());
     }
+
     /// UT test cases for `Redirect::get_trigger_kind` err branch.
     ///
     /// # Brief

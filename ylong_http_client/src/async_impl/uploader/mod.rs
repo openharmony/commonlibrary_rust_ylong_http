@@ -195,3 +195,89 @@ impl UploadInfo {
         Self { uploaded_bytes: 0 }
     }
 }
+
+#[cfg(all(test, feature = "ylong_base"))]
+mod ut_uploader {
+    use ylong_http::body::async_impl::Body;
+    use ylong_http::body::{MultiPart, Part};
+
+    use crate::async_impl::uploader::{Context, Pin, Poll};
+    use crate::async_impl::{UploadOperator, Uploader, UploaderBuilder};
+    use crate::{ErrorKind, HttpClientError};
+
+    /// UT test cases for `UploadOperator::data`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Uploader`.
+    /// 2. Calls `data` method.
+    /// 3. Checks if the result is correct.
+
+    #[test]
+    fn ut_upload() {
+        let handle = ylong_runtime::spawn(async move {
+            upload().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn upload() {
+        let mut uploader = Uploader::console("HelloWorld".as_bytes());
+        let mut user_slice = [0_u8; 10];
+        let mut output_vec = vec![];
+
+        let mut size = user_slice.len();
+        while size == user_slice.len() {
+            size = uploader.data(user_slice.as_mut_slice()).await.unwrap();
+            output_vec.extend_from_slice(&user_slice[..size]);
+        }
+        assert_eq!(&output_vec, b"HelloWorld");
+
+        let mut user_slice = [0_u8; 12];
+        let multipart = MultiPart::new().part(Part::new().name("name").body("xiaoming"));
+        let mut multi_uploader = UploaderBuilder::default()
+            .multipart(multipart)
+            .console()
+            .build();
+        let size = multi_uploader
+            .data(user_slice.as_mut_slice())
+            .await
+            .unwrap();
+        assert_eq!(size, 12);
+    }
+
+    /// UT test cases for `UploadOperator::progress`.
+    ///
+    /// # Brief
+    /// 1. Creates a `MyUploadOperator`.
+    /// 2. Calls `progress` method.
+    /// 3. Checks if the result is correct.
+    #[test]
+    fn ut_upload_op_cov() {
+        let handle = ylong_runtime::spawn(async move {
+            upload_op_cov().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn upload_op_cov() {
+        struct MyUploadOperator;
+        impl UploadOperator for MyUploadOperator {
+            fn poll_progress(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                uploaded: u64,
+                total: Option<u64>,
+            ) -> Poll<Result<(), HttpClientError>> {
+                if uploaded > total.unwrap() {
+                    return Poll::Ready(Err(HttpClientError::new_with_message(
+                        ErrorKind::BodyTransfer,
+                        "UploadOperator failed",
+                    )));
+                }
+                Poll::Ready(Ok(()))
+            }
+        }
+        let res = MyUploadOperator.progress(10, Some(20)).await;
+        assert!(res.is_ok());
+    }
+}

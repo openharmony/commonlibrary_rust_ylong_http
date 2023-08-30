@@ -106,7 +106,7 @@ impl<S> Drop for SslStream<S> {
 }
 
 impl<S: Read + Write> SslStream<S> {
-    pub(crate) fn ssl_read(&mut self, buf: &mut [u8]) -> Result<usize, SslError> {
+    pub(crate) fn ssl_read(&mut self, buf: &[u8]) -> Result<usize, SslError> {
         if buf.is_empty() {
             return Ok(0);
         }

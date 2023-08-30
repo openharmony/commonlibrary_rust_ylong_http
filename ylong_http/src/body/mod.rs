@@ -382,7 +382,6 @@ pub mod async_impl {
             poll_read(Pin::new(&mut self.as_bytes()), cx, buf)
         }
     }
-
 }
 
 // Type definitions of the origin of the body data.
