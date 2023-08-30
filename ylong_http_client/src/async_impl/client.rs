@@ -11,22 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use ylong_http::body::{ChunkBody, TextBody};
+use ylong_http::response::Response;
+
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
 use crate::util::normalizer::{RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
 use crate::util::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Redirect};
-use crate::{sleep, timeout};
-use crate::{ErrorKind, HttpClientError, Proxy, Request, Timeout, Uri};
-use ylong_http::body::{ChunkBody, TextBody};
-use ylong_http::response::Response;
-
 #[cfg(feature = "http2")]
 use crate::H2Config;
+use crate::{sleep, timeout, ErrorKind, HttpClientError, Proxy, Request, Timeout, Uri};
 
-/// HTTP asynchronous client implementation. Users can use `async_impl::Client` to
-/// send `Request` asynchronously. `async_impl::Client` depends on a
+/// HTTP asynchronous client implementation. Users can use `async_impl::Client`
+/// to send `Request` asynchronously. `async_impl::Client` depends on a
 /// [`async_impl::Connector`] that can be customized by the user.
 ///
 /// [`async_impl::Connector`]: Connector
@@ -35,7 +34,7 @@ use crate::H2Config;
 ///
 /// ```
 /// use ylong_http_client::async_impl::Client;
-/// use ylong_http_client::{Request, EmptyBody};
+/// use ylong_http_client::{EmptyBody, Request};
 ///
 /// async fn async_client() {
 ///     // Creates a new `Client`.
@@ -58,7 +57,8 @@ pub struct Client<C: Connector> {
 }
 
 impl Client<HttpConnector> {
-    /// Creates a new, default `AsyncClient`, which uses [`async_impl::HttpConnector`].
+    /// Creates a new, default `AsyncClient`, which uses
+    /// [`async_impl::HttpConnector`].
     ///
     /// [`async_impl::HttpConnector`]: HttpConnector
     ///
@@ -106,7 +106,7 @@ impl<C: Connector> Client<C> {
     ///
     /// ```
     /// use ylong_http_client::async_impl::Client;
-    /// use ylong_http_client::{Request, EmptyBody};
+    /// use ylong_http_client::{EmptyBody, Request};
     ///
     /// async fn async_client() {
     ///     let client = Client::new();
@@ -568,9 +568,7 @@ impl ClientBuilder {
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
     /// let builder = ClientBuilder::new()
-    ///     .tls_cipher_list(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    ///     .tls_cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
     /// ```
     pub fn tls_cipher_list(mut self, list: &str) -> Self {
         self.tls = self.tls.cipher_list(list);
@@ -589,26 +587,24 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_cipher_suites(
-    ///         "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK"
-    ///     );
+    /// let builder = ClientBuilder::new().tls_cipher_suites(
+    ///     "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+    /// );
     /// ```
     pub fn tls_cipher_suites(mut self, list: &str) -> Self {
         self.tls = self.tls.cipher_suites(list);
         self
     }
 
-    /// Controls the use of built-in system certificates during certificate validation.
-    /// Default to `true` -- uses built-in system certs.
+    /// Controls the use of built-in system certificates during certificate
+    /// validation. Default to `true` -- uses built-in system certs.
     ///
     /// # Examples
     ///
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_built_in_root_certs(false);
+    /// let builder = ClientBuilder::new().tls_built_in_root_certs(false);
     /// ```
     pub fn tls_built_in_root_certs(mut self, is_use: bool) -> Self {
         self.tls = self.tls.build_in_root_certs(is_use);
@@ -628,8 +624,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .danger_accept_invalid_certs(true);
+    /// let builder = ClientBuilder::new().danger_accept_invalid_certs(true);
     /// ```
     pub fn danger_accept_invalid_certs(mut self, is_invalid: bool) -> Self {
         self.tls = self.tls.danger_accept_invalid_certs(is_invalid);
@@ -650,8 +645,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .danger_accept_invalid_hostnames(true);
+    /// let builder = ClientBuilder::new().danger_accept_invalid_hostnames(true);
     /// ```
     pub fn danger_accept_invalid_hostnames(mut self, is_invalid: bool) -> Self {
         self.tls = self.tls.danger_accept_invalid_hostnames(is_invalid);
@@ -667,8 +661,7 @@ impl ClientBuilder {
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let builder = ClientBuilder::new()
-    ///     .tls_sni(true);
+    /// let builder = ClientBuilder::new().tls_sni(true);
     /// ```
     pub fn tls_sni(mut self, is_set_sni: bool) -> Self {
         self.tls = self.tls.sni(is_set_sni);
@@ -690,7 +683,8 @@ mod ut_async_impl_client {
     ///
     /// # Brief
     /// 1. Creates a ClientBuilder by calling `Client::Builder`.
-    /// 2. Calls `http_config`, `client_config`, `build` on the builder respectively.
+    /// 2. Calls `http_config`, `client_config`, `build` on the builder
+    ///    respectively.
     /// 3. Checks if the result is as expected.
     #[test]
     fn ut_client_builder() {
@@ -702,7 +696,8 @@ mod ut_async_impl_client {
     ///
     /// # Brief
     /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
-    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build` respectively.
+    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build`
+    ///    respectively.
     /// 3. Checks if the result is as expected.
     #[cfg(feature = "__tls")]
     #[test]

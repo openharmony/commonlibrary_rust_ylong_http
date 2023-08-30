@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// TLS Application-Layer Protocol Negotiation (ALPN) Protocol is defined in [`RFC7301`].
-/// `AlpnProtocol` contains some protocols used in HTTP, which registered in [`IANA`].
+/// TLS Application-Layer Protocol Negotiation (ALPN) Protocol is defined in
+/// [`RFC7301`]. `AlpnProtocol` contains some protocols used in HTTP, which
+/// registered in [`IANA`].
 ///
 /// [`RFC7301`]: https://www.rfc-editor.org/rfc/rfc7301.html#section-3
 /// [`IANA`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
@@ -87,7 +88,8 @@ impl AlpnProtocol {
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
     pub const H3: Self = Self(Inner::H3);
 
-    /// Gets ALPN “wire format”, which consists protocol name prefixed by its byte length.
+    /// Gets ALPN “wire format”, which consists protocol name prefixed by its
+    /// byte length.
     pub fn as_use_bytes(&self) -> &[u8] {
         match *self {
             AlpnProtocol::HTTP09 => b"\x08http/0.9",

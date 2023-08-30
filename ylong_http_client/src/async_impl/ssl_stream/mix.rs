@@ -11,12 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::pin::Pin;
+use core::task::{Context, Poll};
+
 use crate::async_impl::ssl_stream::AsyncSslStream;
 use crate::{AsyncRead, AsyncWrite, ReadBuf};
-use core::{
-    pin::Pin,
-    task::{Context, Poll},
-};
 
 /// A stream which may be wrapped with TLS.
 pub enum MixStream<T> {

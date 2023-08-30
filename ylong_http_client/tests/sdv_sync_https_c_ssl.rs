@@ -13,10 +13,11 @@
 
 #![cfg(all(feature = "sync", feature = "__tls"))]
 
-use crate::common::init_test_work_runtime;
-use common::TlsHandle;
 use std::path::PathBuf;
+
 use ylong_http_client::sync_impl::Body;
+
+use crate::common::init_test_work_runtime;
 
 #[macro_use]
 mod common;
@@ -34,7 +35,7 @@ fn sdv_synchronized_client_send_request() {
         RuntimeThreads: 2,
         Request: {
             Method: "PUT",
-            Host: "127.0.0.1",
+            Host: "https://127.0.0.1",
             Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -60,7 +61,7 @@ fn sdv_synchronized_client_send_request_repeatedly() {
         RuntimeThreads: 2,
         Request: {
             Method: "GET",
-            Host: "127.0.0.1",
+            Host: "https://127.0.0.1",
             Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -73,7 +74,7 @@ fn sdv_synchronized_client_send_request_repeatedly() {
         },
         Request: {
             Method: "POST",
-            Host: "127.0.0.1",
+            Host: "https://127.0.0.1",
             Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",

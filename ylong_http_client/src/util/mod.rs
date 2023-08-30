@@ -23,17 +23,15 @@
 #![allow(unused_imports)]
 
 mod config;
-pub(crate) use config::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion};
-pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
-
 #[cfg(feature = "__tls")]
 pub use config::{AlpnProtocol, AlpnProtocolList};
+pub(crate) use config::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion};
+pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 
 #[cfg(feature = "__c_openssl")]
 pub(crate) mod c_openssl;
 #[cfg(feature = "__c_openssl")]
 pub use c_openssl::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
-
 #[cfg(feature = "http2")]
 pub use config::H2Config;
 

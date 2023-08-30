@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Read, Write};
+
 #[cfg(feature = "__c_openssl")]
 use crate::util::c_openssl::ssl::SslStream;
-use std::io::{Read, Write};
 
 /// A stream which may be wrapped with TLS.
 pub enum MixStream<T> {

@@ -26,7 +26,7 @@
 //!     .method("GET")
 //!     .url("www.example.com")
 //!     .version("HTTP/1.1")
-//!     .header("ACCEPT","text/html")
+//!     .header("ACCEPT", "text/html")
 //!     .body(())
 //!     .unwrap();
 //!
@@ -59,13 +59,14 @@
 //! assert_eq!(message.as_slice(), result.as_bytes());
 //! ```
 
+use std::io::Read;
+
 use crate::error::{ErrorKind, HttpError};
 use crate::headers::{HeaderName, Headers, HeadersIntoIter};
 use crate::request::method::Method;
 use crate::request::uri::Uri;
 use crate::request::RequestPart;
 use crate::version::Version;
-use std::io::Read;
 
 /// A encoder that is used to encode request message in `HTTP/1.1` format.
 ///
@@ -82,7 +83,7 @@ use std::io::Read;
 ///     .method("GET")
 ///     .url("www.example.com")
 ///     .version("HTTP/1.1")
-///     .header("ACCEPT","text/html")
+///     .header("ACCEPT", "text/html")
 ///     .body(())
 ///     .unwrap();
 ///
@@ -128,21 +129,32 @@ pub struct RequestEncoder {
 }
 
 enum EncodeState {
-    Method,         // "Method" phase of encoding request-message.
-    MethodSp,       // "MethodSp" phase of encoding whitespace after method.
-    Uri,            // "Uri" phase of encoding request-message.
-    UriSp,          // "UriSp" phase of encoding whitespace after uri.
-    Version,        // "Version" phase of encoding request-message.
-    VersionCrlf,    // "VersionCrlf" phase of encoding whitespace after version.
-    Header,         // "Header" phase of encoding request-message.
-    HeaderCrlf,     // "HeaderCrlf" phase of encoding /r/n after header.
-    EncodeFinished, // "EncodeFinished" phase of finishing the encoding.
+    // "Method" phase of encoding request-message.
+    Method,
+    // "MethodSp" phase of encoding whitespace after method.
+    MethodSp,
+    // "Uri" phase of encoding request-message.
+    Uri,
+    // "UriSp" phase of encoding whitespace after uri.
+    UriSp,
+    // "Version" phase of encoding request-message.
+    Version,
+    // "VersionCrlf" phase of encoding whitespace after version.
+    VersionCrlf,
+    // "Header" phase of encoding request-message.
+    Header,
+    // "HeaderCrlf" phase of encoding /r/n after header.
+    HeaderCrlf,
+    // "EncodeFinished" phase of finishing the encoding.
+    EncodeFinished,
 }
 
 // Component encoding status.
 enum TokenStatus<T, E> {
-    Complete(T), // The current component is completely encoded.
-    Partial(E),  // The current component is partially encoded.
+    // The current component is completely encoded.
+    Complete(T),
+    // The current component is partially encoded.
+    Partial(E),
 }
 
 type TokenResult<T> = Result<TokenStatus<usize, T>, HttpError>;
@@ -160,7 +172,7 @@ impl RequestEncoder {
     ///     .method("GET")
     ///     .url("www.example.com")
     ///     .version("HTTP/1.1")
-    ///     .header("ACCEPT","text/html")
+    ///     .header("ACCEPT", "text/html")
     ///     .body(())
     ///     .unwrap();
     ///
@@ -272,7 +284,7 @@ impl RequestEncoder {
     ///     .method("GET")
     ///     .url("www.example.com")
     ///     .version("HTTP/1.1")
-    ///     .header("ACCEPT","text/html")
+    ///     .header("ACCEPT", "text/html")
     ///     .body(())
     ///     .unwrap();
     ///
@@ -284,7 +296,10 @@ impl RequestEncoder {
     /// let mut buf = [0u8; 1024];
     /// let size = encoder.encode(&mut buf).unwrap();
     /// // If you set the `is_proxy` flag, the uri will be encoded as a relative path.
-    /// assert_eq!(&buf[..size], b"GET / HTTP/1.1\r\naccept:text/html\r\n\r\n".as_slice());
+    /// assert_eq!(
+    ///     &buf[..size],
+    ///     b"GET / HTTP/1.1\r\naccept:text/html\r\n\r\n".as_slice()
+    /// );
     /// ```
     pub fn set_proxy(&mut self, is_proxy: bool) {
         self.is_proxy = is_proxy;
@@ -667,7 +682,8 @@ mod ut_request_encoder {
     /// 1. Creates a `Request` by calling methods of `Request::builder`.
     /// 2. Gets a request part by calling `Request::into_parts`.
     /// 3. Creates a `RequestEncoder` by calling `RequestBuilder::new`.
-    /// 4. Calls `RequestEncoder::encode` method in a loop and collects the results.
+    /// 4. Calls `RequestEncoder::encode` method in a loop and collects the
+    ///    results.
     /// 5. Checks if the test result is correct.
     #[test]
     fn ut_request_encoder_encode_1() {

@@ -19,5 +19,4 @@ mod wrapper;
 #[cfg(feature = "__c_openssl")]
 pub use c_ssl_stream::AsyncSslStream;
 pub use mix::MixStream;
-
 pub(crate) use wrapper::{check_io_to_poll, Wrapper};

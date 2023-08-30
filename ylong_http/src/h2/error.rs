@@ -24,8 +24,9 @@
 //! streams or the entire connection and have no defined semantics in the other
 //! context.
 
-use crate::error::{ErrorKind, HttpError};
 use std::convert::{Infallible, TryFrom};
+
+use crate::error::{ErrorKind, HttpError};
 
 /// The http2 error handle implementation
 #[derive(Debug, Eq, PartialEq)]
@@ -132,14 +133,17 @@ impl TryFrom<u32> for ErrorCode {
 
 #[cfg(test)]
 mod ut_h2_error {
-    use super::*;
     use std::convert::TryInto;
+
+    use super::*;
 
     /// Unit test cases for `ErrorCode::try_from`.
     ///
     /// # Brief
-    /// 1. Iterates over a range of valid u32 values that represent `ErrorCode`s.
-    /// 2. Attempts to convert each u32 value into an `ErrorCode` using `try_into`.
+    /// 1. Iterates over a range of valid u32 values that represent
+    ///    `ErrorCode`s.
+    /// 2. Attempts to convert each u32 value into an `ErrorCode` using
+    ///    `try_into`.
     /// 3. Checks that the conversion is successful for each valid `ErrorCode`.
     /// 4. Also attempts to convert an invalid u32 value into an `ErrorCode`.
     /// 5. Checks that the conversion fails for the invalid value.

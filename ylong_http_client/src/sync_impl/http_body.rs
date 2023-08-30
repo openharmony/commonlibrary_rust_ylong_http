@@ -11,12 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{Cursor, Read};
+
+use ylong_http::body::{ChunkBodyDecoder, ChunkState, TextBodyDecoder};
+use ylong_http::headers::{HeaderName, HeaderValue, Headers};
+
 use super::Body;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::sync_impl::conn::StreamData;
-use std::io::{Cursor, Read};
-use ylong_http::body::{ChunkBodyDecoder, ChunkState, TextBodyDecoder};
-use ylong_http::headers::{HeaderName, HeaderValue, Headers};
 
 /// `HttpBody` is the body part of the `Response` returned by `Client::request`.
 /// `HttpBody` implements `Body` trait, so users can call related methods to get
@@ -25,8 +27,8 @@ use ylong_http::headers::{HeaderName, HeaderValue, Headers};
 /// # Examples
 ///
 /// ```no_run
-/// use ylong_http_client::sync_impl::{Client, HttpBody, Body};
-/// use ylong_http_client::{Request, EmptyBody};
+/// use ylong_http_client::sync_impl::{Body, Client, HttpBody};
+/// use ylong_http_client::{EmptyBody, Request};
 ///
 /// let mut client = Client::new();
 ///
@@ -389,9 +391,10 @@ impl Chunk {
 
 #[cfg(test)]
 mod ut_syn_http_body {
+    use ylong_http::body::ChunkBodyDecoder;
+
     use crate::sync_impl::http_body::Chunk;
     use crate::sync_impl::{Body, HttpBody};
-    use ylong_http::body::ChunkBodyDecoder;
 
     /// UT test cases for `HttpBody::empty`.
     ///

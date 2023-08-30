@@ -11,14 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::HttpClientError;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// The trait defines the functionality required for processing bodies of HTTP messages.
+use crate::HttpClientError;
+
+/// The trait defines the functionality required for processing bodies of HTTP
+/// messages.
 pub trait DownloadOperator {
-    /// Attempts to write the body data read each time to the specified location.
+    /// Attempts to write the body data read each time to the specified
+    /// location.
     ///
     /// This method will be called every time a part of the body data is read.
     fn poll_download(

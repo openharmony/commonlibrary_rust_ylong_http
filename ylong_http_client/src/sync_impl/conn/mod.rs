@@ -11,13 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::HttpClientError;
-use crate::sync_impl::HttpBody;
-use crate::util::dispatcher::Conn;
 use std::io::{Read, Write};
+
 use ylong_http::body::sync_impl::Body;
 use ylong_http::request::Request;
 use ylong_http::response::Response;
+
+use crate::error::HttpClientError;
+use crate::sync_impl::HttpBody;
+use crate::util::dispatcher::Conn;
 
 #[cfg(feature = "http1_1")]
 mod http1;

@@ -38,7 +38,6 @@
 //!
 //! [`EmptyBody`]: EmptyBody
 //! [`TextBody`]: TextBody
-//!
 
 // TODO: Support `Trailers`.
 
@@ -57,9 +56,10 @@ pub use text::{Text, TextBody, TextBodyDecoder};
 
 /// Synchronous `Body` trait definition.
 pub mod sync_impl {
-    use crate::headers::Headers;
     use std::error::Error;
     use std::io::Read;
+
+    use crate::headers::Headers;
 
     /// The `sync_impl::Body` trait allows for reading body data synchronously.
     ///
@@ -171,14 +171,16 @@ pub mod sync_impl {
 
 /// Asynchronous `Body` trait definition.
 pub mod async_impl {
-    use crate::headers::Headers;
-    use crate::{AsyncRead, ReadBuf};
     use core::future::Future;
     use core::pin::Pin;
     use core::task::{Context, Poll};
     use std::error::Error;
 
-    /// The `async_impl::Body` trait allows for reading body data asynchronously.
+    use crate::headers::Headers;
+    use crate::{AsyncRead, ReadBuf};
+
+    /// The `async_impl::Body` trait allows for reading body data
+    /// asynchronously.
     ///
     /// # Examples
     ///
@@ -381,34 +383,14 @@ pub mod async_impl {
         }
     }
 
-    // TODO: The following code will be useful in the future.
-    // impl<T: AsyncRead + Unpin> Body for T {
-    //     type Error = std::io::Error;
-    //
-    //     fn poll_data(
-    //         self: Pin<&mut Self>,
-    //         cx: &mut Context<'_>,
-    //         buf: &mut [u8],
-    //     ) -> Poll<Result<usize, Self::Error>> {
-    //         let mut read_buf = ReadBuf::new(buf);
-    //         let filled = read_buf.filled().len();
-    //         match self.poll_read(cx, &mut read_buf) {
-    //             Poll::Ready(Ok(())) => {
-    //                 let new_filled = read_buf.filled().len();
-    //                 Poll::Ready(Ok(new_filled - filled))
-    //             }
-    //             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-    //             Poll::Pending => Poll::Pending,
-    //         }
-    //     }
-    // }
 }
 
 // Type definitions of the origin of the body data.
 pub(crate) mod origin {
-    use crate::AsyncRead;
     use core::ops::{Deref, DerefMut};
     use std::io::Read;
+
+    use crate::AsyncRead;
 
     /// A type that represents the body data is from memory.
     pub struct FromBytes<'a> {
@@ -536,7 +518,8 @@ mod ut_mod {
     /// # Brief
     /// 1. Creates a `async_impl::Body` object.
     /// 2. Gets its mutable reference.
-    /// 3. Calls its `async_impl::Body::data` method and then checks the results.
+    /// 3. Calls its `async_impl::Body::data` method and then checks the
+    ///    results.
     #[cfg(feature = "tokio_base")]
     #[tokio::test]
     async fn ut_asyn_body_mut_asyn_body_data() {

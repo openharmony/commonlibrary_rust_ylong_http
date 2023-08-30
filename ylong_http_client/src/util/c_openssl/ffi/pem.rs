@@ -11,8 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{bio::BIO, x509::C_X509};
 use libc::{c_char, c_int, c_void};
+
+use super::bio::BIO;
+use super::x509::C_X509;
 
 // callback func
 pub(crate) type PemPasswordCb = Option<

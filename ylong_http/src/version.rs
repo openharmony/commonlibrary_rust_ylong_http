@@ -21,8 +21,9 @@
 //!
 //! [`Version`]: https://httpwg.org/specs/rfc9110.html#protocol.version
 
-use crate::error::{ErrorKind, HttpError};
 use core::convert::TryFrom;
+
+use crate::error::{ErrorKind, HttpError};
 
 /// HTTP [`Version`] implementation.
 ///
@@ -86,8 +87,9 @@ enum Inner {
 
 #[cfg(test)]
 mod ut_version {
-    use super::Version;
     use std::convert::TryFrom;
+
+    use super::Version;
 
     /// UT test cases for `Version::as_str`.
     ///

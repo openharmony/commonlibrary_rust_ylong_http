@@ -11,23 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::ffi::CStr;
+use core::{ptr, str};
+use std::borrow::Cow;
+use std::error::Error;
+#[cfg(feature = "c_openssl_3_0")]
+use std::ffi::CString;
+use std::fmt;
+
+#[cfg(feature = "c_openssl_1_1")]
+use libc::c_char;
+use libc::{c_int, c_ulong};
+
 use super::ssl_init;
 #[cfg(feature = "c_openssl_3_0")]
 use crate::util::c_openssl::ffi::err::ERR_get_error_all;
 #[cfg(feature = "c_openssl_1_1")]
 use crate::util::c_openssl::ffi::err::{ERR_func_error_string, ERR_get_error_line_data};
-
 use crate::util::c_openssl::ffi::err::{ERR_lib_error_string, ERR_reason_error_string};
-use core::{ffi::CStr, ptr, str};
-
-#[cfg(feature = "c_openssl_1_1")]
-use libc::c_char;
-#[cfg(feature = "c_openssl_3_0")]
-use std::ffi::CString;
-
-use libc::{c_int, c_ulong};
-
-use std::{borrow::Cow, error::Error, fmt};
 
 const ERR_TXT_MALLOCED: c_int = 0x01;
 const ERR_TXT_STRING: c_int = 0x02;

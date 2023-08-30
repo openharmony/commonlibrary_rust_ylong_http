@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::{ErrorKind, HttpError};
 use core::str;
 use std::path::Path;
+
+use crate::error::{ErrorKind, HttpError};
 
 /// A type that defines the general structure of the `MIME` media typing system.
 ///
@@ -22,12 +23,12 @@ use std::path::Path;
 /// - `Type`
 /// - `Subtype`
 ///
-/// `Type` and `SubType` are separated by a slash (/) — with no whitespace between:
+/// `Type` and `SubType` are separated by a slash (/) — with no whitespace
+/// between:
 ///
 /// ```type/subtype```
-///
+/// 
 /// It is case-insensitive but are traditionally written in lowercase, such as:
-///
 /// ```application/octet-stream```.
 ///
 /// # Examples
@@ -42,7 +43,8 @@ use std::path::Path;
 pub struct MimeType<'a> {
     tag: MimeTypeTag,
     bytes: &'a [u8],
-    slash: usize, // Index of '/'.
+    // Index of '/'.
+    slash: usize,
 }
 
 impl<'a> MimeType<'a> {
@@ -85,6 +87,7 @@ impl<'a> MimeType<'a> {
     ///
     /// ```
     /// use std::path::Path;
+    ///
     /// use ylong_http::body::MimeType;
     ///
     /// let path = Path::new("./foo/bar.pdf");
@@ -398,7 +401,8 @@ mime!(
     "wps", "application/vnd.ms-works", 11, MimeTypeTag::Application;
     "hlp", "application/winhlp", 11, MimeTypeTag::Application;
     "bcpio", "application/x-bcpio", 11, MimeTypeTag::Application;
-    "cdf", "application/x-cdf", 11, MimeTypeTag::Application;  // "cdf" also can be "application/x-netcdf"
+    // "cdf" also can be "application/x-netcdf"
+    "cdf", "application/x-cdf", 11, MimeTypeTag::Application;
     "z", "application/x-compress", 11, MimeTypeTag::Application;
     "tgz", "application/x-compressed", 11, MimeTypeTag::Application;
     "cpio", "application/x-cpio", 11, MimeTypeTag::Application;
@@ -555,7 +559,8 @@ enum MimeTypeTag {
     Multipart,
     Text,
     Video,
-    Xnew, // A type not included in the standard, beginning with `x-`
+    // A type not included in the standard, beginning with `x-`
+    Xnew,
 }
 
 impl MimeTypeTag {
@@ -772,8 +777,9 @@ mod ut_mime {
     /// 2. Checks if the test results are correct.
     #[test]
     fn ut_mime_type_from_path() {
-        use crate::error::HttpError;
         use std::path::Path;
+
+        use crate::error::HttpError;
 
         assert_eq!(
             MimeType::from_path(Path::new("./foo/bar.evy")),

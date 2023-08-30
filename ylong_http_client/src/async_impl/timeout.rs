@@ -11,13 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::async_impl::HttpBody;
-use crate::Sleep;
-use crate::{ErrorKind, HttpClientError};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 use ylong_http::response::Response;
+
+use crate::async_impl::HttpBody;
+use crate::{ErrorKind, HttpClientError, Sleep};
 
 pub(crate) struct TimeoutFuture<T> {
     pub(crate) timeout: Option<Pin<Box<Sleep>>>,

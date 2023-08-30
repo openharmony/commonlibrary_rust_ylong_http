@@ -11,9 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::util::ConnectorConfig;
 use std::io::{Read, Write};
+
 use ylong_http::request::uri::Uri;
+
+use crate::util::ConnectorConfig;
 
 /// `Connector` trait used by `Client`. `Connector` provides synchronous
 /// connection establishment interfaces.
@@ -49,10 +51,12 @@ impl Default for HttpConnector {
 
 #[cfg(not(feature = "__tls"))]
 pub mod no_tls {
-    use crate::sync_impl::Connector;
     use std::io::Error;
     use std::net::TcpStream;
+
     use ylong_http::request::uri::Uri;
+
+    use crate::sync_impl::Connector;
 
     impl Connector for super::HttpConnector {
         type Stream = TcpStream;
@@ -71,15 +75,13 @@ pub mod no_tls {
 
 #[cfg(feature = "__tls")]
 pub mod tls_conn {
-    use crate::{
-        sync_impl::{Connector, MixStream},
-        ErrorKind, HttpClientError,
-    };
-    use std::{
-        io::{Read, Write},
-        net::TcpStream,
-    };
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
     use ylong_http::request::uri::{Scheme, Uri};
+
+    use crate::sync_impl::{Connector, MixStream};
+    use crate::{ErrorKind, HttpClientError};
 
     impl Connector for super::HttpConnector {
         type Stream = MixStream<TcpStream>;

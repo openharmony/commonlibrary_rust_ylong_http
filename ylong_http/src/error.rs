@@ -15,20 +15,20 @@
 //!
 //! This module provide unified encapsulation of HTTP errors.
 //!
-//! [`HttpError`] encapsulates error information related to all http protocols including `UriError`, `H1Error`, etc.
+//! [`HttpError`] encapsulates error information related to all http protocols
+//! including `UriError`, `H1Error`, etc.
 //!
 //! [`HttpError`]: HttpError
 
-use crate::request::uri::InvalidUri;
 use core::fmt::{Debug, Display, Formatter};
 use std::convert::Infallible;
 use std::error::Error;
 
 #[cfg(feature = "http1_1")]
 use crate::h1::H1Error;
-
 #[cfg(feature = "http2")]
 use crate::h2::H2Error;
+use crate::request::uri::InvalidUri;
 
 /// Errors that may occur when using this crate.
 #[derive(Debug, Eq, PartialEq)]

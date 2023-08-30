@@ -16,28 +16,30 @@ mod mix;
 mod multi;
 mod part;
 
-pub use multi::{MimeMulti, MimeMultiBuilder, XPart};
-pub use part::{MimePart, MimePartBuilder};
-
 pub(crate) use headers::{DecodeHeaders, EncodeHeaders, HeaderStatus};
 pub(crate) use mix::MixFrom;
+pub use multi::{MimeMulti, MimeMultiBuilder, XPart};
 pub(crate) use part::PartStatus;
+pub use part::{MimePart, MimePartBuilder};
 pub(crate) type SizeResult = Result<usize, std::io::Error>;
 pub(crate) type TokenResult<T> = Result<TokenStatus<usize, T>, std::io::Error>;
 pub(crate) type BytesResult<'a> = Result<TokenStatus<(&'a [u8], &'a [u8]), &'a [u8]>, HttpError>;
 
-use crate::{
-    error::{ErrorKind, HttpError},
-    headers::Headers,
-};
 use core::mem::take;
 use std::io::Read;
 
+use crate::error::{ErrorKind, HttpError};
+use crate::headers::Headers;
+
 // RFC5234 ABNF
-pub(crate) const HTAB: u8 = b'\t'; // horizontal tab
-pub(crate) const SP: u8 = b' '; // 0x20 space
-pub(crate) const CR: u8 = b'\r'; // carriage return
-pub(crate) const LF: u8 = b'\n'; // linefeed
+// horizontal tab
+pub(crate) const HTAB: u8 = b'\t';
+// 0x20 space
+pub(crate) const SP: u8 = b' ';
+// carriage return
+pub(crate) const CR: u8 = b'\r';
+// linefeed
+pub(crate) const LF: u8 = b'\n';
 pub(crate) const CRLF: &[u8] = b"\r\n";
 
 /// Represents component encoding/decoding status.
@@ -67,11 +69,13 @@ impl<T, E> TokenStatus<T, E> {
     }
 }
 
-// Pulls some bytes from this src into the buf, returning how many bytes were read.
+// Pulls some bytes from this src into the buf, returning how many bytes were
+// read.
 pub(crate) fn data_copy(src: &[u8], src_idx: &mut usize, buf: &mut [u8]) -> TokenResult<usize> {
     let input_len = src.len() - *src_idx;
     let output_len = buf.len();
-    let num = (&src[*src_idx..]).read(buf)?; // sync
+    // sync
+    let num = (&src[*src_idx..]).read(buf)?;
     *src_idx += num;
     if output_len >= input_len {
         return Ok(TokenStatus::Complete(num));
@@ -116,7 +120,8 @@ pub(crate) fn trim_back_lwsp_if_end_with_lf(buf: &[u8]) -> &[u8] {
 // reduce "\n" or "\r\n"
 pub(crate) fn consume_crlf(
     buf: &[u8],
-    cr_meet: bool, //has "\r"
+    // has "\r"
+    cr_meet: bool,
 ) -> Result<TokenStatus<&[u8], usize>, HttpError> {
     if buf.is_empty() {
         return Ok(TokenStatus::Partial(0));
@@ -210,7 +215,8 @@ pub(crate) fn get_content_type_boundary(headers: &Headers) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod ut_common {
-    use crate::{body::mime::common::get_content_type_boundary, headers::Headers};
+    use crate::body::mime::common::get_content_type_boundary;
+    use crate::headers::Headers;
 
     /// UT test cases for `get_content_type_boundary`.
     ///

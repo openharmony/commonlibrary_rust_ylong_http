@@ -17,8 +17,9 @@ pub(crate) enum BIO {}
 
 // for `BIO`
 extern "C" {
-    /// Creates a memory BIO using len bytes of data at buf, if len is -1 then the
-    /// buf is assumed to be nul terminated and its length is determined by strlen.
+    /// Creates a memory BIO using len bytes of data at buf, if len is -1 then
+    /// the buf is assumed to be nul terminated and its length is determined
+    /// by strlen.
     pub(crate) fn BIO_new_mem_buf(buf: *const c_void, len: c_int) -> *mut BIO;
 
     pub(crate) fn BIO_set_data(a: *mut BIO, data: *mut c_void);

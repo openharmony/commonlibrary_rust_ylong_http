@@ -13,14 +13,16 @@
 
 //! Proxy implementation.
 
+use core::convert::TryFrom;
+use std::net::IpAddr;
+
+use ylong_http::headers::HeaderValue;
+use ylong_http::request::uri::{Authority, Scheme, Uri};
+
 use crate::error::HttpClientError;
 use crate::util::base64::encode;
 use crate::util::normalizer::UriFormatter;
 use crate::ErrorKind;
-use core::convert::TryFrom;
-use std::net::IpAddr;
-use ylong_http::headers::HeaderValue;
-use ylong_http::request::uri::{Authority, Scheme, Uri};
 
 /// `Proxies` is responsible for managing a list of proxies.
 #[derive(Clone, Default)]
@@ -38,7 +40,8 @@ impl Proxies {
     }
 }
 
-/// Proxy is a configuration of client which should manage the destination address of request.
+/// Proxy is a configuration of client which should manage the destination
+/// address of request.
 ///
 /// A `Proxy` has below rules:
 ///
@@ -255,8 +258,9 @@ impl NoProxy {
 
 #[cfg(test)]
 mod ut_proxy {
-    use crate::util::proxy::{Proxies, Proxy};
     use ylong_http::request::uri::{Scheme, Uri};
+
+    use crate::util::proxy::{Proxies, Proxy};
 
     /// UT test cases for `Proxies`.
     ///
