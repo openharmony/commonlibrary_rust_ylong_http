@@ -11,7 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(all(feature = "async", feature = "__tls"))]
+#![cfg(all(
+    feature = "async",
+    feature = "http1_1",
+    feature = "__tls",
+    feature = "tokio_base"
+))]
 
 #[macro_use]
 mod common;

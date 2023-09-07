@@ -10,11 +10,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::async_impl::{Client, Downloader};
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::util::Redirect;
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::{Certificate, HttpClientError, Request, TlsVersion};
-
+#[cfg(feature = "tokio_base")]
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

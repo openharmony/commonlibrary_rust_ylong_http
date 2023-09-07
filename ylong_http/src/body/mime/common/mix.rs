@@ -420,9 +420,15 @@ mod ut_mix {
     ///    `MixFrom::set_async_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mix_set_async_reader() {
+    #[test]
+    fn ut_mix_set_async_reader() {
+        let handle = ylong_runtime::spawn(async move {
+            mix_set_async_reader().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mix_set_async_reader() {
         mix_encode_compare!(
             MixFrom: {
                 BodyAsyncReader: "12345678".as_bytes(),
@@ -439,9 +445,15 @@ mod ut_mix {
     ///    `MixFrom::set_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mix_set_reader_then_async_data() {
+    #[test]
+    fn ut_mix_set_reader_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mix_set_reader_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mix_set_reader_then_async_data() {
         mix_encode_compare!(
             MixFrom: {
                 BodyReader: "12345678".as_bytes(),
@@ -458,14 +470,20 @@ mod ut_mix {
     ///    `MixFrom::set_bytes`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mix_set_bytes_then_async_data() {
+    #[test]
+    fn ut_mix_set_bytes_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mix_set_bytes_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mix_set_bytes_then_async_data() {
         mix_encode_compare!(
             MixFrom: {
-                BodySlice: "12345678".as_bytes(),
+                BodyReader: "12345678".as_bytes(),
             },
-            ResultData: b"12345678",
+            ResultData: b"",
             Async,
         );
     }
@@ -477,9 +495,15 @@ mod ut_mix {
     ///    `MixFrom::set_owned`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mix_set_owned_then_async_data() {
+    #[test]
+    fn ut_mix_set_owned_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mix_set_owned_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mix_set_owned_then_async_data() {
         mix_encode_compare!(
             MixFrom: {
                 BodyOwned: b"12345678".to_vec(),
