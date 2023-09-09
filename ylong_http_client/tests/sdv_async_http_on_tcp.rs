@@ -114,6 +114,23 @@ fn sdv_async_client_send_request() {
             Body: "Hi!",
         },
     );
+
+    // The content-length of `Response` is 0.
+    async_client_test_on_tcp!(
+        HTTP;
+        Request: {
+            Method: "GET",
+            Path: "/data",
+            Header: "Content-Length", "6",
+            Body: "Hello!",
+        },
+        Response: {
+            Status: 200,
+            Version: "HTTP/1.1",
+            Header: "Content-Length", "0",
+            Body: "",
+        },
+    );
 }
 
 /// SDV test cases for `async::Client`.

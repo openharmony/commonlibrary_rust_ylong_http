@@ -100,9 +100,9 @@ enum DataState {
 // Component encoding status
 enum TokenStatus<T, E> {
     // The current component is completely encoded.
-    Complete(T), 
+    Complete(T),
     // The current component is partially encoded.
-    Partial(E),  
+    Partial(E),
 }
 
 type Token<T> = TokenStatus<usize, T>;
