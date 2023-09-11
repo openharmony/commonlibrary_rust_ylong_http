@@ -543,7 +543,7 @@ fn decode_reason(buffer: &[u8]) -> Result<Option<&[u8]>, HttpError> {
     for (i, b) in buffer.iter().enumerate() {
         if *b == b'\r' || *b == b'\n' {
             return Ok(Some(&buffer[i..]));
-        } else if !is_valid_byte(*b) {
+        } else if !is_legal_reason_byte(*b) {
             return Err(ErrorKind::H1(H1Error::InvalidResponse).into());
         }
     }
@@ -625,6 +625,11 @@ fn header_insert(
 //  "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
 fn is_valid_byte(byte: u8) -> bool {
     byte > 0x1F && byte < 0x7F
+}
+
+// reason-phase = 1*(HTAB / SP / VCHAR / obs-text)
+fn is_legal_reason_byte(byte: u8) -> bool {
+    byte == 0x09 || byte == 0x20 || (0x21..=0x7E).contains(&byte) || (0x80..=0xFF).contains(&byte)
 }
 
 // token          = 1*tchar
@@ -953,7 +958,7 @@ mod ut_decoder {
         test_unit_invalid!("HTTP/1.2 304 OK\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 3040 OK\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 3 4 OK\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
-        test_unit_invalid!("HTTP/1.1 304 \tK\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
+        test_unit_invalid!("HTTP/1.1 304 \0K\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\r\nAge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nA;ge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nA;ge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
