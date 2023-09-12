@@ -10,129 +10,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::cmp::Ordering;
-use crate::h3::error::{ErrorCode, H3Error};
-use crate::h3::error::ErrorCode::QPACK_DECOMPRESSION_FAILED;
-use crate::h3::qpack::{MidBit, Representation, ReprPrefixBit, RequireInsertCount, DeltaBase, PrefixMask, EncoderInstruction, EncoderInstPrefixBit};
-use crate::h3::qpack::integer::IntegerDecoder;
+use crate::h3::qpack::error::ErrorCode::QPACK_DECOMPRESSION_FAILED;
+use crate::h3::qpack::error::{ErrorCode, H3Error_QPACK};
 use crate::h3::qpack::format::decoder::DecResult::Error;
+use crate::h3::qpack::integer::IntegerDecoder;
+use crate::h3::qpack::{
+    DeltaBase, EncoderInstPrefixBit, EncoderInstruction, MidBit, PrefixMask, ReprPrefixBit,
+    Representation, RequireInsertCount,
+};
 use crate::huffman::HuffmanDecoder;
+use std::cmp::Ordering;
+use std::marker::PhantomData;
 
-pub(crate) struct EncInstDecoder<'a>{
-    buf: &'a [u8],
-    state: Option<InstDecodeState>,
-}
+pub(crate) struct EncInstDecoder;
 
-impl<'a> EncInstDecoder<'a> {
-    pub(crate) fn new(buf: &'a [u8]) -> Self {
-        Self { buf, state: None }
+impl EncInstDecoder {
+    pub(crate) fn new() -> Self {
+        Self {}
     }
-    pub(crate) fn load(&mut self, holder: &mut InstDecStateHolder) {
-        self.state = holder.state.take();
-    }
-    pub(crate) fn decode(&mut self) -> Result<Option<EncoderInstruction>, H3Error> {
-        if self.buf.is_empty() {
+
+    pub(crate) fn decode(
+        &mut self,
+        buf: &mut [u8],
+        inst_state: &mut Option<InstDecodeState>,
+    ) -> Result<Option<(usize, EncoderInstruction)>, H3Error_QPACK> {
+        if buf.is_empty() {
             return Ok(None);
         }
 
-        match self
-            .state
+        match inst_state
             .take()
             .unwrap_or_else(|| InstDecodeState::EncInstIndex(EncInstIndex::new()))
-            .decode(&mut self.buf)
+            .decode(buf)
         {
             // If `buf` is not enough to continue decoding a complete
             // `Representation`, `Ok(None)` will be returned. Users need to call
             // `save` to save the current state to a `ReprDecStateHolder`.
             DecResult::NeedMore(state) => {
-                self.state = Some(state);
+                println!("need more");
+                *inst_state = Some(state);
                 Ok(None)
             }
-            DecResult::Decoded(repr) => {
-                Ok(Some(repr))
-            }
+            DecResult::Decoded((buf_index, repr)) => Ok(Some((buf_index, repr))),
 
             DecResult::Error(error) => Err(error),
         }
     }
 }
 
-pub(crate) struct ReprDecoder<'a> {
-    /// `buf` represents the byte stream to be decoded.
-    buf: &'a [u8],
-    /// `state` represents the remaining state after the last call to `decode`.
-    state: Option<ReprDecodeState>,
-}
+pub(crate) struct ReprDecoder;
 
-impl<'a> ReprDecoder<'a> {
+impl ReprDecoder {
     /// Creates a new `ReprDecoder` whose `state` is `None`.
-    pub(crate) fn new(buf: &'a [u8]) -> Self {
-        Self { buf, state: None }
-    }
-
-    /// Loads state from a holder.
-    pub(crate) fn load(&mut self, holder: &mut ReprDecStateHolder) {
-        self.state = holder.state.take();
+    pub(crate) fn new() -> Self {
+        Self {}
     }
 
     /// Decodes `self.buf`. Every time users call `decode`, it will try to
     /// decode a `Representation`.
-    pub(crate) fn decode(&mut self) -> Result<Option<Representation>, H3Error> {
+    pub(crate) fn decode(
+        &mut self,
+        buf: &mut [u8],
+        repr_state: &mut Option<ReprDecodeState>,
+    ) -> Result<Option<(usize, Representation)>, H3Error_QPACK> {
         // If buf is empty, leave the state unchanged.
-        if self.buf.is_empty() {
+        let buf_len = buf.len();
+        if buf.is_empty() {
             return Ok(None);
         }
-
-        match self
-            .state
+        match repr_state
             .take()
             .unwrap_or_else(|| ReprDecodeState::FiledSectionPrefix(FiledSectionPrefix::new()))
-            .decode(&mut self.buf)
+            .decode(buf)
         {
             // If `buf` is not enough to continue decoding a complete
             // `Representation`, `Ok(None)` will be returned. Users need to call
             // `save` to save the current state to a `ReprDecStateHolder`.
             DecResult::NeedMore(state) => {
-                self.state = Some(state);
+                println!("need more");
+                *repr_state = Some(state);
                 Ok(None)
             }
-            DecResult::Decoded(repr) => {
-                self.state = Some(ReprDecodeState::ReprIndex(ReprIndex::new()));
-                Ok(Some(repr))
+            DecResult::Decoded((buf_index, repr)) => {
+                if buf_index >= buf_len {
+                    return Ok(Some((buf_index, repr)));
+                }
+                *repr_state = Some(ReprDecodeState::ReprIndex(ReprIndex::new()));
+                Ok(Some((buf_index, repr)))
             }
 
             DecResult::Error(error) => Err(error),
         }
     }
 }
-pub(crate) struct InstDecStateHolder {
-    state: Option<InstDecodeState>,
+macro_rules! return_res {
+    ($res: expr ,$buf_index: expr) => {
+        if let DecResult::Decoded((cnt, repr)) = $res {
+            return DecResult::Decoded((cnt + $buf_index, repr));
+        } else {
+            $res
+        }
+    };
 }
-
-impl InstDecStateHolder {
-    pub(crate) fn new() -> Self {
-        Self { state: None }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.state.is_none()
-    }
-}
-pub(crate) struct ReprDecStateHolder {
-    state: Option<ReprDecodeState>,
-}
-
-impl ReprDecStateHolder {
-    pub(crate) fn new() -> Self {
-        Self { state: None }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.state.is_none()
-    }
-}
-
-
 
 macro_rules! state_def {
     ($name: ident, $decoded: ty, $($state: ident),* $(,)?) => {
@@ -143,7 +122,7 @@ macro_rules! state_def {
         }
 
         impl $name {
-            fn decode(self, buf: &mut &[u8]) -> DecResult<$decoded, $name> {
+            fn decode(self, buf: & mut [u8]) -> DecResult<$decoded, $name> {
                 match self {
                     $(
                         Self::$state(state) => state.decode(buf),
@@ -161,9 +140,15 @@ macro_rules! state_def {
         )*
     }
 }
+
+state_def!(
+    FSPInner,
+    (usize, RequireInsertCount, bool, DeltaBase),
+    FSPTwoIntergers,
+);
 state_def!(
     InstDecodeState,
-    EncoderInstruction,
+    (usize, EncoderInstruction),
     EncInstIndex,
     InstValueString,
     InstNameAndValue,
@@ -171,18 +156,28 @@ state_def!(
 
 state_def!(
     ReprDecodeState,
-    Representation,
+    (usize, Representation),
     FiledSectionPrefix,
     ReprIndex,
     ReprValueString,
     ReprNameAndValue,
 );
-state_def!(InstIndexInner, (EncoderInstPrefixBit, MidBit, usize), InstFirstByte, InstTrailingBytes);
-state_def!(ReprIndexInner, (ReprPrefixBit, MidBit, usize), ReprFirstByte, ReprTrailingBytes);
-state_def!(FSPInner, (RequireInsertCount, bool, DeltaBase), FSPTwoIntergers);
+state_def!(
+    InstIndexInner,
+    (usize, EncoderInstPrefixBit, MidBit, usize),
+    InstFirstByte,
+    InstTrailingBytes
+);
+state_def!(
+    ReprIndexInner,
+    (usize, ReprPrefixBit, MidBit, usize),
+    ReprFirstByte,
+    ReprTrailingBytes
+);
+
 state_def!(
     LiteralString,
-    Vec<u8>,
+    (usize, Vec<u8>),
     LengthFirstByte,
     LengthTrailingBytes,
     AsciiStringBytes,
@@ -201,23 +196,26 @@ impl FiledSectionPrefix {
         Self { inner }
     }
 
-    fn decode(self, buf: &mut &[u8]) -> DecResult<Representation, ReprDecodeState> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, Representation), ReprDecodeState> {
         match self.inner.decode(buf) {
-            DecResult::Decoded((ric, signal, delta_base)) => {
-                DecResult::Decoded(Representation::FieldSectionPrefix {
+            DecResult::Decoded((buf_index, ric, signal, delta_base)) => DecResult::Decoded((
+                buf_index,
+                Representation::FieldSectionPrefix {
                     require_insert_count: ric,
                     signal: signal,
                     delta_base: delta_base,
-                })
+                },
+            )),
+            DecResult::NeedMore(inner) => {
+                DecResult::NeedMore(FiledSectionPrefix::from_inner(inner).into())
             }
-            DecResult::NeedMore(inner) => DecResult::NeedMore(FiledSectionPrefix::from_inner(inner).into()),
             DecResult::Error(e) => e.into(),
         }
     }
 }
 
 pub(crate) struct EncInstIndex {
-    inner: InstIndexInner
+    inner: InstIndexInner,
 }
 
 impl EncInstIndex {
@@ -227,23 +225,49 @@ impl EncInstIndex {
     fn from_inner(inner: InstIndexInner) -> Self {
         Self { inner }
     }
-    fn decode(self, buf: &mut &[u8]) -> DecResult<EncoderInstruction, InstDecodeState> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, EncoderInstruction), InstDecodeState> {
         match self.inner.decode(buf) {
-            DecResult::Decoded((EncoderInstPrefixBit::SETCAP, _, index)) => {
-                DecResult::Decoded(EncoderInstruction::SetCap { capacity:index })
+            DecResult::Decoded((buf_index, EncoderInstPrefixBit::SETCAP, _, index)) => {
+                DecResult::Decoded((buf_index, EncoderInstruction::SetCap { capacity: index }))
             }
-            DecResult::Decoded((EncoderInstPrefixBit::INSERTWITHINDEX, mid_bit, index)) => {
-                InstValueString::new(EncoderInstPrefixBit::INSERTWITHINDEX, mid_bit, Name::Index(index)).decode(buf)
+            DecResult::Decoded((
+                buf_index,
+                EncoderInstPrefixBit::INSERTWITHINDEX,
+                mid_bit,
+                index,
+            )) => {
+                let res = InstValueString::new(
+                    EncoderInstPrefixBit::INSERTWITHINDEX,
+                    mid_bit,
+                    Name::Index(index),
+                )
+                .decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
             }
-            DecResult::Decoded((EncoderInstPrefixBit::INSERTWITHLITERAL, mid_bit, namelen)) => {
-                InstNameAndValue::new(EncoderInstPrefixBit::INSERTWITHLITERAL, mid_bit, namelen).decode(buf)
+            DecResult::Decoded((
+                buf_index,
+                EncoderInstPrefixBit::INSERTWITHLITERAL,
+                mid_bit,
+                namelen,
+            )) => {
+                let res = InstNameAndValue::new(
+                    EncoderInstPrefixBit::INSERTWITHLITERAL,
+                    mid_bit,
+                    namelen,
+                )
+                .decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
             }
-            DecResult::Decoded((EncoderInstPrefixBit::DUPLICATE, _, index)) => {
-                DecResult::Decoded(EncoderInstruction::Duplicate { index })
+            DecResult::Decoded((remain_buf, EncoderInstPrefixBit::DUPLICATE, _, index)) => {
+                DecResult::Decoded((remain_buf, EncoderInstruction::Duplicate { index }))
             }
-            DecResult::NeedMore(inner) => DecResult::NeedMore(EncInstIndex::from_inner(inner).into()),
+            DecResult::NeedMore(inner) => {
+                DecResult::NeedMore(EncInstIndex::from_inner(inner).into())
+            }
             DecResult::Error(e) => e.into(),
-            _ => DecResult::Error(H3Error::ConnectionError(ErrorCode::QPACK_DECOMPRESSION_FAILED)),
+            _ => DecResult::Error(H3Error_QPACK::ConnectionError(
+                ErrorCode::QPACK_DECOMPRESSION_FAILED,
+            )),
         }
     }
 }
@@ -259,26 +283,53 @@ impl ReprIndex {
     fn from_inner(inner: ReprIndexInner) -> Self {
         Self { inner }
     }
-    fn decode(self, buf: &mut &[u8]) -> DecResult<Representation, ReprDecodeState> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, Representation), ReprDecodeState> {
         match self.inner.decode(buf) {
-            DecResult::Decoded((ReprPrefixBit::INDEXED, mid_bit, index)) => {
-                DecResult::Decoded(Representation::Indexed { mid_bit, index })
+            DecResult::Decoded((buf_index, ReprPrefixBit::INDEXED, mid_bit, index)) => {
+                DecResult::Decoded((buf_index, Representation::Indexed { mid_bit, index }))
             }
-            DecResult::Decoded((ReprPrefixBit::INDEXEDWITHPOSTINDEX, _, index)) => {
-                DecResult::Decoded(Representation::IndexedWithPostIndex { index })
+            DecResult::Decoded((buf_index, ReprPrefixBit::INDEXEDWITHPOSTINDEX, _, index)) => {
+                DecResult::Decoded((buf_index, Representation::IndexedWithPostIndex { index }))
             }
-            DecResult::Decoded((ReprPrefixBit::LITERALWITHINDEXING, mid_bit, index)) => {
-                ReprValueString::new(ReprPrefixBit::LITERALWITHINDEXING, mid_bit, Name::Index(index)).decode(buf)
+            DecResult::Decoded((buf_index, ReprPrefixBit::LITERALWITHINDEXING, mid_bit, index)) => {
+                let res = ReprValueString::new(
+                    ReprPrefixBit::LITERALWITHINDEXING,
+                    mid_bit,
+                    Name::Index(index),
+                )
+                .decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
             }
-            DecResult::Decoded((ReprPrefixBit::LITERALWITHPOSTINDEXING, mid_bit, index)) => {
-                ReprValueString::new(ReprPrefixBit::LITERALWITHPOSTINDEXING, mid_bit, Name::Index(index)).decode(buf)
+            DecResult::Decoded((
+                buf_index,
+                ReprPrefixBit::LITERALWITHPOSTINDEXING,
+                mid_bit,
+                index,
+            )) => {
+                let res = ReprValueString::new(
+                    ReprPrefixBit::LITERALWITHPOSTINDEXING,
+                    mid_bit,
+                    Name::Index(index),
+                )
+                .decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
             }
-            DecResult::Decoded((ReprPrefixBit::LITERALWITHLITERALNAME, mid_bit, namelen)) => {
-                ReprNameAndValue::new(ReprPrefixBit::LITERALWITHLITERALNAME, mid_bit, namelen).decode(buf)
+            DecResult::Decoded((
+                buf_index,
+                ReprPrefixBit::LITERALWITHLITERALNAME,
+                mid_bit,
+                namelen,
+            )) => {
+                let res =
+                    ReprNameAndValue::new(ReprPrefixBit::LITERALWITHLITERALNAME, mid_bit, namelen)
+                        .decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
             }
             DecResult::NeedMore(inner) => DecResult::NeedMore(ReprIndex::from_inner(inner).into()),
             DecResult::Error(e) => e.into(),
-            _ => DecResult::Error(H3Error::ConnectionError(ErrorCode::QPACK_DECOMPRESSION_FAILED )),
+            _ => DecResult::Error(H3Error_QPACK::ConnectionError(
+                ErrorCode::QPACK_DECOMPRESSION_FAILED,
+            )),
         }
     }
 }
@@ -286,27 +337,29 @@ impl ReprIndex {
 pub(crate) struct FSPTwoIntergers;
 
 impl FSPTwoIntergers {
-    fn decode(self, buf: &mut &[u8]) -> DecResult<(RequireInsertCount, bool, DeltaBase), FSPInner> {
+    fn decode(
+        self,
+        buf: &mut [u8],
+    ) -> DecResult<(usize, RequireInsertCount, bool, DeltaBase), FSPInner> {
+        let mut buf_index = 1;
         if buf.is_empty() {
             return DecResult::NeedMore(self.into());
         }
-        let byte = buf[0];
+        let buf_len = buf.len();
         let mask = PrefixMask::REQUIREINSERTCOUNT;
-        *buf = &buf[1..];
-        let ric = match IntegerDecoder::first_byte(byte, mask.0) {
+        let ric = match IntegerDecoder::first_byte(buf[buf_index - 1], mask.0) {
             Ok(ric) => ric,
             Err(mut int) => {
                 let mut res: usize;
+
                 loop {
                     // If `buf` has been completely decoded here, return the current state.
-                    if buf.is_empty() {
+                    buf_index += 1;
+                    if buf_index >= buf_len {
                         return DecResult::NeedMore(self.into());
                     }
-
-                    let byte = buf[0];
-                    *buf = &buf[1..];
                     // Updates trailing bytes until we get the index.
-                    match int.next_byte(byte) {
+                    match int.next_byte(buf[buf_index - 1]) {
                         Ok(None) => {}
                         Ok(Some(index)) => {
                             res = index;
@@ -314,31 +367,30 @@ impl FSPTwoIntergers {
                         }
                         Err(e) => return e.into(),
                     }
-                };
+                }
                 res
             }
         };
-        if buf.is_empty() {
+        buf_index += 1;
+        if buf_index >= buf_len {
             return DecResult::NeedMore(self.into());
         }
-        let byte = buf[0];
+        let byte = buf[buf_index - 1];
         let signal = (byte & 0x80) != 0;
         let mask = PrefixMask::DELTABASE;
-        *buf = &buf[1..];
         let delta_base = match IntegerDecoder::first_byte(byte, mask.0) {
             Ok(delta_base) => delta_base,
             Err(mut int) => {
                 let mut res: usize;
                 loop {
                     // If `buf` has been completely decoded here, return the current state.
-                    if buf.is_empty() {
+                    buf_index += 1;
+                    if buf_index >= buf_len {
                         return DecResult::NeedMore(self.into());
                     }
 
-                    let byte = buf[0];
-                    *buf = &buf[1..];
                     // Updates trailing bytes until we get the index.
-                    match int.next_byte(byte) {
+                    match int.next_byte(buf[buf_index - 1]) {
                         Ok(None) => {}
                         Ok(Some(index)) => {
                             res = index;
@@ -346,116 +398,122 @@ impl FSPTwoIntergers {
                         }
                         Err(e) => return e.into(),
                     }
-                };
+                }
                 res
             }
         };
-        DecResult::Decoded((RequireInsertCount(ric), signal, DeltaBase(delta_base)))
-    }
-}
-pub(crate) struct InstFirstByte;
 
-impl InstFirstByte {
-    fn decode(self, buf: &mut &[u8]) -> DecResult<(EncoderInstPrefixBit, MidBit, usize), InstIndexInner> {
-        // If `buf` has been completely decoded here, return the current state.
-        if buf.is_empty() {
-            return DecResult::NeedMore(self.into());
-        }
-        let byte = buf[0];
-        let inst = EncoderInstPrefixBit::from_u8(byte);
-        let mid_bit = inst.prefix_midbit_value(byte);
-        let mask = inst.prefix_index_mask();
-
-        // Moves the pointer of `buf` backward.
-        *buf = &buf[1..];
-        match IntegerDecoder::first_byte(byte, mask.0) {
-            // Return the ReprPrefixBit and index part value.
-            Ok(idx) => DecResult::Decoded((inst, mid_bit, idx)),
-            // Index part value is longer than index(i.e. use all 1 to represent), so it needs more bytes to decode.
-            Err(int) => InstTrailingBytes::new(inst, mid_bit, int).decode(buf),
-        }
+        DecResult::Decoded((
+            buf_index,
+            RequireInsertCount(ric),
+            signal,
+            DeltaBase(delta_base),
+        ))
     }
 }
 
-pub(crate) struct ReprFirstByte;
+macro_rules! decode_first_byte {
+    ($struct_name:ident, $prefix_type:ty, $inner_type:ty,$trailing_bytes:ty) => {
+        pub(crate) struct $struct_name;
 
-impl ReprFirstByte {
-    fn decode(self, buf: &mut &[u8]) -> DecResult<(ReprPrefixBit, MidBit, usize), ReprIndexInner> {
-        // If `buf` has been completely decoded here, return the current state.
-        if buf.is_empty() {
-            return DecResult::NeedMore(self.into());
-        }
-        let byte = buf[0];
-        let repr = ReprPrefixBit::from_u8(byte);
-        let mid_bit = repr.prefix_midbit_value(byte);
-        let mask = repr.prefix_index_mask();
+        impl $struct_name {
+            fn decode(
+                self,
+                buf: &mut [u8],
+            ) -> DecResult<(usize, $prefix_type, MidBit, usize), $inner_type> {
+                // If `buf` has been completely decoded here, return the current state.
+                let mut buf_index = 1;
+                if buf.is_empty() {
+                    return DecResult::NeedMore(self.into());
+                }
 
-        // Moves the pointer of `buf` backward.
-        *buf = &buf[1..];
-        match IntegerDecoder::first_byte(byte, mask.0) {
-            // Return the ReprPrefixBit and index part value.
-            Ok(idx) => DecResult::Decoded((repr, mid_bit, idx)),
-            // Index part value is longer than index(i.e. use all 1 to represent), so it needs more bytes to decode.
-            Err(int) => ReprTrailingBytes::new(repr, mid_bit, int).decode(buf),
-        }
-    }
-}
-pub(crate) struct InstTrailingBytes {
-    inst: EncoderInstPrefixBit,
-    mid_bit: MidBit,
-    index: IntegerDecoder,
-}
+                let prefix = <$prefix_type>::from_u8(buf[buf_index - 1]);
+                let mid_bit = prefix.prefix_midbit_value(buf[buf_index - 1]);
+                let mask = prefix.prefix_index_mask();
 
-impl InstTrailingBytes {
-    fn new(inst: EncoderInstPrefixBit, mid_bit: MidBit, index: IntegerDecoder) -> Self {
-        Self { inst, mid_bit, index }
-    }
-    fn decode(mut self, buf: &mut &[u8]) -> DecResult<(EncoderInstPrefixBit, MidBit, usize), InstIndexInner> {
-        loop {
-            // If `buf` has been completely decoded here, return the current state.
-            if buf.is_empty() {
-                return DecResult::NeedMore(self.into());
-            }
-
-            let byte = buf[0];
-            *buf = &buf[1..];
-            // Updates trailing bytes until we get the index.
-            match self.index.next_byte(byte) {
-                Ok(None) => {}
-                Ok(Some(index)) => return DecResult::Decoded((self.inst, self.mid_bit, index)),
-                Err(e) => return e.into(),
+                match IntegerDecoder::first_byte(buf[buf_index - 1], mask.0) {
+                    // Return the PrefixBit and index part value.
+                    Ok(idx) => DecResult::Decoded((buf_index, prefix, mid_bit, idx)),
+                    // Index part value is longer than index(i.e. use all 1 to represent), so it needs more bytes to decode.
+                    Err(int) => {
+                        let res = <$trailing_bytes>::new(prefix, mid_bit, int)
+                            .decode(&mut buf[buf_index..]);
+                        if let DecResult::Decoded((cnt, prefix, mid_bit, int)) = res {
+                            return DecResult::Decoded((cnt + buf_index, prefix, mid_bit, int));
+                        } else {
+                            return res;
+                        }
+                    }
+                }
             }
         }
-    }
-}
-pub(crate) struct ReprTrailingBytes {
-    repr: ReprPrefixBit,
-    mid_bit: MidBit,
-    index: IntegerDecoder,
+    };
 }
 
-impl ReprTrailingBytes {
-    fn new(repr: ReprPrefixBit, mid_bit: MidBit, index: IntegerDecoder) -> Self {
-        Self { repr, mid_bit, index }
-    }
-    fn decode(mut self, buf: &mut &[u8]) -> DecResult<(ReprPrefixBit, MidBit, usize), ReprIndexInner> {
-        loop {
-            // If `buf` has been completely decoded here, return the current state.
-            if buf.is_empty() {
-                return DecResult::NeedMore(self.into());
+decode_first_byte!(
+    InstFirstByte,
+    EncoderInstPrefixBit,
+    InstIndexInner,
+    InstTrailingBytes
+);
+decode_first_byte!(
+    ReprFirstByte,
+    ReprPrefixBit,
+    ReprIndexInner,
+    ReprTrailingBytes
+);
+
+macro_rules! trailing_bytes_decoder {
+    ($struct_name:ident, $prefix_type:ty, $inner_type:ty) => {
+        pub(crate) struct $struct_name {
+            prefix: $prefix_type,
+            mid_bit: MidBit,
+            index: IntegerDecoder,
+        }
+
+        impl $struct_name {
+            fn new(prefix: $prefix_type, mid_bit: MidBit, index: IntegerDecoder) -> Self {
+                Self {
+                    prefix,
+                    mid_bit,
+                    index,
+                }
             }
 
-            let byte = buf[0];
-            *buf = &buf[1..];
-            // Updates trailing bytes until we get the index.
-            match self.index.next_byte(byte) {
-                Ok(None) => {}
-                Ok(Some(index)) => return DecResult::Decoded((self.repr, self.mid_bit, index)),
-                Err(e) => return e.into(),
+            fn decode(
+                mut self,
+                buf: &mut [u8],
+            ) -> DecResult<(usize, $prefix_type, MidBit, usize), $inner_type> {
+                let mut buf_index = 1;
+                let buf_len = buf.len();
+                loop {
+                    // If `buf` has been completely decoded here, return the current state.
+                    if buf_index > buf_len {
+                        return DecResult::NeedMore(self.into());
+                    }
+
+                    // Updates trailing bytes until we get the index.
+                    match self.index.next_byte(buf[buf_index - 1]) {
+                        Ok(None) => {}
+                        Ok(Some(index)) => {
+                            return DecResult::Decoded((
+                                buf_index,
+                                self.prefix,
+                                self.mid_bit,
+                                index,
+                            ));
+                        }
+                        Err(e) => return e.into(),
+                    }
+                    buf_index += 1;
+                }
             }
         }
-    }
+    };
 }
+
+trailing_bytes_decoder!(InstTrailingBytes, EncoderInstPrefixBit, InstIndexInner);
+trailing_bytes_decoder!(ReprTrailingBytes, ReprPrefixBit, ReprIndexInner);
 
 pub(crate) struct LengthTrailingBytes {
     is_huffman: bool,
@@ -467,20 +525,35 @@ impl LengthTrailingBytes {
         Self { is_huffman, length }
     }
 
-    fn decode(mut self, buf: &mut &[u8]) -> DecResult<Vec<u8>, LiteralString> {
+    fn decode(mut self, buf: &mut [u8]) -> DecResult<(usize, Vec<u8>), LiteralString> {
+        let mut buf_index = 1;
+        let buf_len = buf.len();
         loop {
-            if buf.is_empty() {
+            if buf_index >= buf_len {
                 return DecResult::NeedMore(self.into());
             }
 
-            let byte = buf[0];
-            *buf = &buf[1..];
-            match (self.length.next_byte(byte), self.is_huffman) {
+            match (self.length.next_byte(buf[buf_index - 1]), self.is_huffman) {
                 (Ok(None), _) => {}
                 (Err(e), _) => return e.into(),
-                (Ok(Some(length)), true) => return HuffmanStringBytes::new(length).decode(buf),
-                (Ok(Some(length)), false) => return AsciiStringBytes::new(length).decode(buf),
+                (Ok(Some(length)), true) => {
+                    let res = HuffmanStringBytes::new(length).decode(&mut buf[buf_index..]);
+                    if let DecResult::Decoded((cnt, vec)) = res {
+                        return DecResult::Decoded((cnt + buf_index, vec));
+                    } else {
+                        return res;
+                    }
+                }
+                (Ok(Some(length)), false) => {
+                    let res = AsciiStringBytes::new(length).decode(&mut buf[buf_index..]);
+                    if let DecResult::Decoded((cnt, vec)) = res {
+                        return DecResult::Decoded((cnt + buf_index, vec));
+                    } else {
+                        return res;
+                    }
+                }
             }
+            buf_index += 1;
         }
     }
 }
@@ -498,87 +571,103 @@ impl AsciiStringBytes {
         }
     }
 
-    fn decode(mut self, buf: &mut &[u8]) -> DecResult<Vec<u8>, LiteralString> {
+    fn decode(mut self, buf: &mut [u8]) -> DecResult<(usize, Vec<u8>), LiteralString> {
         match (buf.len() + self.octets.len()).cmp(&self.length) {
             Ordering::Greater | Ordering::Equal => {
                 let pos = self.length - self.octets.len();
                 self.octets.extend_from_slice(&buf[..pos]);
-                *buf = &buf[pos..];
-                DecResult::Decoded(self.octets)
+                DecResult::Decoded((pos, self.octets))
             }
             Ordering::Less => {
                 self.octets.extend_from_slice(buf);
-                *buf = &buf[buf.len()..];
+                // let (_, mut remain_buf) = buf.split_at_mut(buf.len());
                 DecResult::NeedMore(self.into())
             }
         }
     }
 }
-pub(crate) struct InstNameAndValue {
-    inst: EncoderInstPrefixBit,
-    mid_bit: MidBit,
-    inner: LiteralString,
+
+macro_rules! name_and_value_decoder {
+    ($struct_name:ident, $prefix_type:ty, $inner_type:ty, $output_type:ty, $state_type:ty,$value_string:ty) => {
+        pub(crate) struct $struct_name {
+            prefix: $prefix_type,
+            mid_bit: MidBit,
+            inner: $inner_type,
+        }
+
+        impl $struct_name {
+            fn new(prefix: $prefix_type, mid_bit: MidBit, namelen: usize) -> Self {
+                Self::from_inner(prefix, mid_bit, AsciiStringBytes::new(namelen).into())
+            }
+
+            fn from_inner(prefix: $prefix_type, mid_bit: MidBit, inner: $inner_type) -> Self {
+                Self {
+                    prefix,
+                    mid_bit,
+                    inner,
+                }
+            }
+
+            fn decode(self, buf: &mut [u8]) -> DecResult<(usize, $output_type), $state_type> {
+                match self.inner.decode(buf) {
+                    DecResult::Decoded((buf_index, octets)) => {
+                        let res =
+                            <$value_string>::new(self.prefix, self.mid_bit, Name::Literal(octets))
+                                .decode(&mut buf[buf_index..]);
+                        return_res!(res, buf_index)
+                    }
+                    DecResult::NeedMore(inner) => DecResult::NeedMore(
+                        Self::from_inner(self.prefix, self.mid_bit, inner).into(),
+                    ),
+                    DecResult::Error(e) => e.into(),
+                }
+            }
+        }
+    };
 }
 
-impl InstNameAndValue {
-    fn new(inst: EncoderInstPrefixBit, mid_bit: MidBit, namelen: usize) -> Self {
-        Self::from_inner(inst, mid_bit, AsciiStringBytes::new(namelen).into())
-    }
-    fn from_inner(inst: EncoderInstPrefixBit, mid_bit: MidBit, inner: LiteralString) -> Self {
-        Self { inst, mid_bit, inner }
-    }
-    fn decode(self, buf: &mut &[u8]) -> DecResult<EncoderInstruction, InstDecodeState> {
-        match self.inner.decode(buf) {
-            DecResult::Decoded(octets) => {
-                InstValueString::new(self.inst, self.mid_bit, Name::Literal(octets)).decode(buf)
-            }
-            DecResult::NeedMore(inner) => {
-                DecResult::NeedMore(Self::from_inner(self.inst, self.mid_bit, inner).into())
-            }
-            DecResult::Error(e) => e.into(),
-        }
-    }
-}
-pub(crate) struct ReprNameAndValue {
-    repr: ReprPrefixBit,
-    mid_bit: MidBit,
-    inner: LiteralString,
-}
-
-impl ReprNameAndValue {
-    fn new(repr: ReprPrefixBit, mid_bit: MidBit, namelen: usize) -> Self {
-        Self::from_inner(repr, mid_bit, AsciiStringBytes::new(namelen).into())
-    }
-    fn from_inner(repr: ReprPrefixBit, mid_bit: MidBit, inner: LiteralString) -> Self {
-        Self { repr, mid_bit, inner }
-    }
-    fn decode(self, buf: &mut &[u8]) -> DecResult<Representation, ReprDecodeState> {
-        match self.inner.decode(buf) {
-            DecResult::Decoded(octets) => {
-                ReprValueString::new(self.repr, self.mid_bit, Name::Literal(octets)).decode(buf)
-            }
-            DecResult::NeedMore(inner) => {
-                DecResult::NeedMore(Self::from_inner(self.repr, self.mid_bit, inner).into())
-            }
-            DecResult::Error(e) => e.into(),
-        }
-    }
-}
+name_and_value_decoder!(
+    InstNameAndValue,
+    EncoderInstPrefixBit,
+    LiteralString,
+    EncoderInstruction,
+    InstDecodeState,
+    InstValueString
+);
+name_and_value_decoder!(
+    ReprNameAndValue,
+    ReprPrefixBit,
+    LiteralString,
+    Representation,
+    ReprDecodeState,
+    ReprValueString
+);
 
 pub(crate) struct LengthFirstByte;
 
 impl LengthFirstByte {
-    fn decode(self, buf: &mut &[u8]) -> DecResult<Vec<u8>, LiteralString> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, Vec<u8>), LiteralString> {
+        let mut buf_index = 1;
         if buf.is_empty() {
             return DecResult::NeedMore(self.into());
         }
 
-        let byte = buf[0];
-        *buf = &buf[1..];
-        match (IntegerDecoder::first_byte(byte, 0x7f), (byte & 0x80) == 0x80) {
-            (Ok(len), true) => HuffmanStringBytes::new(len).decode(buf),
-            (Ok(len), false) => AsciiStringBytes::new(len).decode(buf),
-            (Err(int), huffman) => LengthTrailingBytes::new(huffman, int).decode(buf),
+        match (
+            IntegerDecoder::first_byte(buf[buf_index - 1], 0x7f),
+            (buf[buf_index - 1] & 0x80) == 0x80,
+        ) {
+            (Ok(len), true) => {
+                let res = HuffmanStringBytes::new(len).decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
+            }
+            (Ok(len), false) => {
+                let res = AsciiStringBytes::new(len).decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
+            }
+            (Err(int), huffman) => {
+                let res = LengthTrailingBytes::new(huffman, int).decode(&mut buf[buf_index..]);
+                return_res!(res, buf_index)
+            }
         }
     }
 }
@@ -598,35 +687,37 @@ impl HuffmanStringBytes {
         }
     }
 
-    fn decode(mut self, buf: &mut &[u8]) -> DecResult<Vec<u8>, LiteralString> {
+    fn decode(mut self, buf: &mut [u8]) -> DecResult<(usize, Vec<u8>), LiteralString> {
         match (buf.len() + self.read).cmp(&self.length) {
             Ordering::Greater | Ordering::Equal => {
                 let pos = self.length - self.read;
                 if self.huffman.decode(&buf[..pos]).is_err() {
-                    return H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED).into();
+                    return H3Error_QPACK::ConnectionError(QPACK_DECOMPRESSION_FAILED).into();
                 }
-                *buf = &buf[pos..];
+                // let (_, mut remain_buf) = buf.split_at_mut(pos);
                 match self.huffman.finish() {
-                    Ok(vec) => DecResult::Decoded(vec),
-                    Err(_) => H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED).into(),
+                    Ok(vec) => DecResult::Decoded((pos, vec)),
+                    Err(_) => H3Error_QPACK::ConnectionError(QPACK_DECOMPRESSION_FAILED).into(),
                 }
             }
             Ordering::Less => {
                 if self.huffman.decode(buf).is_err() {
-                    return H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED).into();
+                    return H3Error_QPACK::ConnectionError(QPACK_DECOMPRESSION_FAILED).into();
                 }
                 self.read += buf.len();
-                *buf = &buf[buf.len()..];
+                // let (_, mut remain_buf) = buf.split_at_mut(buf.len());
                 DecResult::NeedMore(self.into())
             }
         }
     }
 }
+
 #[derive(Clone)]
 pub(crate) enum Name {
     Index(usize),
     Literal(Vec<u8>),
 }
+
 pub(crate) struct InstValueString {
     inst: EncoderInstPrefixBit,
     mid_bit: MidBit,
@@ -639,30 +730,47 @@ impl InstValueString {
         Self::from_inner(inst, mid_bit, name, LengthFirstByte.into())
     }
 
-    fn from_inner(inst: EncoderInstPrefixBit, mid_bit: MidBit, name: Name, inner: LiteralString) -> Self {
-        Self { inst, mid_bit, name, inner }
+    fn from_inner(
+        inst: EncoderInstPrefixBit,
+        mid_bit: MidBit,
+        name: Name,
+        inner: LiteralString,
+    ) -> Self {
+        Self {
+            inst,
+            mid_bit,
+            name,
+            inner,
+        }
     }
 
-    fn decode(self, buf: &mut &[u8]) -> DecResult<EncoderInstruction, InstDecodeState> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, EncoderInstruction), InstDecodeState> {
         match (self.inst, self.inner.decode(buf)) {
-            (EncoderInstPrefixBit::INSERTWITHINDEX, DecResult::Decoded(value)) => {
-                DecResult::Decoded(EncoderInstruction::InsertWithIndex {
-                    mid_bit: self.mid_bit,
-                    name: self.name,
-                    value,
-                })
+            (EncoderInstPrefixBit::INSERTWITHINDEX, DecResult::Decoded((buf_index, value))) => {
+                DecResult::Decoded((
+                    buf_index,
+                    EncoderInstruction::InsertWithIndex {
+                        mid_bit: self.mid_bit,
+                        name: self.name,
+                        value,
+                    },
+                ))
             }
-            (EncoderInstPrefixBit::INSERTWITHLITERAL, DecResult::Decoded(value)) => {
-                DecResult::Decoded(EncoderInstruction::InsertWithLiteral {
-                    mid_bit: self.mid_bit,
-                    name: self.name,
-                    value,
-                })
+            (EncoderInstPrefixBit::INSERTWITHLITERAL, DecResult::Decoded((buf_index, value))) => {
+                DecResult::Decoded((
+                    buf_index,
+                    EncoderInstruction::InsertWithLiteral {
+                        mid_bit: self.mid_bit,
+                        name: self.name,
+                        value,
+                    },
+                ))
             }
-            (_, _) => Error(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))
+            (_, _) => Error(H3Error_QPACK::ConnectionError(QPACK_DECOMPRESSION_FAILED)),
         }
     }
 }
+
 pub(crate) struct ReprValueString {
     repr: ReprPrefixBit,
     mid_bit: MidBit,
@@ -676,37 +784,50 @@ impl ReprValueString {
     }
 
     fn from_inner(repr: ReprPrefixBit, mid_bit: MidBit, name: Name, inner: LiteralString) -> Self {
-        Self { repr, mid_bit, name, inner }
+        Self {
+            repr,
+            mid_bit,
+            name,
+            inner,
+        }
     }
 
-    fn decode(self, buf: &mut &[u8]) -> DecResult<Representation, ReprDecodeState> {
+    fn decode(self, buf: &mut [u8]) -> DecResult<(usize, Representation), ReprDecodeState> {
         match (self.repr, self.inner.decode(buf)) {
-            (ReprPrefixBit::LITERALWITHINDEXING, DecResult::Decoded(value)) => {
-                DecResult::Decoded(Representation::LiteralWithIndexing {
-                    mid_bit: self.mid_bit,
-                    name: self.name,
-                    value,
-                })
+            (ReprPrefixBit::LITERALWITHINDEXING, DecResult::Decoded((buf_index, value))) => {
+                DecResult::Decoded((
+                    buf_index,
+                    Representation::LiteralWithIndexing {
+                        mid_bit: self.mid_bit,
+                        name: self.name,
+                        value,
+                    },
+                ))
             }
-            (ReprPrefixBit::LITERALWITHPOSTINDEXING, DecResult::Decoded(value)) => {
-                DecResult::Decoded(Representation::LiteralWithPostIndexing {
-                    mid_bit: self.mid_bit,
-                    name: self.name,
-                    value,
-                })
+            (ReprPrefixBit::LITERALWITHPOSTINDEXING, DecResult::Decoded((buf_index, value))) => {
+                DecResult::Decoded((
+                    buf_index,
+                    Representation::LiteralWithPostIndexing {
+                        mid_bit: self.mid_bit,
+                        name: self.name,
+                        value,
+                    },
+                ))
             }
-            (ReprPrefixBit::LITERALWITHLITERALNAME, DecResult::Decoded(value)) => {
-                DecResult::Decoded(Representation::LiteralWithLiteralName {
-                    mid_bit: self.mid_bit,
-                    name: self.name,
-                    value,
-                })
+            (ReprPrefixBit::LITERALWITHLITERALNAME, DecResult::Decoded((buf_index, value))) => {
+                DecResult::Decoded((
+                    buf_index,
+                    Representation::LiteralWithLiteralName {
+                        mid_bit: self.mid_bit,
+                        name: self.name,
+                        value,
+                    },
+                ))
             }
-            (_, _) => Error(H3Error::ConnectionError(QPACK_DECOMPRESSION_FAILED))
+            (_, _) => Error(H3Error_QPACK::ConnectionError(QPACK_DECOMPRESSION_FAILED)),
         }
     }
 }
-
 
 /// Decoder's possible returns during the decoding process.
 pub(crate) enum DecResult<D, S> {
@@ -719,11 +840,11 @@ pub(crate) enum DecResult<D, S> {
     NeedMore(S),
 
     /// Errors that may occur when decoding.
-    Error(H3Error),
+    Error(H3Error_QPACK),
 }
 
-impl<D, S> From<H3Error> for DecResult<D, S> {
-    fn from(e: H3Error) -> Self {
+impl<D, S> From<H3Error_QPACK> for DecResult<D, S> {
+    fn from(e: H3Error_QPACK) -> Self {
         DecResult::Error(e)
     }
 }

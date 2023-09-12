@@ -10,8 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub enum H3Error {
-    //todo: add more
+pub enum H3Error_QPACK {
     ConnectionError(ErrorCode),
 }
 

@@ -28,7 +28,6 @@ use std::collections::{HashMap, VecDeque};
 ///
 /// Dynamic table entries can have empty values.
 
-
 pub(crate) struct TableSearcher<'a> {
     dynamic: &'a DynamicTable,
 }
@@ -37,7 +36,6 @@ impl<'a> TableSearcher<'a> {
     pub(crate) fn new(dynamic: &'a DynamicTable) -> Self {
         Self { dynamic }
     }
-
 
     /// Searches index in static and dynamic tables.
     pub(crate) fn find_index_static(&self, header: &Field, value: &str) -> Option<TableIndex> {
@@ -61,7 +59,11 @@ impl<'a> TableSearcher<'a> {
         }
     }
 
-    pub(crate) fn find_index_name_dynamic(&self, header: &Field, value: &str) -> Option<TableIndex> {
+    pub(crate) fn find_index_name_dynamic(
+        &self,
+        header: &Field,
+        value: &str,
+    ) -> Option<TableIndex> {
         match self.dynamic.index_name(header, value) {
             x @ Some(TableIndex::FieldName(_)) => x,
             _ => Some(TableIndex::None),
@@ -92,7 +94,6 @@ impl<'a> TableSearcher<'a> {
         true
     }
 }
-
 
 pub(crate) struct DynamicTable {
     queue: VecDeque<(Field, String)>,
@@ -130,14 +131,15 @@ impl DynamicTable {
         self.capacity / 32
     }
     /// Updates `DynamicTable` by a given `Header` and value pair.
-    pub(crate) fn update(&mut self, field: Field, value: String)-> Option<TableIndex> {
+    pub(crate) fn update(&mut self, field: Field, value: String) -> Option<TableIndex> {
         self.insert_count += 1;
         self.size += field.len() + value.len() + 32;
         self.queue.push_back((field.clone(), value.clone()));
-        self.ref_count.insert(self.queue.len() + self.remove_count - 1, 0);
+        self.ref_count
+            .insert(self.queue.len() + self.remove_count - 1, 0);
         self.fit_size();
         match self.index(&field, &value) {
-            x  => x,
+            x => x,
             _ => Some(TableIndex::None),
         }
     }
@@ -148,10 +150,9 @@ impl DynamicTable {
         } else {
             let mut eviction_space = 0;
             for (i, (h, v)) in self.queue.iter().enumerate() {
-                if let Some(0) = self.ref_count.get(&(i + self.remove_count)){
+                if let Some(0) = self.ref_count.get(&(i + self.remove_count)) {
                     eviction_space += h.len() + v.len() + 32;
-                }
-                else {
+                } else {
                     if eviction_space >= field.len() + value.len() + 32 {
                         return true;
                     }
@@ -193,7 +194,6 @@ impl DynamicTable {
         index
     }
 
-
     fn index_name(&self, header: &Field, value: &str) -> Option<TableIndex> {
         // find latest
         let mut index = None;
@@ -211,9 +211,10 @@ impl DynamicTable {
     }
 
     pub(crate) fn field_name(&self, index: usize) -> Option<Field> {
-        self.queue.get(index - self.remove_count).map(|(field, _)| field.clone())
+        self.queue
+            .get(index - self.remove_count)
+            .map(|(field, _)| field.clone())
     }
-
 }
 
 #[derive(PartialEq, Clone)]
@@ -222,7 +223,6 @@ pub(crate) enum TableIndex {
     FieldName(usize),
     None,
 }
-
 
 /// The [`Static Table`][static_table] implementation of [QPACK].
 ///
@@ -283,7 +283,9 @@ impl StaticTable {
             62 => Some(Field::Other(String::from("x-xss-protection"))),
             63..=71 => Some(Field::Status),
             72 => Some(Field::Other(String::from("accept-language"))),
-            73..=74 => Some(Field::Other(String::from("access-control-allow-credentials"))),
+            73..=74 => Some(Field::Other(String::from(
+                "access-control-allow-credentials",
+            ))),
             75 => Some(Field::Other(String::from("access-control-allow-headers"))),
             76..=78 => Some(Field::Other(String::from("access-control-allow-methods"))),
             79 => Some(Field::Other(String::from("access-control-expose-headers"))),
@@ -313,7 +315,10 @@ impl StaticTable {
         match index {
             1 => Some((Field::Path, String::from("/"))),
             2 => Some((Field::Other(String::from("age")), String::from("0"))),
-            4 => Some((Field::Other(String::from("content-length")), String::from("0"))),
+            4 => Some((
+                Field::Other(String::from("content-length")),
+                String::from("0"),
+            )),
             15 => Some((Field::Method, String::from("CONNECT"))),
             16 => Some((Field::Method, String::from("DELETE"))),
             17 => Some((Field::Method, String::from("GET"))),
@@ -329,39 +334,135 @@ impl StaticTable {
             27 => Some((Field::Status, String::from("404"))),
             28 => Some((Field::Status, String::from("503"))),
             29 => Some((Field::Other(String::from("accept")), String::from("*/*"))),
-            30 => Some((Field::Other(String::from("accept")), String::from("application/dns-message"))),
-            31 => Some((Field::Other(String::from("accept-encoding")), String::from("gzip, deflate, br"))),
-            32 => Some((Field::Other(String::from("accept-ranges")), String::from("bytes"))),
-            33 => Some((Field::Other(String::from("access-control-allow-headers")), String::from("cache-control"))),
-            34 => Some((Field::Other(String::from("access-control-allow-headers")), String::from("content-type"))),
-            35 => Some((Field::Other(String::from("access-control-allow-origin")), String::from("*"))),
-            36 => Some((Field::Other(String::from("cache-control")), String::from("max-age=0"))),
-            37 => Some((Field::Other(String::from("cache-control")), String::from("max-age=2592000"))),
-            38 => Some((Field::Other(String::from("cache-control")), String::from("max-age=604800"))),
-            39 => Some((Field::Other(String::from("cache-control")), String::from("no-cache"))),
-            40 => Some((Field::Other(String::from("cache-control")), String::from("no-store"))),
-            41 => Some((Field::Other(String::from("cache-control")), String::from("public, max-age=31536000"))),
-            42 => Some((Field::Other(String::from("content-encoding")), String::from("br"))),
-            43 => Some((Field::Other(String::from("content-encoding")), String::from("gzip"))),
-            44 => Some((Field::Other(String::from("content-type")), String::from("application/dns-message"))),
-            45 => Some((Field::Other(String::from("content-type")), String::from("application/javascript"))),
-            46 => Some((Field::Other(String::from("content-type")), String::from("application/json"))),
-            47 => Some((Field::Other(String::from("content-type")), String::from("application/x-www-form-urlencoded"))),
-            48 => Some((Field::Other(String::from("content-type")), String::from("image/gif"))),
-            49 => Some((Field::Other(String::from("content-type")), String::from("image/jpeg"))),
-            50 => Some((Field::Other(String::from("content-type")), String::from("image/png"))),
-            51 => Some((Field::Other(String::from("content-type")), String::from("text/css"))),
-            52 => Some((Field::Other(String::from("content-type")), String::from("text/html; charset=utf-8"))),
-            53 => Some((Field::Other(String::from("content-type")), String::from("text/plain"))),
-            54 => Some((Field::Other(String::from("content-type")), String::from("text/plain;charset=utf-8"))),
-            55 => Some((Field::Other(String::from("range")), String::from("bytes=0-"))),
-            56 => Some((Field::Other(String::from("strict-transport-security")), String::from("max-age=31536000"))),
-            57 => Some((Field::Other(String::from("strict-transport-security")), String::from("max-age=31536000; includesubdomains"))),
-            58 => Some((Field::Other(String::from("strict-transport-security")), String::from("max-age=31536000; includesubdomains; preload"))),
-            59 => Some((Field::Other(String::from("vary")), String::from("accept-encoding"))),
+            30 => Some((
+                Field::Other(String::from("accept")),
+                String::from("application/dns-message"),
+            )),
+            31 => Some((
+                Field::Other(String::from("accept-encoding")),
+                String::from("gzip, deflate, br"),
+            )),
+            32 => Some((
+                Field::Other(String::from("accept-ranges")),
+                String::from("bytes"),
+            )),
+            33 => Some((
+                Field::Other(String::from("access-control-allow-headers")),
+                String::from("cache-control"),
+            )),
+            34 => Some((
+                Field::Other(String::from("access-control-allow-headers")),
+                String::from("content-type"),
+            )),
+            35 => Some((
+                Field::Other(String::from("access-control-allow-origin")),
+                String::from("*"),
+            )),
+            36 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("max-age=0"),
+            )),
+            37 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("max-age=2592000"),
+            )),
+            38 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("max-age=604800"),
+            )),
+            39 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("no-cache"),
+            )),
+            40 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("no-store"),
+            )),
+            41 => Some((
+                Field::Other(String::from("cache-control")),
+                String::from("public, max-age=31536000"),
+            )),
+            42 => Some((
+                Field::Other(String::from("content-encoding")),
+                String::from("br"),
+            )),
+            43 => Some((
+                Field::Other(String::from("content-encoding")),
+                String::from("gzip"),
+            )),
+            44 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("application/dns-message"),
+            )),
+            45 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("application/javascript"),
+            )),
+            46 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("application/json"),
+            )),
+            47 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("application/x-www-form-urlencoded"),
+            )),
+            48 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("image/gif"),
+            )),
+            49 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("image/jpeg"),
+            )),
+            50 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("image/png"),
+            )),
+            51 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("text/css"),
+            )),
+            52 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("text/html; charset=utf-8"),
+            )),
+            53 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("text/plain"),
+            )),
+            54 => Some((
+                Field::Other(String::from("content-type")),
+                String::from("text/plain;charset=utf-8"),
+            )),
+            55 => Some((
+                Field::Other(String::from("range")),
+                String::from("bytes=0-"),
+            )),
+            56 => Some((
+                Field::Other(String::from("strict-transport-security")),
+                String::from("max-age=31536000"),
+            )),
+            57 => Some((
+                Field::Other(String::from("strict-transport-security")),
+                String::from("max-age=31536000; includesubdomains"),
+            )),
+            58 => Some((
+                Field::Other(String::from("strict-transport-security")),
+                String::from("max-age=31536000; includesubdomains; preload"),
+            )),
+            59 => Some((
+                Field::Other(String::from("vary")),
+                String::from("accept-encoding"),
+            )),
             60 => Some((Field::Other(String::from("vary")), String::from("origin"))),
-            61 => Some((Field::Other(String::from("x-content-type-options")), String::from("nosniff"))),
-            62 => Some((Field::Other(String::from("x-xss-protection")), String::from("1; mode=block"))),
+            61 => Some((
+                Field::Other(String::from("x-content-type-options")),
+                String::from("nosniff"),
+            )),
+            62 => Some((
+                Field::Other(String::from("x-xss-protection")),
+                String::from("1; mode=block"),
+            )),
             63 => Some((Field::Status, String::from("100"))),
             64 => Some((Field::Status, String::from("204"))),
             65 => Some((Field::Status, String::from("206"))),
@@ -371,24 +472,72 @@ impl StaticTable {
             69 => Some((Field::Status, String::from("421"))),
             70 => Some((Field::Status, String::from("425"))),
             71 => Some((Field::Status, String::from("500"))),
-            73 => Some((Field::Other(String::from("access-control-allow-credentials")), String::from("FALSE"))),
-            74 => Some((Field::Other(String::from("access-control-allow-credentials")), String::from("TRUE"))),
-            75 => Some((Field::Other(String::from("access-control-allow-headers")), String::from("*"))),
-            76 => Some((Field::Other(String::from("access-control-allow-methods")), String::from("get"))),
-            77 => Some((Field::Other(String::from("access-control-allow-methods")), String::from("get, post, options"))),
-            78 => Some((Field::Other(String::from("access-control-allow-methods")), String::from("options"))),
-            79 => Some((Field::Other(String::from("access-control-expose-headers")), String::from("content-length"))),
-            80 => Some((Field::Other(String::from("access-control-request-headers")), String::from("content-type"))),
-            81 => Some((Field::Other(String::from("access-control-request-method")), String::from("get"))),
-            82 => Some((Field::Other(String::from("access-control-request-method")), String::from("post"))),
+            73 => Some((
+                Field::Other(String::from("access-control-allow-credentials")),
+                String::from("FALSE"),
+            )),
+            74 => Some((
+                Field::Other(String::from("access-control-allow-credentials")),
+                String::from("TRUE"),
+            )),
+            75 => Some((
+                Field::Other(String::from("access-control-allow-headers")),
+                String::from("*"),
+            )),
+            76 => Some((
+                Field::Other(String::from("access-control-allow-methods")),
+                String::from("get"),
+            )),
+            77 => Some((
+                Field::Other(String::from("access-control-allow-methods")),
+                String::from("get, post, options"),
+            )),
+            78 => Some((
+                Field::Other(String::from("access-control-allow-methods")),
+                String::from("options"),
+            )),
+            79 => Some((
+                Field::Other(String::from("access-control-expose-headers")),
+                String::from("content-length"),
+            )),
+            80 => Some((
+                Field::Other(String::from("access-control-request-headers")),
+                String::from("content-type"),
+            )),
+            81 => Some((
+                Field::Other(String::from("access-control-request-method")),
+                String::from("get"),
+            )),
+            82 => Some((
+                Field::Other(String::from("access-control-request-method")),
+                String::from("post"),
+            )),
             83 => Some((Field::Other(String::from("alt-svc")), String::from("clear"))),
-            85 => Some((Field::Other(String::from("content-security-policy")), String::from("script-src 'none'; object-src 'none'; base-uri 'none'"))),
+            85 => Some((
+                Field::Other(String::from("content-security-policy")),
+                String::from("script-src 'none'; object-src 'none'; base-uri 'none'"),
+            )),
             86 => Some((Field::Other(String::from("early-data")), String::from("1"))),
-            91 => Some((Field::Other(String::from("purpose")), String::from("prefetch"))),
-            93 => Some((Field::Other(String::from("timing-allow-origin")), String::from("*"))),
-            94 => Some((Field::Other(String::from("upgrade-insecure-requests")), String::from("1"))),
-            97 => Some((Field::Other(String::from("x-frame-options")), String::from("deny"))),
-            98 => Some((Field::Other(String::from("x-frame-options")), String::from("sameorigin"))),
+            91 => Some((
+                Field::Other(String::from("purpose")),
+                String::from("prefetch"),
+            )),
+            93 => Some((
+                Field::Other(String::from("timing-allow-origin")),
+                String::from("*"),
+            )),
+            94 => Some((
+                Field::Other(String::from("upgrade-insecure-requests")),
+                String::from("1"),
+            )),
+            97 => Some((
+                Field::Other(String::from("x-frame-options")),
+                String::from("deny"),
+            )),
+            98 => Some((
+                Field::Other(String::from("x-frame-options")),
+                String::from("sameorigin"),
+            )),
             _ => None,
         }
     }
@@ -466,7 +615,9 @@ impl StaticTable {
                 ("content-type", "application/dns-message") => Some(TableIndex::Field(44)),
                 ("content-type", "application/javascript") => Some(TableIndex::Field(45)),
                 ("content-type", "application/json") => Some(TableIndex::Field(46)),
-                ("content-type", "application/x-www-form-urlencoded") => Some(TableIndex::Field(47)),
+                ("content-type", "application/x-www-form-urlencoded") => {
+                    Some(TableIndex::Field(47))
+                }
                 ("content-type", "image/gif") => Some(TableIndex::Field(48)),
                 ("content-type", "image/jpeg") => Some(TableIndex::Field(49)),
                 ("content-type", "image/png") => Some(TableIndex::Field(50)),
@@ -478,8 +629,12 @@ impl StaticTable {
                 ("range", "bytes=0-") => Some(TableIndex::Field(55)),
                 ("range", _) => Some(TableIndex::FieldName(55)),
                 ("strict-transport-security", "max-age=31536000") => Some(TableIndex::Field(56)),
-                ("strict-transport-security", "max-age=31536000; includesubdomains") => Some(TableIndex::Field(57)),
-                ("strict-transport-security", "max-age=31536000; includesubdomains; preload") => Some(TableIndex::Field(58)),
+                ("strict-transport-security", "max-age=31536000; includesubdomains") => {
+                    Some(TableIndex::Field(57))
+                }
+                ("strict-transport-security", "max-age=31536000; includesubdomains; preload") => {
+                    Some(TableIndex::Field(58))
+                }
                 ("strict-transport-security", _) => Some(TableIndex::FieldName(56)),
                 ("vary", "accept-encoding") => Some(TableIndex::Field(59)),
                 ("vary", "origin") => Some(TableIndex::Field(60)),
@@ -495,7 +650,9 @@ impl StaticTable {
                 ("access-control-allow-headers", "*") => Some(TableIndex::Field(75)),
                 ("access-control-allow-headers", _) => Some(TableIndex::FieldName(75)),
                 ("access-control-allow-methods", "get") => Some(TableIndex::Field(76)),
-                ("access-control-allow-methods", "get, post, options") => Some(TableIndex::Field(77)),
+                ("access-control-allow-methods", "get, post, options") => {
+                    Some(TableIndex::Field(77))
+                }
                 ("access-control-allow-methods", "options") => Some(TableIndex::Field(78)),
                 ("access-control-allow-methods", _) => Some(TableIndex::FieldName(76)),
                 ("access-control-expose-headers", "content-length") => Some(TableIndex::Field(79)),
@@ -508,7 +665,10 @@ impl StaticTable {
                 ("alt-svc", "clear") => Some(TableIndex::Field(83)),
                 ("alt-svc", _) => Some(TableIndex::FieldName(83)),
                 ("authorization", _) => Some(TableIndex::FieldName(84)),
-                ("content-security-policy", "script-src 'none'; object-src 'none'; base-uri 'none'") => Some(TableIndex::Field(85)),
+                (
+                    "content-security-policy",
+                    "script-src 'none'; object-src 'none'; base-uri 'none'",
+                ) => Some(TableIndex::Field(85)),
                 ("content-security-policy", _) => Some(TableIndex::FieldName(85)),
                 ("early-data", "1") => Some(TableIndex::Field(86)),
                 ("early-data", _) => Some(TableIndex::FieldName(86)),

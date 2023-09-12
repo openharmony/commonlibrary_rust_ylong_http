@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use crate::h2::hpack::table::Header;
-use crate::h2::pseudo::PseudoHeaders;
 use crate::headers::Headers;
+use crate::pseudo::PseudoHeaders;
 
 /// HTTP2 HEADERS frame payload implementation.
 #[derive(PartialEq, Eq, Clone)]
@@ -47,11 +47,11 @@ impl Parts {
 
     pub(crate) fn update(&mut self, headers: Header, value: String) {
         match headers {
-            Header::Authority => self.pseudo.set_authority(Some(value)),
-            Header::Method => self.pseudo.set_method(Some(value)),
-            Header::Path => self.pseudo.set_path(Some(value)),
-            Header::Scheme => self.pseudo.set_scheme(Some(value)),
-            Header::Status => self.pseudo.set_status(Some(value)),
+            Header::Authority => self.pseudo.authority = Some(value),
+            Header::Method => self.pseudo.method = Some(value),
+            Header::Path => self.pseudo.path = Some(value),
+            Header::Scheme => self.pseudo.scheme = Some(value),
+            Header::Status => self.pseudo.status = Some(value),
             Header::Other(header) => self.map.append(header.as_str(), value.as_str()).unwrap(),
         }
     }

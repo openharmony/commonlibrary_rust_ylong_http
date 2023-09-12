@@ -41,6 +41,7 @@ pub mod request;
 pub mod response;
 pub mod version;
 
+mod pseudo;
 #[cfg(test)]
 pub(crate) mod test_util;
 

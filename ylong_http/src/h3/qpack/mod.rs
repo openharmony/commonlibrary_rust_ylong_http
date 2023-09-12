@@ -11,16 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-pub(crate) mod table;
+mod decoder;
 mod encoder;
+mod error;
 mod format;
 mod integer;
-mod decoder;
+pub(crate) mod table;
 
-pub(crate) use decoder::QpackDecoder;
 use crate::h3::qpack::format::decoder::Name;
-
+pub(crate) use decoder::QpackDecoder;
+pub(crate) use encoder::QpackEncoder;
 
 pub(crate) struct RequireInsertCount(usize);
 
@@ -77,7 +77,11 @@ impl DecoderInstPrefixBit {
 
     pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
         match self.0 {
-            _ => MidBit { n: None, t: None, h: None },
+            _ => MidBit {
+                n: None,
+                t: None,
+                h: None,
+            },
         }
     }
 }
@@ -108,10 +112,26 @@ impl EncoderInstPrefixBit {
 
     pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
         match self.0 {
-            0x80 => MidBit { n: None, t: Some((byte & 0x40) != 0), h: None },
-            0x40 => MidBit { n: None, t: None, h: Some((byte & 0x20) != 0) },
-            0x20 => MidBit { n: None, t: None, h: None },
-            _ => MidBit { n: None, t: None, h: None },
+            0x80 => MidBit {
+                n: None,
+                t: Some((byte & 0x40) != 0),
+                h: None,
+            },
+            0x40 => MidBit {
+                n: None,
+                t: None,
+                h: Some((byte & 0x20) != 0),
+            },
+            0x20 => MidBit {
+                n: None,
+                t: None,
+                h: None,
+            },
+            _ => MidBit {
+                n: None,
+                t: None,
+                h: None,
+            },
         }
     }
 }
@@ -151,21 +171,52 @@ impl ReprPrefixBit {
     /// Like T indicating whether the reference is into the static or dynamic table.
     pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
         match self.0 {
-            0x80 => MidBit { n: None, t: Some((byte & 0x40) != 0), h: None },
-            0x40 => MidBit { n: Some((byte & 0x20) != 0), t: Some((byte & 0x10) != 0), h: None },
-            0x20 => MidBit { n: Some((byte & 0x10) != 0), t: None, h: Some((byte & 0x08) != 0) },
-            0x10 => MidBit { n: None, t: None, h: None },
-            _ => MidBit { n: Some((byte & 0x08) != 0), t: None, h: None },
+            0x80 => MidBit {
+                n: None,
+                t: Some((byte & 0x40) != 0),
+                h: None,
+            },
+            0x40 => MidBit {
+                n: Some((byte & 0x20) != 0),
+                t: Some((byte & 0x10) != 0),
+                h: None,
+            },
+            0x20 => MidBit {
+                n: Some((byte & 0x10) != 0),
+                t: None,
+                h: Some((byte & 0x08) != 0),
+            },
+            0x10 => MidBit {
+                n: None,
+                t: None,
+                h: None,
+            },
+            _ => MidBit {
+                n: Some((byte & 0x08) != 0),
+                t: None,
+                h: None,
+            },
         }
     }
 }
 
 pub(crate) enum EncoderInstruction {
-    SetCap { capacity: usize },
-    InsertWithIndex { mid_bit: MidBit, name: Name, value: Vec<u8> },
-    InsertWithLiteral { mid_bit: MidBit, name: Name, value: Vec<u8> },
-    Duplicate { index: usize },
-
+    SetCap {
+        capacity: usize,
+    },
+    InsertWithIndex {
+        mid_bit: MidBit,
+        name: Name,
+        value: Vec<u8>,
+    },
+    InsertWithLiteral {
+        mid_bit: MidBit,
+        name: Name,
+        value: Vec<u8>,
+    },
+    Duplicate {
+        index: usize,
+    },
 }
 
 pub(crate) enum DecoderInstruction {
@@ -186,20 +237,37 @@ pub(crate) enum Representation {
     /// (Section 4.1.1) that follows is used to locate the table entry for the field line. When T=1,
     /// the number represents the static table index; when T=0, the number is the relative index of
     /// the entry in the dynamic table.
+    FieldSectionPrefix {
+        require_insert_count: RequireInsertCount,
+        signal: bool,
+        delta_base: DeltaBase,
+    },
 
-    FieldSectionPrefix { require_insert_count: RequireInsertCount, signal: bool, delta_base: DeltaBase },
-
-    Indexed { mid_bit: MidBit, index: usize },
-    IndexedWithPostIndex { index: usize },
-    LiteralWithIndexing { mid_bit: MidBit, name: Name, value: Vec<u8> },
-    LiteralWithPostIndexing { mid_bit: MidBit, name: Name, value: Vec<u8> },
-    LiteralWithLiteralName { mid_bit: MidBit, name: Name, value: Vec<u8> },
-
+    Indexed {
+        mid_bit: MidBit,
+        index: usize,
+    },
+    IndexedWithPostIndex {
+        index: usize,
+    },
+    LiteralWithIndexing {
+        mid_bit: MidBit,
+        name: Name,
+        value: Vec<u8>,
+    },
+    LiteralWithPostIndexing {
+        mid_bit: MidBit,
+        name: Name,
+        value: Vec<u8>,
+    },
+    LiteralWithLiteralName {
+        mid_bit: MidBit,
+        name: Name,
+        value: Vec<u8>,
+    },
 }
 
-
 //impl debug for Representation
-
 
 pub(crate) struct MidBit {
     //'N', indicates whether an intermediary is permitted to add this field line to the dynamic
@@ -209,11 +277,9 @@ pub(crate) struct MidBit {
     t: Option<bool>,
     //'H', indicating whether is represented as a Huffman-encoded.
     h: Option<bool>,
-
 }
 
 pub(crate) struct PrefixMask(u8);
-
 
 impl PrefixMask {
     pub(crate) const REQUIREINSERTCOUNT: Self = Self(0xff);

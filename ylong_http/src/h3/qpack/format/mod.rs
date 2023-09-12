@@ -10,10 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub(crate) mod encoder;
 pub(crate) mod decoder;
+pub(crate) mod encoder;
 
-pub(crate) use encoder::{ReprEncoder,ReprEncStateHolder};
-
-
-
+pub(crate) use encoder::ReprEncoder;

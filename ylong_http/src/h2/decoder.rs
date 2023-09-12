@@ -915,33 +915,43 @@ mod ut_frame_decoder {
                                 match *key {
                                     ":method" => {
                                         assert_eq!(
-                                            pseudo.method().expect("pseudo.method get failed !"),
+                                            pseudo
+                                                .method
+                                                .clone()
+                                                .expect("pseudo.method get failed !"),
                                             *value
                                         );
                                     }
                                     ":scheme" => {
                                         assert_eq!(
-                                            pseudo.scheme().expect("pseudo.scheme get failed !"),
+                                            pseudo
+                                                .scheme
+                                                .clone()
+                                                .expect("pseudo.scheme get failed !"),
                                             *value
                                         );
                                     }
                                     ":authority" => {
                                         assert_eq!(
                                             pseudo
-                                                .authority()
+                                                .authority
+                                                .clone()
                                                 .expect("pseudo.authority get failed !"),
                                             *value
                                         );
                                     }
                                     ":path" => {
                                         assert_eq!(
-                                            pseudo.path().expect("pseudo.path get failed !"),
+                                            pseudo.path.clone().expect("pseudo.path get failed !"),
                                             *value
                                         );
                                     }
                                     ":status" => {
                                         assert_eq!(
-                                            pseudo.status().expect("pseudo.status get failed !"),
+                                            pseudo
+                                                .status
+                                                .clone()
+                                                .expect("pseudo.status get failed !"),
                                             *value
                                         );
                                     }
