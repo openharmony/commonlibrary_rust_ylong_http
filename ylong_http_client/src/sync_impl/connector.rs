@@ -15,7 +15,7 @@ use std::io::{Read, Write};
 
 use ylong_http::request::uri::Uri;
 
-use crate::util::ConnectorConfig;
+use crate::util::config::ConnectorConfig;
 
 /// `Connector` trait used by `Client`. `Connector` provides synchronous
 /// connection establishment interfaces.
@@ -102,7 +102,7 @@ pub mod tls_conn {
                     .proxy_info()
                     .basic_auth
                     .as_ref()
-                    .and_then(|v| v.to_str().ok());
+                    .and_then(|v| v.to_string().ok());
                 is_proxy = true;
             }
 
@@ -112,13 +112,14 @@ pub mod tls_conn {
             };
 
             match *uri.scheme().unwrap() {
-                Scheme::HTTP => Ok(MixStream::Http(TcpStream::connect(addr).map_err(|e| {
-                    HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                })?)),
+                Scheme::HTTP => {
+                    Ok(MixStream::Http(TcpStream::connect(addr).map_err(|e| {
+                        HttpClientError::from_error(ErrorKind::Connect, e)
+                    })?))
+                }
                 Scheme::HTTPS => {
-                    let tcp_stream = TcpStream::connect(addr).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                    })?;
+                    let tcp_stream = TcpStream::connect(addr)
+                        .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
 
                     let tcp_stream = if is_proxy {
                         tunnel(tcp_stream, host, port, auth)?
@@ -126,13 +127,16 @@ pub mod tls_conn {
                         tcp_stream
                     };
 
-                    let tls_ssl = self.config.tls.ssl_new(&host_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                    })?;
+                    let tls_ssl = self
+                        .config
+                        .tls
+                        .ssl_new(&host_name)
+                        .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
 
-                    let stream = tls_ssl.into_inner().connect(tcp_stream).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                    })?;
+                    let stream = tls_ssl
+                        .into_inner()
+                        .connect(tcp_stream)
+                        .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
                     Ok(MixStream::Https(stream))
                 }
             }
@@ -161,7 +165,7 @@ pub mod tls_conn {
         write!(&mut req, "\r\n").unwrap();
 
         conn.write_all(&req)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
 
         let mut buf = [0; 8192];
         let mut pos = 0;
@@ -169,10 +173,10 @@ pub mod tls_conn {
         loop {
             let n = conn
                 .read(&mut buf[pos..])
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
 
             if n == 0 {
-                return Err(HttpClientError::new_with_message(
+                return Err(HttpClientError::from_str(
                     ErrorKind::Connect,
                     "Error receiving from proxy",
                 ));
@@ -185,18 +189,18 @@ pub mod tls_conn {
                     return Ok(conn);
                 }
                 if pos == buf.len() {
-                    return Err(HttpClientError::new_with_message(
+                    return Err(HttpClientError::from_str(
                         ErrorKind::Connect,
                         "proxy headers too long for tunnel",
                     ));
                 }
             } else if resp.starts_with(b"HTTP/1.1 407") {
-                return Err(HttpClientError::new_with_message(
+                return Err(HttpClientError::from_str(
                     ErrorKind::Connect,
                     "proxy authentication required",
                 ));
             } else {
-                return Err(HttpClientError::new_with_message(
+                return Err(HttpClientError::from_str(
                     ErrorKind::Connect,
                     "unsuccessful tunnel",
                 ));

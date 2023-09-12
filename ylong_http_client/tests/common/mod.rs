@@ -211,6 +211,7 @@ macro_rules! start_http_server {
 
 /// Creates a `Request`.
 #[macro_export]
+#[cfg(feature = "sync")]
 macro_rules! ylong_request {
     (
         Request: {
@@ -229,6 +230,30 @@ macro_rules! ylong_request {
             $(.header($req_n, $req_v))*
             .body(ylong_http::body::TextBody::from_bytes($req_body.as_bytes()))
             .expect("Request build failed")
+    };
+}
+
+/// Creates a `Request`.
+#[macro_export]
+#[cfg(feature = "async")]
+macro_rules! ylong_request {
+    (
+        Request: {
+            Method: $method: expr,
+            Host: $host: expr,
+            Port: $port: expr,
+            $(
+                Header: $req_n: expr, $req_v: expr,
+            )*
+            Body: $req_body: expr,
+        },
+    ) => {
+        ylong_http_client::async_impl::RequestBuilder::new()
+             .method($method)
+             .url(format!("{}:{}", $host, $port).as_str())
+             $(.header($req_n, $req_v))*
+             .body(ylong_http_client::async_impl::Body::slice($req_body.as_bytes()))
+             .expect("Request build failed")
     };
 }
 

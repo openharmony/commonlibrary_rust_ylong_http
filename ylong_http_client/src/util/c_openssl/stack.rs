@@ -113,13 +113,6 @@ impl<T: Stackof> StackRef<T> {
             }
         }
     }
-
-    pub(crate) fn iter(&self) -> StackRefIter<T> {
-        StackRefIter {
-            stack: self,
-            index: 0..self.len() as c_int,
-        }
-    }
 }
 
 impl<T: Stackof> ForeignRef for StackRef<T> {

@@ -11,16 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: Remove this file later.
-
 use ylong_http::request::method::Method;
-use ylong_http::request::uri::{Host, Scheme};
+use ylong_http::request::uri::{Scheme, Uri};
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::ResponsePart;
 use ylong_http::version::Version;
 
-use crate::{ErrorKind, HttpClientError, Uri};
+use crate::error::{ErrorKind, HttpClientError};
 
 pub(crate) struct RequestFormatter<'a, T> {
     part: &'a mut Request<T>,
@@ -31,7 +29,13 @@ impl<'a, T> RequestFormatter<'a, T> {
         Self { part }
     }
 
-    pub(crate) fn normalize(&mut self) -> Result<(), HttpClientError> {
+    pub(crate) fn format(&mut self) -> Result<(), HttpClientError> {
+        if Version::HTTP1_0 == *self.part.version() && Method::CONNECT == *self.part.method() {
+            return Err(HttpClientError::from_str(
+                ErrorKind::Request,
+                "Unknown METHOD in HTTP/1.0",
+            ));
+        }
         // TODO Formatting the uri in the request doesn't seem necessary.
         let uri_formatter = UriFormatter::new();
         uri_formatter.format(self.part.uri_mut())?;
@@ -42,12 +46,10 @@ impl<'a, T> RequestFormatter<'a, T> {
             let _ = self.part.headers_mut().insert("Accept", "*/*");
         }
 
-        if self.part.headers_mut().get("Host").is_none() {
-            let _ = self
-                .part
-                .headers_mut()
-                .insert("Host", host_value.as_bytes());
-        }
+        let _ = self
+            .part
+            .headers_mut()
+            .insert("Host", host_value.as_bytes());
 
         Ok(())
     }
@@ -63,12 +65,7 @@ impl UriFormatter {
     pub(crate) fn format(&self, uri: &mut Uri) -> Result<(), HttpClientError> {
         let host = match uri.host() {
             Some(host) => host.clone(),
-            None => {
-                return Err(HttpClientError::new_with_message(
-                    ErrorKind::Request,
-                    "No host in url",
-                ))
-            }
+            None => return err_from_msg!(Request, "No host in url"),
         };
 
         #[cfg(feature = "__tls")]
@@ -107,9 +104,9 @@ impl UriFormatter {
             new_uri = new_uri.query(query.clone());
         }
 
-        *uri = new_uri.build().map_err(|_| {
-            HttpClientError::new_with_message(ErrorKind::Request, "Normalize url failed")
-        })?;
+        *uri = new_uri
+            .build()
+            .map_err(|_| HttpClientError::from_str(ErrorKind::Request, "Normalize url failed"))?;
 
         Ok(())
     }
@@ -145,13 +142,10 @@ impl<'a> BodyLengthParser<'a> {
 
             if transfer_encoding.is_some() {
                 if self.part.version == Version::HTTP1_0 {
-                    return Err(HttpClientError::new_with_message(
-                        ErrorKind::Request,
-                        "Illegal Transfer-Encoding in HTTP/1.0",
-                    ));
+                    return err_from_msg!(Request, "Illegal Transfer-Encoding in HTTP/1.0");
                 }
                 let transfer_encoding_contains_chunk = transfer_encoding
-                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.to_string().ok())
                     .and_then(|str| str.find("chunked"))
                     .is_some();
 
@@ -167,7 +161,7 @@ impl<'a> BodyLengthParser<'a> {
 
         if content_length.is_some() {
             let content_length_valid = content_length
-                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.to_string().ok())
                 .and_then(|s| s.parse::<usize>().ok());
 
             return match content_length_valid {
@@ -175,10 +169,7 @@ impl<'a> BodyLengthParser<'a> {
                 // otherwise it will get stuck.
                 Some(0) => Ok(BodyLength::Empty),
                 Some(len) => Ok(BodyLength::Length(len)),
-                None => Err(HttpClientError::new_with_message(
-                    ErrorKind::Request,
-                    "Invalid response content-length",
-                )),
+                None => err_from_msg!(Request, "Invalid response content-length"),
             };
         }
 
@@ -199,7 +190,7 @@ pub(crate) fn format_host_value(uri: &Uri) -> Result<String, HttpClientError> {
         (Some(host), Some(port)) => {
             if port
                 .as_u16()
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?
                 == uri.scheme().unwrap_or(&Scheme::HTTP).default_port()
             {
                 host.to_string()
@@ -209,10 +200,7 @@ pub(crate) fn format_host_value(uri: &Uri) -> Result<String, HttpClientError> {
         }
         (Some(host), None) => host.to_string(),
         (None, _) => {
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::Request,
-                "Request Uri lack host",
-            ));
+            return err_from_msg!(Request, "Request Uri lack host");
         }
     };
     Ok(host_value)
@@ -224,7 +212,6 @@ mod ut_normalizer {
     use ylong_http::request::method::Method;
     use ylong_http::request::uri::{Uri, UriBuilder};
     use ylong_http::request::Request;
-    use ylong_http::response::Response;
 
     use crate::normalizer::UriFormatter;
     use crate::util::normalizer::{
@@ -268,10 +255,10 @@ mod ut_normalizer {
         let request_uri = request.uri_mut();
         *request_uri = Uri::from_bytes(b"http://example1.com").unwrap();
         let mut formatter = RequestFormatter::new(&mut request);
-        let _ = formatter.normalize();
+        let _ = formatter.format();
         let (part, _) = request.into_parts();
         let res = part.headers.get("Host").unwrap();
-        assert_eq!(res.to_str().unwrap().as_bytes(), b"example1.com");
+        assert_eq!(res.to_string().unwrap().as_bytes(), b"example1.com");
     }
 
     /// UT test cases for `BodyLengthParser::parse`.

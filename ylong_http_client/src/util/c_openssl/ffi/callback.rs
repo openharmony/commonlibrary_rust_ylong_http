@@ -13,7 +13,6 @@
 
 use std::ffi::{c_int, c_void};
 
-use crate::util::c_openssl::ffi::ssl::SSL_CTX;
 use crate::util::c_openssl::ffi::x509::X509_STORE_CTX;
 use crate::util::c_openssl::foreign::ForeignRef;
 use crate::util::c_openssl::x509::X509StoreContextRef;

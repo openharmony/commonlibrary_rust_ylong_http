@@ -35,11 +35,11 @@
 //! headers.insert("Content-Length", "3495").unwrap();
 //!
 //! assert_eq!(
-//!     headers.get("accept").unwrap().to_str().unwrap(),
+//!     headers.get("accept").unwrap().to_string().unwrap(),
 //!     "text/html"
 //! );
 //! assert_eq!(
-//!     headers.get("content-length").unwrap().to_str().unwrap(),
+//!     headers.get("content-length").unwrap().to_string().unwrap(),
 //!     "3495"
 //! );
 //! ```
@@ -72,7 +72,7 @@ use crate::error::{ErrorKind, HttpError};
 ///
 /// // All characters of this header string can be displayed, so the `to_string`
 /// // interface can be used to output.
-/// assert_eq!(header.value().to_str().unwrap(), "Foo");
+/// assert_eq!(header.value().to_string().unwrap(), "Foo");
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Header {
@@ -93,7 +93,7 @@ impl Header {
     ///
     /// let header = Header::from_raw_parts(name, value);
     /// assert_eq!(header.name().as_bytes(), b"example-field");
-    /// assert_eq!(header.value().to_str().unwrap(), "Foo");
+    /// assert_eq!(header.value().to_string().unwrap(), "Foo");
     /// ```
     pub fn from_raw_parts(name: HeaderName, value: HeaderValue) -> Self {
         Self { name, value }
@@ -129,7 +129,7 @@ impl Header {
     /// let header = Header::try_from(("Example-Field", "Foo")).unwrap();
     ///
     /// let value = header.value();
-    /// assert_eq!(value.to_str().unwrap(), "Foo");
+    /// assert_eq!(value.to_string().unwrap(), "Foo");
     /// ```
     pub fn value(&self) -> &HeaderValue {
         &self.value
@@ -149,7 +149,7 @@ impl Header {
     /// let (name, value) = header.into_parts();
     ///
     /// assert_eq!(name.as_bytes(), b"example-field");
-    /// assert_eq!(value.to_str().unwrap(), "Foo");
+    /// assert_eq!(value.to_string().unwrap(), "Foo");
     /// ```
     pub fn into_parts(self) -> (HeaderName, HeaderValue) {
         (self.name, self.value)
@@ -285,7 +285,7 @@ impl TryFrom<&[u8]> for HeaderName {
 /// let mut value = HeaderValue::from_bytes(b"text/html").unwrap();
 /// value.append_bytes(b"application/xml").unwrap();
 ///
-/// assert_eq!(value.to_str().unwrap(), "text/html, application/xml");
+/// assert_eq!(value.to_string().unwrap(), "text/html, application/xml");
 /// assert!(!value.is_sensitive());
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -306,12 +306,12 @@ impl HeaderValue {
     /// use ylong_http::headers::HeaderValue;
     ///
     /// let value = HeaderValue::from_bytes(b"text/html").unwrap();
-    /// assert_eq!(value.to_str().unwrap(), "text/html");
+    /// assert_eq!(value.to_string().unwrap(), "text/html");
     /// assert!(!value.is_sensitive());
     ///
     /// // `HeaderValue` is case-sensitive. Legal characters will remain unchanged.
     /// let value = HeaderValue::from_bytes(b"TEXT/HTML").unwrap();
-    /// assert_eq!(value.to_str().unwrap(), "TEXT/HTML");
+    /// assert_eq!(value.to_string().unwrap(), "TEXT/HTML");
     /// ```
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, HttpError> {
         if !bytes.iter().all(|b| Self::is_valid(*b)) {
@@ -336,7 +336,7 @@ impl HeaderValue {
     /// let other = HeaderValue::from_bytes(b"text/plain").unwrap();
     ///
     /// value.append(other);
-    /// assert_eq!(value.to_str().unwrap(), "text/html, text/plain");
+    /// assert_eq!(value.to_string().unwrap(), "text/html, text/plain");
     /// ```
     pub fn append(&mut self, mut other: Self) {
         self.inner.append(&mut other.inner)
@@ -352,7 +352,7 @@ impl HeaderValue {
     /// let mut value = HeaderValue::from_bytes(b"text/html").unwrap();
     /// value.append_bytes(b"application/xml").unwrap();
     ///
-    /// assert_eq!(value.to_str().unwrap(), "text/html, application/xml");
+    /// assert_eq!(value.to_string().unwrap(), "text/html, application/xml");
     /// ```
     pub fn append_bytes(&mut self, bytes: &[u8]) -> Result<(), HttpError> {
         if !bytes.iter().all(|b| Self::is_valid(*b)) {
@@ -376,10 +376,9 @@ impl HeaderValue {
     /// let mut value = HeaderValue::from_bytes(b"text/html").unwrap();
     /// value.append_bytes(b"application/xml").unwrap();
     ///
-    /// assert_eq!(value.to_str().unwrap(), "text/html, application/xml");
+    /// assert_eq!(value.to_string().unwrap(), "text/html, application/xml");
     /// ```
-    // TODO: change this name to `to_string`?
-    pub fn to_str(&self) -> Result<String, HttpError> {
+    pub fn to_string(&self) -> Result<String, HttpError> {
         let mut content = Vec::new();
         for (n, i) in self.inner.iter().enumerate() {
             if n != 0 {
@@ -559,11 +558,11 @@ pub type HeaderValueIterMut<'a> = slice::IterMut<'a, Vec<u8>>;
 /// headers.append("Accept", "text/plain").unwrap();
 ///
 /// assert_eq!(
-///     headers.get("accept").unwrap().to_str().unwrap(),
+///     headers.get("accept").unwrap().to_string().unwrap(),
 ///     "text/html, text/plain"
 /// );
 /// assert_eq!(
-///     headers.get("content-length").unwrap().to_str().unwrap(),
+///     headers.get("content-length").unwrap().to_string().unwrap(),
 ///     "3495"
 /// );
 /// ```
@@ -579,7 +578,7 @@ impl fmt::Display for Headers {
                 f,
                 "{}: {}",
                 k.to_string(),
-                v.to_str()
+                v.to_string()
                     .unwrap_or_else(|_| "<non-visible header value>".to_string())
             )?;
         }
@@ -654,7 +653,7 @@ impl Headers {
     /// headers.append("accept", "text/html").unwrap();
     ///
     /// let value = headers.get("accept");
-    /// assert_eq!(value.unwrap().to_str().unwrap(), "text/html");
+    /// assert_eq!(value.unwrap().to_string().unwrap(), "text/html");
     /// ```
     pub fn get<T>(&self, name: T) -> Option<&HeaderValue>
     where
@@ -681,7 +680,7 @@ impl Headers {
     /// headers.append("accept", "text/html").unwrap();
     ///
     /// let value = headers.get_mut("accept");
-    /// assert_eq!(value.unwrap().to_str().unwrap(), "text/html");
+    /// assert_eq!(value.unwrap().to_string().unwrap(), "text/html");
     /// ```
     pub fn get_mut<T>(&mut self, name: T) -> Option<&mut HeaderValue>
     where
@@ -714,7 +713,7 @@ impl Headers {
     /// assert_eq!(headers.insert("accept", "text/html"), Ok(None));
     ///
     /// let old_value = headers.insert("accept", "text/plain").unwrap();
-    /// assert_eq!(old_value.unwrap().to_str().unwrap(), "text/html");
+    /// assert_eq!(old_value.unwrap().to_string().unwrap(), "text/html");
     /// ```
     pub fn insert<N, V>(&mut self, name: N, value: V) -> Result<Option<HeaderValue>, HttpError>
     where
@@ -751,7 +750,7 @@ impl Headers {
     /// headers.append("accept", "text/plain").unwrap();
     ///
     /// let value = headers.get("accept");
-    /// assert_eq!(value.unwrap().to_str().unwrap(), "text/html, text/plain");
+    /// assert_eq!(value.unwrap().to_string().unwrap(), "text/html, text/plain");
     /// ```
     pub fn append<N, V>(&mut self, name: N, value: V) -> Result<(), HttpError>
     where
@@ -790,7 +789,7 @@ impl Headers {
     /// headers.append("accept", "text/html").unwrap();
     ///
     /// let value = headers.remove("accept");
-    /// assert_eq!(value.unwrap().to_str().unwrap(), "text/html");
+    /// assert_eq!(value.unwrap().to_string().unwrap(), "text/html");
     /// ```
     pub fn remove<T>(&mut self, name: T) -> Option<HeaderValue>
     where
@@ -1040,9 +1039,9 @@ mod ut_headers {
         let value = HeaderValue::from_bytes(b"Foo").unwrap();
         let header = Header::from_raw_parts(name, value);
         assert_eq!(header.name().as_bytes(), b"john-doe");
-        assert_eq!(header.value().to_str().unwrap(), "Foo");
+        assert_eq!(header.value().to_string().unwrap(), "Foo");
         assert_ne!(header.name().as_bytes(), b"John-Doe");
-        assert_ne!(header.value().to_str().unwrap(), "foo");
+        assert_ne!(header.value().to_string().unwrap(), "foo");
 
         // name
         let name = header.name();
@@ -1052,16 +1051,16 @@ mod ut_headers {
 
         // value
         let value = header.value();
-        assert_eq!(value.to_str().unwrap(), "Foo");
-        assert_ne!(value.to_str().unwrap(), "foo");
-        assert_ne!(value.to_str().unwrap(), "oof");
+        assert_eq!(value.to_string().unwrap(), "Foo");
+        assert_ne!(value.to_string().unwrap(), "foo");
+        assert_ne!(value.to_string().unwrap(), "oof");
 
         // into_parts
         let (name, value) = header.into_parts();
         assert_eq!(name.as_bytes(), b"john-doe");
-        assert_eq!(value.to_str().unwrap(), "Foo");
+        assert_eq!(value.to_string().unwrap(), "Foo");
         assert_ne!(name.as_bytes(), b"John-Doe");
-        assert_ne!(value.to_str().unwrap(), "foo");
+        assert_ne!(value.to_string().unwrap(), "foo");
     }
 
     /// UT test cases for `HeaderValue::iter`.
@@ -1166,7 +1165,7 @@ mod ut_headers {
 
         let result =
             "text/html, application/xhtml+xml, text/plain, text/css, application/xml".to_string();
-        assert_eq!(value.to_str(), Ok(result));
+        assert_eq!(value.to_string(), Ok(result));
     }
 
     /// UT test cases for `HeaderValue::set_sensitive`.

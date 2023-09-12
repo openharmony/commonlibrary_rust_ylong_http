@@ -15,22 +15,21 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::error::HttpClientError;
+use crate::error::{ErrorKind, HttpClientError};
 use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ssl::{
     Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion,
 };
-use crate::util::c_openssl::x509::{X509Ref, X509Store, X509};
+use crate::util::c_openssl::x509::{X509Store, X509};
 use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::AlpnProtocolList;
-use crate::{CertVerifier, ErrorKind, ServerCerts};
 
 /// `TlsContextBuilder` implementation based on `SSL_CTX`.
 ///
 /// # Examples
 ///
 /// ```
-/// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
+/// use ylong_http_client::{TlsConfigBuilder, TlsVersion};
 ///
 /// let context = TlsConfigBuilder::new()
 ///     .ca_file("ca.crt")
@@ -55,7 +54,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new();
     /// ```
@@ -77,7 +76,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new().ca_file("ca.crt");
     /// ```
@@ -97,7 +96,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
+    /// use ylong_http_client::{TlsConfigBuilder, TlsVersion};
     ///
     /// let builder = TlsConfigBuilder::new().max_proto_version(TlsVersion::TLS_1_2);
     /// ```
@@ -119,7 +118,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
+    /// use ylong_http_client::{TlsConfigBuilder, TlsVersion};
     ///
     /// let builder = TlsConfigBuilder::new().min_proto_version(TlsVersion::TLS_1_2);
     /// ```
@@ -143,7 +142,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
     ///     .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
@@ -168,7 +167,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new()
     ///     .cipher_suites("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
@@ -190,7 +189,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::{TlsConfigBuilder, TlsFileType};
+    /// use ylong_http_client::{TlsConfigBuilder, TlsFileType};
     ///
     /// let builder = TlsConfigBuilder::new().certificate_file("cert.pem", TlsFileType::PEM);
     /// ```
@@ -212,7 +211,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new().certificate_chain_file("cert.pem");
     /// ```
@@ -261,7 +260,7 @@ impl TlsConfigBuilder {
     ///
     /// # Examples
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let protocols = b"\x06spdy/1\x08http/1.1";
     /// let builder = TlsConfigBuilder::new().alpn_protos(protocols);
@@ -282,7 +281,7 @@ impl TlsConfigBuilder {
     ///
     /// # Examples
     /// ```
-    /// use ylong_http_client::util::{AlpnProtocol, AlpnProtocolList, TlsConfigBuilder};
+    /// use ylong_http_client::{AlpnProtocol, AlpnProtocolList, TlsConfigBuilder};
     ///
     /// let protocols = AlpnProtocolList::new()
     ///     .extend(AlpnProtocol::SPDY1)
@@ -324,7 +323,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new().danger_accept_invalid_certs(true);
     /// ```
@@ -353,7 +352,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new().danger_accept_invalid_hostnames(true);
     /// ```
@@ -379,7 +378,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfigBuilder;
+    /// use ylong_http_client::TlsConfigBuilder;
     ///
     /// let builder = TlsConfigBuilder::new().sni(true);
     /// ```
@@ -394,7 +393,7 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::{TlsConfigBuilder, TlsVersion};
+    /// use ylong_http_client::{TlsConfigBuilder, TlsVersion};
     ///
     /// let context = TlsConfigBuilder::new()
     ///     .ca_file("ca.crt")
@@ -421,7 +420,7 @@ impl TlsConfigBuilder {
         let ctx = self
             .inner
             .map(|builder| builder.build())
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Build, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Build, e))?;
 
         Ok(TlsConfig {
             ctx,
@@ -444,13 +443,14 @@ impl Default for TlsConfigBuilder {
 /// # Examples
 ///
 /// ```
-/// use ylong_http_client::util::TlsConfig;
+/// use ylong_http_client::TlsConfig;
 ///
 /// let builder = TlsConfig::builder();
 /// ```
 #[derive(Clone)]
 pub struct TlsConfig {
     ctx: SslContext,
+    #[allow(dead_code)]
     cert_verifier: Option<Arc<DefaultCertVerifier>>,
     use_sni: bool,
     verify_hostname: bool,
@@ -462,7 +462,7 @@ impl TlsConfig {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::TlsConfig;
+    /// use ylong_http_client::TlsConfig;
     ///
     /// let builder = TlsConfig::builder();
     /// ```
@@ -512,7 +512,7 @@ impl TlsSsl {
 /// # Examples
 ///
 /// ```
-/// use ylong_http_client::util::TlsVersion;
+/// use ylong_http_client::TlsVersion;
 ///
 /// let version = TlsVersion::TLS_1_2;
 /// ```
@@ -538,7 +538,7 @@ impl TlsVersion {
 /// identifier of the format of a certificate or key file.
 ///
 /// ```
-/// use ylong_http_client::util::TlsFileType;
+/// use ylong_http_client::TlsFileType;
 ///
 /// let file_type = TlsFileType::PEM;
 /// ```
@@ -592,7 +592,7 @@ impl Cert {
     /// ```
     pub fn from_pem(pem: &[u8]) -> Result<Self, HttpClientError> {
         Ok(Self(X509::from_pem(pem).map_err(|e| {
-            HttpClientError::new_with_cause(ErrorKind::Build, Some(e))
+            HttpClientError::from_error(ErrorKind::Build, e)
         })?))
     }
 
@@ -609,27 +609,17 @@ impl Cert {
     /// ```
     pub fn from_der(der: &[u8]) -> Result<Self, HttpClientError> {
         Ok(Self(X509::from_der(der).map_err(|e| {
-            HttpClientError::new_with_cause(ErrorKind::Build, Some(e))
+            HttpClientError::from_error(ErrorKind::Build, e)
         })?))
     }
 
     /// Deserializes a list of PEM-formatted certificates.
     pub fn stack_from_pem(pem: &[u8]) -> Result<Vec<Self>, HttpClientError> {
         Ok(X509::stack_from_pem(pem)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Build, Some(e)))?
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Build, e))?
             .into_iter()
             .map(Self)
             .collect())
-    }
-
-    /// Gets a reference to `X509Ref`.
-    pub(crate) fn as_ref(&self) -> &X509Ref {
-        self.0.as_ref()
-    }
-
-    /// Consumes `X509` and then takes `X509`.
-    pub(crate) fn into_inner(self) -> X509 {
-        self.0
     }
 }
 
@@ -660,7 +650,7 @@ impl Certificate {
     /// Deserializes a list of PEM-formatted certificates.
     pub fn from_pem(pem: &[u8]) -> Result<Self, HttpClientError> {
         let cert_list = X509::stack_from_pem(pem)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Build, Some(e)))?
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Build, e))?
             .into_iter()
             .map(Cert)
             .collect();
@@ -684,9 +674,6 @@ impl Certificate {
 
 #[cfg(test)]
 mod ut_openssl_adapter {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-
     use crate::util::c_openssl::adapter::CertificateList;
     use crate::util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion};
     use crate::{AlpnProtocol, AlpnProtocolList, Certificate};
@@ -874,6 +861,9 @@ mod ut_openssl_adapter {
     #[cfg(feature = "sync")]
     #[test]
     fn ut_tls_ssl_verify_hostname() {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+
         let config = TlsConfigBuilder::new()
             .sni(false)
             .danger_accept_invalid_hostnames(false)

@@ -11,34 +11,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use ylong_http::body::async_impl::Body;
-use ylong_http::request::Request;
-use ylong_http::response::Response;
-
-use crate::async_impl::client::Retryable;
-use crate::async_impl::connector::ConnInfo;
-use crate::async_impl::HttpBody;
-use crate::error::HttpClientError;
-use crate::util::dispatcher::Conn;
-use crate::{AsyncRead, AsyncWrite};
-
 #[cfg(feature = "http1_1")]
 mod http1;
 
 #[cfg(feature = "http2")]
 mod http2;
 
+use crate::async_impl::connector::ConnInfo;
+use crate::async_impl::{Request, Response};
+use crate::error::HttpClientError;
+use crate::runtime::{AsyncRead, AsyncWrite};
+use crate::util::dispatcher::Conn;
+
 pub(crate) trait StreamData: AsyncRead {
     fn shutdown(&self);
 }
 
-pub(crate) async fn request<S, T>(
+// TODO: Use structures instead of a function to reuse the io buf.
+// TODO: Maybe `AsyncWrapper<Conn<S>>` ?.
+
+pub(crate) async fn request<S>(
     conn: Conn<S>,
-    request: &mut Request<T>,
-    _retryable: &mut Retryable,
-) -> Result<Response<HttpBody>, HttpClientError>
+    request: &mut Request,
+) -> Result<Response, HttpClientError>
 where
-    T: Body,
     S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {
     match conn {
@@ -46,6 +42,6 @@ where
         Conn::Http1(http1) => http1::request(http1, request).await,
 
         #[cfg(feature = "http2")]
-        Conn::Http2(http2) => http2::request(http2, request, _retryable).await,
+        Conn::Http2(http2) => http2::request(http2, request).await,
     }
 }

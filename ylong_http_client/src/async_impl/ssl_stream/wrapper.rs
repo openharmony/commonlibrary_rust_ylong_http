@@ -16,7 +16,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::io::{self, Read, Write};
 
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[derive(Debug)]
 pub(crate) struct Wrapper<S> {

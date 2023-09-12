@@ -16,7 +16,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// `ConnInfo` trait, which is used to obtain information about the current
 /// connection.

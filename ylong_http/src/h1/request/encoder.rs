@@ -512,7 +512,7 @@ impl EncodeHeader {
                 inner: header_iter,
                 status: Some(HeaderStatus::Name),
                 name: header_name,
-                value: header_value.to_str().unwrap().into_bytes(),
+                value: header_value.to_string().unwrap().into_bytes(),
                 name_idx: 0,
                 colon_idx: 0,
                 value_idx: 0,
@@ -581,7 +581,7 @@ impl EncodeHeader {
                         let (header_name, header_value) = iter;
                         self.status = Some(HeaderStatus::Name);
                         self.name = header_name;
-                        self.value = header_value.to_str().unwrap().into_bytes();
+                        self.value = header_value.to_string().unwrap().into_bytes();
                         self.name_idx = 0;
                         self.colon_idx = 0;
                         self.value_idx = 0;

@@ -23,7 +23,7 @@
 //! synchronously. This module provides `Connector` trait and a `HttpConnector`
 //! which implements the trait.
 
-// TODO: Reconstruct `sync_impl`.
+// TODO: Reconstruct `sync_impl`, or reuse `async_impl`?
 
 mod client;
 mod conn;
@@ -38,7 +38,8 @@ pub(crate) use connector::HttpConnector;
 pub use http_body::HttpBody;
 pub use reader::{BodyProcessError, BodyProcessor, BodyReader, DefaultBodyProcessor};
 pub use ylong_http::body::sync_impl::Body;
-// TODO: Adapter, remove this later.
+pub use ylong_http::body::{EmptyBody, TextBody};
+pub use ylong_http::request::Request;
 pub use ylong_http::response::Response;
 
 #[cfg(feature = "__tls")]

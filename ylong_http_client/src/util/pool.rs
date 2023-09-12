@@ -53,13 +53,13 @@ impl PoolKey {
         Self(scheme, authority)
     }
 }
+
 #[cfg(test)]
 mod ut_pool {
-    use std::sync::{Arc, Mutex};
-
     use ylong_http::request::uri::Uri;
 
     use crate::pool::{Pool, PoolKey};
+
     /// UT test cases for `Pool::get`.
     ///
     /// # Brief

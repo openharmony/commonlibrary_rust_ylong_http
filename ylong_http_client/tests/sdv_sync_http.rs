@@ -40,7 +40,6 @@ fn sdv_synchronized_client_send_request() {
         Request: {
             Method: "PUT",
             Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -70,7 +69,6 @@ fn sdv_synchronized_client_send_request_repeatedly() {
         Request: {
             Method: "GET",
             Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },
@@ -83,7 +81,6 @@ fn sdv_synchronized_client_send_request_repeatedly() {
         Request: {
             Method: "POST",
             Host: "http://127.0.0.1",
-            Header: "Host", "127.0.0.1",
             Header: "Content-Length", "6",
             Body: "Hello!",
         },

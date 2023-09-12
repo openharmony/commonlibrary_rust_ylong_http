@@ -139,7 +139,9 @@ impl fmt::Display for SslErrorCode {
 #[derive(Debug)]
 pub(crate) enum HandshakeError<S> {
     SetupFailure(ErrorStack),
+    #[allow(dead_code)]
     Failure(MidHandshakeSslStream<S>),
+    #[allow(dead_code)]
     WouldBlock(MidHandshakeSslStream<S>),
 }
 

@@ -61,6 +61,7 @@ pub(crate) enum Conn<S> {
 
 #[cfg(feature = "http1_1")]
 pub(crate) mod http1 {
+    use std::cell::UnsafeCell;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
@@ -79,7 +80,7 @@ pub(crate) mod http1 {
     }
 
     pub(crate) struct Inner<S> {
-        pub(crate) io: S,
+        pub(crate) io: UnsafeCell<S>,
         // `occupied` indicates that the connection is occupied. Only one coroutine
         // can get the handle at the same time. Once the handle is fetched, the flag
         // position is true.
@@ -88,11 +89,13 @@ pub(crate) mod http1 {
         pub(crate) shutdown: AtomicBool,
     }
 
+    unsafe impl<S> Sync for Inner<S> {}
+
     impl<S> Http1Dispatcher<S> {
         pub(crate) fn new(io: S) -> Self {
             Self {
                 inner: Arc::new(Inner {
-                    io,
+                    io: UnsafeCell::new(io),
                     occupied: AtomicBool::new(false),
                     shutdown: AtomicBool::new(false),
                 }),
@@ -124,11 +127,10 @@ pub(crate) mod http1 {
     }
 
     impl<S> Http1Conn<S> {
-        // TODO: Use `UnsafeCell` instead when `Arc::get_mut_unchecked` become stable.
         pub(crate) fn raw_mut(&mut self) -> &mut S {
             // SAFETY: In the case of `HTTP1`, only one coroutine gets the handle
             // at the same time.
-            &mut unsafe { &mut *(Arc::as_ptr(&self.inner) as *mut Inner<S>) }.io
+            unsafe { &mut *self.inner.io.get() }
         }
 
         pub(crate) fn shutdown(&self) {
@@ -163,12 +165,12 @@ pub(crate) mod http2 {
 
     use super::{ConnDispatcher, Dispatcher};
     use crate::dispatcher::http2::StreamState::Closed;
-    use crate::error::HttpClientError;
-    use crate::util::H2Config;
-    use crate::{
-        unbounded_channel, AsyncMutex, AsyncRead, AsyncWrite, ErrorKind, MutexGuard, ReadBuf,
-        TryRecvError, UnboundedReceiver, UnboundedSender,
+    use crate::error::{ErrorKind, HttpClientError};
+    use crate::runtime::{
+        unbounded_channel, AsyncMutex, AsyncRead, AsyncWrite, MutexGuard, ReadBuf, TryRecvError,
+        UnboundedReceiver, UnboundedSender,
     };
+    use crate::util::config::H2Config;
 
     impl<S> ConnDispatcher<S> {
         pub(crate) fn http2(config: H2Config, io: S) -> Self {
@@ -616,17 +618,11 @@ pub(crate) mod http2 {
                 let (tx, rx) = unbounded_channel::<Frame>();
                 self.stream_info.receiver.set_receiver(rx);
                 self.sender.send((Some((self.id, tx)), frame)).map_err(|_| {
-                    HttpClientError::new_with_cause(
-                        ErrorKind::Request,
-                        Some(String::from("resend")),
-                    )
+                    HttpClientError::from_error(ErrorKind::Request, String::from("resend"))
                 })
             } else {
                 self.sender.send((None, frame)).map_err(|_| {
-                    HttpClientError::new_with_cause(
-                        ErrorKind::Request,
-                        Some(String::from("resend")),
-                    )
+                    HttpClientError::from_error(ErrorKind::Request, String::from("resend"))
                 })
             }
         }
@@ -1459,7 +1455,7 @@ pub(crate) mod http2 {
 
 #[cfg(test)]
 mod ut_dispatch {
-    use crate::dispatcher::{Conn, ConnDispatcher, Dispatcher};
+    use crate::dispatcher::{ConnDispatcher, Dispatcher};
 
     /// UT test cases for `ConnDispatcher::is_shutdown`.
     ///

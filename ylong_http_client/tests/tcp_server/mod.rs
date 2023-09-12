@@ -239,8 +239,9 @@ macro_rules! start_tcp_server {
     }}
 }
 
-/// Creates a `Request`.
+/// Creates a sync `Request`.
 #[macro_export]
+#[cfg(feature = "sync")]
 macro_rules! build_client_request {
     (
         Request: {
@@ -259,5 +260,29 @@ macro_rules! build_client_request {
             $(.header($req_n, $req_v))*
             .body(ylong_http::body::TextBody::from_bytes($req_body.as_bytes()))
             .expect("Request build failed")
+    }};
+}
+
+/// Creates a sync `Request`.
+#[macro_export]
+#[cfg(feature = "async")]
+macro_rules! build_client_request {
+    (
+        Request: {
+            Method: $method: expr,
+            Path: $path: expr,
+            Addr: $addr: expr,
+            $(
+                Header: $req_n: expr, $req_v: expr,
+            )*
+            Body: $req_body: expr,
+        },
+    ) => {{
+        ylong_http_client::async_impl::RequestBuilder::new()
+             .method($method)
+             .url(format!("http://{}{}",$addr, $path).as_str())
+             $(.header($req_n, $req_v))*
+             .body(ylong_http_client::async_impl::Body::slice($req_body.as_bytes()))
+             .expect("Request build failed")
     }};
 }

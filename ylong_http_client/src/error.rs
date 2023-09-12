@@ -15,13 +15,21 @@
 //! this crate.
 
 use core::fmt::{Debug, Display, Formatter};
-use std::error::Error;
+use std::{error, io};
 
 /// The structure encapsulates errors that can be encountered when working with
 /// the HTTP client.
+///
+/// # Examples
+///
+/// ```
+/// use ylong_http_client::HttpClientError;
+///
+/// let error = HttpClientError::user_aborted();
+/// ```
 pub struct HttpClientError {
     kind: ErrorKind,
-    cause: Option<Box<dyn Error + Send + Sync>>,
+    cause: Cause,
 }
 
 impl HttpClientError {
@@ -30,14 +38,14 @@ impl HttpClientError {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::HttpClientError;
+    /// use ylong_http_client::HttpClientError;
     ///
     /// let user_aborted = HttpClientError::user_aborted();
     /// ```
     pub fn user_aborted() -> Self {
         Self {
             kind: ErrorKind::UserAborted,
-            cause: None,
+            cause: Cause::NoReason,
         }
     }
 
@@ -46,16 +54,19 @@ impl HttpClientError {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::HttpClientError;
+    /// use ylong_http_client::HttpClientError;
     ///
-    /// # fn error(error: std::io::Error) {
-    /// let other = HttpClientError::other(Some(error));
-    /// # }
+    /// fn error(error: std::io::Error) {
+    ///     let other = HttpClientError::other(error);
+    /// }
     /// ```
-    pub fn other<T: Into<Box<dyn Error + Send + Sync>>>(cause: Option<T>) -> Self {
+    pub fn other<T>(cause: T) -> Self
+    where
+        T: Into<Box<dyn error::Error + Send + Sync>>,
+    {
         Self {
             kind: ErrorKind::Other,
-            cause: cause.map(|e| e.into()),
+            cause: Cause::Other(cause.into()),
         }
     }
 
@@ -64,7 +75,7 @@ impl HttpClientError {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::{ErrorKind, HttpClientError};
+    /// use ylong_http_client::{ErrorKind, HttpClientError};
     ///
     /// let user_aborted = HttpClientError::user_aborted();
     /// assert_eq!(user_aborted.error_kind(), ErrorKind::UserAborted);
@@ -73,20 +84,49 @@ impl HttpClientError {
         self.kind
     }
 
-    pub(crate) fn new_with_cause<T>(kind: ErrorKind, cause: Option<T>) -> Self
+    /// Gets the `io::Error` if this `HttpClientError` comes from an
+    /// `io::Error`.
+    ///
+    /// Returns `None` if the `HttpClientError` doesn't come from an
+    /// `io::Error`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::HttpClientError;
+    ///
+    /// let error = HttpClientError::user_aborted().io_error();
+    /// ```
+    pub fn io_error(&self) -> Option<&io::Error> {
+        match self.cause {
+            Cause::Io(ref io) => Some(io),
+            _ => None,
+        }
+    }
+}
+
+impl HttpClientError {
+    pub(crate) fn from_error<T>(kind: ErrorKind, err: T) -> Self
     where
-        T: Into<Box<dyn Error + Send + Sync>>,
+        T: Into<Box<dyn error::Error + Send + Sync>>,
     {
         Self {
             kind,
-            cause: cause.map(|e| e.into()),
+            cause: Cause::Other(err.into()),
         }
     }
 
-    pub(crate) fn new_with_message(kind: ErrorKind, message: &str) -> Self {
+    pub(crate) fn from_str(kind: ErrorKind, msg: &'static str) -> Self {
         Self {
             kind,
-            cause: Some(CauseMessage::new(message).into()),
+            cause: Cause::Msg(msg),
+        }
+    }
+
+    pub(crate) fn from_io_error(kind: ErrorKind, err: io::Error) -> Self {
+        Self {
+            kind,
+            cause: Cause::Io(err),
         }
     }
 }
@@ -95,9 +135,7 @@ impl Debug for HttpClientError {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let mut builder = f.debug_struct("HttpClientError");
         builder.field("ErrorKind", &self.kind);
-        if let Some(ref cause) = self.cause {
-            builder.field("Cause", cause);
-        }
+        builder.field("Cause", &self.cause);
         builder.finish()
     }
 }
@@ -105,15 +143,12 @@ impl Debug for HttpClientError {
 impl Display for HttpClientError {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.kind.as_str())?;
-
-        if let Some(ref cause) = self.cause {
-            write!(f, ": {cause}")?;
-        }
+        write!(f, ": {}", self.cause)?;
         Ok(())
     }
 }
 
-impl Error for HttpClientError {}
+impl error::Error for HttpClientError {}
 
 /// Error kinds which can indicate the type of a `HttpClientError`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,7 +190,7 @@ impl ErrorKind {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::ErrorKind;
+    /// # use ylong_http_client::ErrorKind;
     ///
     /// assert_eq!(ErrorKind::UserAborted.as_str(), "User Aborted Error");
     /// ```
@@ -175,31 +210,63 @@ impl ErrorKind {
     }
 }
 
-/// Messages for summarizing the cause of the error
-pub(crate) struct CauseMessage(String);
+pub(crate) enum Cause {
+    NoReason,
+    Io(io::Error),
+    Msg(&'static str),
+    Other(Box<dyn error::Error + Send + Sync>),
+}
 
-impl CauseMessage {
-    pub(crate) fn new(message: &str) -> Self {
-        Self(message.to_string())
+impl Debug for Cause {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoReason => write!(f, "No reason"),
+            Self::Io(err) => Debug::fmt(err, f),
+            Self::Msg(msg) => write!(f, "{}", msg),
+            Self::Other(err) => Debug::fmt(err, f),
+        }
     }
 }
 
-impl Debug for CauseMessage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        f.write_str(self.0.as_str())
+impl Display for Cause {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoReason => write!(f, "No reason"),
+            Self::Io(err) => Display::fmt(err, f),
+            Self::Msg(msg) => write!(f, "{}", msg),
+            Self::Other(err) => Display::fmt(err, f),
+        }
     }
 }
 
-impl Display for CauseMessage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        f.write_str(self.0.as_str())
-    }
+macro_rules! err_from_other {
+    ($kind: ident, $err: expr) => {{
+        use crate::error::{ErrorKind, HttpClientError};
+
+        Err(HttpClientError::from_error(ErrorKind::$kind, $err))
+    }};
 }
 
-impl Error for CauseMessage {}
+macro_rules! err_from_io {
+    ($kind: ident, $err: expr) => {{
+        use crate::error::{ErrorKind, HttpClientError};
+
+        Err(HttpClientError::from_io_error(ErrorKind::$kind, $err))
+    }};
+}
+
+macro_rules! err_from_msg {
+    ($kind: ident, $msg: literal) => {{
+        use crate::error::{ErrorKind, HttpClientError};
+
+        Err(HttpClientError::from_str(ErrorKind::$kind, $msg))
+    }};
+}
 
 #[cfg(test)]
 mod ut_util_error {
+    use std::io;
+
     use crate::{ErrorKind, HttpClientError};
 
     /// UT test cases for `ErrorKind::as_str`.
@@ -233,31 +300,46 @@ mod ut_util_error {
     fn ut_err_kind() {
         let user_aborted = HttpClientError::user_aborted();
         assert_eq!(user_aborted.error_kind(), ErrorKind::UserAborted);
-        let other = HttpClientError::other(Some("error"));
+        let other = HttpClientError::other(user_aborted);
         assert_eq!(other.error_kind(), ErrorKind::Other);
     }
 
-    /// UT test cases for `HttpClientError::new_with_cause` function.
+    /// UT test cases for `HttpClientError::from_io_error` function.
     ///
     /// # Brief
-    /// 1. Calls `HttpClientError::new_with_cause`.
+    /// 1. Calls `HttpClientError::from_io_error`.
     /// 2. Checks if the results are correct.
     #[test]
-    fn ut_err_with_cause() {
-        let error_build = HttpClientError::new_with_cause(ErrorKind::Build, Some("error"));
+    fn ut_err_from_io_error() {
+        let error_build =
+            HttpClientError::from_io_error(ErrorKind::Build, io::Error::from(io::ErrorKind::Other));
         assert_eq!(error_build.error_kind(), ErrorKind::Build);
     }
 
-    /// UT test cases for `HttpClientError::new_with_message` function.
+    /// UT test cases for `HttpClientError::from_error` function.
     ///
     /// # Brief
-    /// 1. Calls `HttpClientError::new_with_message`.
+    /// 1. Calls `HttpClientError::from_error`.
     /// 2. Checks if the results are correct.
     #[test]
-    fn ut_err_with_message() {
-        let error_request = HttpClientError::new_with_message(ErrorKind::Request, "error");
+    fn ut_err_from_error() {
+        let error_build = HttpClientError::from_error(
+            ErrorKind::Build,
+            HttpClientError::from_str(ErrorKind::Request, "test error"),
+        );
+        assert_eq!(error_build.error_kind(), ErrorKind::Build);
+    }
+
+    /// UT test cases for `HttpClientError::from_str` function.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::from_str`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_err_from_str() {
+        let error_request = HttpClientError::from_str(ErrorKind::Request, "error");
         assert_eq!(error_request.error_kind(), ErrorKind::Request);
-        let error_timeout = HttpClientError::new_with_message(ErrorKind::Timeout, "error");
+        let error_timeout = HttpClientError::from_str(ErrorKind::Timeout, "error");
         assert_eq!(
             format!("{:?}", error_timeout),
             "HttpClientError { ErrorKind: Timeout, Cause: error }"

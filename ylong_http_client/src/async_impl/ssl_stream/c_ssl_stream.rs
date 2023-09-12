@@ -17,9 +17,9 @@ use core::{future, ptr, slice};
 use std::io::{self, Read, Write};
 
 use crate::async_impl::ssl_stream::{check_io_to_poll, Wrapper};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ssl::{self, ShutdownResult, Ssl, SslErrorCode};
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// An asynchronous version of [`openssl::ssl::SslStream`].
 #[derive(Debug)]

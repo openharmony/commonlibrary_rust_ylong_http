@@ -15,14 +15,13 @@ use std::io::{Read, Write};
 
 use ylong_http::body::sync_impl::Body;
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
-// TODO: Adapter, remove this later.
+use ylong_http::request::Request;
 use ylong_http::response::Response;
 
 use crate::error::{ErrorKind, HttpClientError};
 use crate::sync_impl::conn::StreamData;
 use crate::sync_impl::HttpBody;
 use crate::util::dispatcher::http1::Http1Conn;
-use crate::Request;
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
 
@@ -45,7 +44,7 @@ where
             if let Some(part) = encode_part.as_mut() {
                 let size = part
                     .encode(&mut buf[write..])
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
                 write += size;
                 if size == 0 {
                     encode_part = None;
@@ -55,9 +54,9 @@ where
 
         if write < buf.len() {
             if let Some(body) = encode_body.as_mut() {
-                let size = body.data(&mut buf[write..]).map_err(|e| {
-                    HttpClientError::new_with_cause(ErrorKind::BodyTransfer, Some(e))
-                })?;
+                let size = body
+                    .data(&mut buf[write..])
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::BodyTransfer, e))?;
                 write += size;
                 if size == 0 {
                     encode_body = None;
@@ -68,7 +67,7 @@ where
         if write == buf.len() {
             conn.raw_mut()
                 .write_all(&buf[..write])
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
             write = 0;
         }
     }
@@ -76,7 +75,7 @@ where
     if write != 0 {
         conn.raw_mut()
             .write_all(&buf[..write])
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
     }
 
     // Decodes response part.
@@ -86,11 +85,11 @@ where
             let size = conn
                 .raw_mut()
                 .read(buf.as_mut_slice())
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
             match decoder.decode(&buf[..size]) {
                 Ok(None) => {}
                 Ok(Some((part, rem))) => break (part, rem),
-                Err(e) => return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e))),
+                Err(e) => return err_from_other!(Request, e),
             }
         }
     };
@@ -100,13 +99,13 @@ where
         let chunked = part
             .headers
             .get("Transfer-Encoding")
-            .map(|v| v.to_str().unwrap_or_default())
+            .map(|v| v.to_string().unwrap_or(String::new()))
             .and_then(|s| s.find("chunked"))
             .is_some();
         let content_length = part
             .headers
             .get("Content-Length")
-            .map(|v| v.to_str().unwrap_or_default())
+            .map(|v| v.to_string().unwrap_or(String::new()))
             .and_then(|s| s.parse::<usize>().ok());
 
         let is_trailer = part.headers.get("Trailer").is_some();
@@ -116,10 +115,7 @@ where
             (false, Some(len), _) => HttpBody::text(len, pre, Box::new(conn)),
             (false, None, true) => HttpBody::empty(),
             _ => {
-                return Err(HttpClientError::new_with_message(
-                    ErrorKind::Request,
-                    "Invalid Response Format",
-                ))
+                return err_from_msg!(Request, "Invalid response format");
             }
         }
     };

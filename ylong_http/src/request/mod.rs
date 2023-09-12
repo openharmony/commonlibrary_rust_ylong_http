@@ -42,7 +42,12 @@
 //! assert_eq!(request.uri().to_string(), "www.example.com");
 //! assert_eq!(request.version(), &Version::HTTP1_1);
 //! assert_eq!(
-//!     request.headers().get("accept").unwrap().to_str().unwrap(),
+//!     request
+//!         .headers()
+//!         .get("accept")
+//!         .unwrap()
+//!         .to_string()
+//!         .unwrap(),
 //!     "text/html, application/xml"
 //! );
 //! ```
@@ -56,7 +61,7 @@ use method::Method;
 use uri::Uri;
 
 #[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
-use crate::body::MultiPart;
+use crate::body::{MultiPart, MultiPartBase};
 use crate::error::{ErrorKind, HttpError};
 use crate::headers::{Header, HeaderName, HeaderValue, Headers};
 use crate::version::Version;
@@ -476,7 +481,12 @@ impl<T: Clone> Clone for Request<T> {
 /// assert_eq!(request.uri().to_string(), "www.example.com");
 /// assert_eq!(request.version(), &Version::HTTP1_1);
 /// assert_eq!(
-///     request.headers().get("accept").unwrap().to_str().unwrap(),
+///     request
+///         .headers()
+///         .get("accept")
+///         .unwrap()
+///         .to_string()
+///         .unwrap(),
 ///     "text/html, application/xml"
 /// );
 /// ```
@@ -543,7 +553,7 @@ impl RequestBuilder {
         self
     }
 
-    /// Sets the `Version` of the `Request`. Uses `Version::HTTP11` by default.
+    /// Sets the `Version` of the `Request`. Uses `Version::HTTP1_1` by default.
     ///
     /// # Examples
     ///
@@ -628,49 +638,6 @@ impl RequestBuilder {
             part: self.part?,
             body,
         })
-    }
-
-    /// Creates a `Request` that uses this `RequestBuilder` configuration and
-    /// the provided `Multipart`. You can also provide a `Uploader<Multipart>`
-    /// as the body.
-    ///
-    /// # Error
-    ///
-    /// This method fails if some configurations are wrong.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use ylong_http::body::{MultiPart, Part};
-    /// # use ylong_http::request::RequestBuilder;
-    ///
-    /// # fn create_request_with_multipart(multipart: MultiPart) {
-    /// let request = RequestBuilder::new().multipart(multipart).unwrap();
-    /// # }
-    /// ```
-    #[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
-    pub fn multipart<T>(self, body: T) -> Result<Request<T>, HttpError>
-    where
-        T: AsRef<MultiPart>,
-    {
-        let value = format!("multipart/form-data; boundary={}", body.as_ref().boundary());
-
-        let mut part = self.part?;
-        let _ = part.headers.insert(
-            "Content-Type",
-            HeaderValue::try_from(value.as_str())
-                .map_err(|_| HttpError::from(ErrorKind::InvalidInput))?,
-        );
-
-        if let Some(size) = body.as_ref().total_bytes() {
-            let _ = part.headers.insert(
-                "Content-Length",
-                HeaderValue::try_from(format!("{size}").as_str())
-                    .map_err(|_| HttpError::from(ErrorKind::InvalidInput))?,
-            );
-        }
-
-        Ok(Request { part, body })
     }
 }
 

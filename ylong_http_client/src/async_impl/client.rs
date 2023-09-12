@@ -11,57 +11,60 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use ylong_http::body::{ChunkBody, TextBody};
-use ylong_http::request::method::Method;
-use ylong_http::response::Response;
-use ylong_http::version::Version;
+use ylong_http::request::uri::Uri;
 
-use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
-use crate::async_impl::timeout::TimeoutFuture;
-use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
+use super::pool::ConnPool;
+use super::timeout::TimeoutFuture;
+use super::{conn, Body, Connector, HttpConnector, Request, Response};
+use crate::error::HttpClientError;
+use crate::runtime::timeout;
+use crate::util::config::{
+    ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
+};
+use crate::util::dispatcher::Conn;
+use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
-use crate::util::redirect::TriggerKind;
-use crate::util::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Redirect};
+use crate::util::redirect::{RedirectInfo, Trigger};
 #[cfg(feature = "__tls")]
 use crate::CertVerifier;
-#[cfg(feature = "http2")]
-use crate::H2Config;
-use crate::{sleep, timeout, ErrorKind, HttpClientError, Proxy, Request, Timeout, Uri};
 
 /// HTTP asynchronous client implementation. Users can use `async_impl::Client`
-/// to send `Request` asynchronously. `async_impl::Client` depends on a
-/// [`async_impl::Connector`] that can be customized by the user.
+/// to send `Request` asynchronously.
+///
+/// `async_impl::Client` depends on a [`async_impl::Connector`] that can be
+/// customized by the user.
 ///
 /// [`async_impl::Connector`]: Connector
 ///
 /// # Examples
 ///
-/// ```
-/// use ylong_http_client::async_impl::Client;
-/// use ylong_http_client::{EmptyBody, Request};
+/// ```no_run
+/// use ylong_http_client::async_impl::{Body, Client, Request};
+/// use ylong_http_client::HttpClientError;
 ///
-/// async fn async_client() {
+/// async fn async_client() -> Result<(), HttpClientError> {
 ///     // Creates a new `Client`.
 ///     let client = Client::new();
 ///
 ///     // Creates a new `Request`.
-///     let request = Request::new(EmptyBody);
+///     let request = Request::builder().body(Body::empty())?;
 ///
 ///     // Sends `Request` and wait for the `Response` to return asynchronously.
-///     let response = client.request(request).await.unwrap();
+///     let response = client.request(request).await?;
 ///
 ///     // Gets the content of `Response`.
 ///     let status = response.status();
+///
+///     Ok(())
 /// }
 /// ```
 pub struct Client<C: Connector> {
     inner: ConnPool<C, C::Stream>,
-    client_config: ClientConfig,
-    http_config: HttpConfig,
+    config: ClientConfig,
 }
 
 impl Client<HttpConnector> {
-    /// Creates a new, default `AsyncClient`, which uses
+    /// Creates a new, default `Client`, which uses
     /// [`async_impl::HttpConnector`].
     ///
     /// [`async_impl::HttpConnector`]: HttpConnector
@@ -94,13 +97,19 @@ impl Client<HttpConnector> {
 }
 
 impl<C: Connector> Client<C> {
-    /// Creates a new, default `AsyncClient` with a given connector.
+    /// Creates a new, default `Client` with a given connector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::{Client, HttpConnector};
+    ///
+    /// let client = Client::with_connector(HttpConnector::default());
+    /// ```
     pub fn with_connector(connector: C) -> Self {
-        let http_config = HttpConfig::default();
         Self {
-            inner: ConnPool::new(http_config.clone(), connector),
-            client_config: ClientConfig::default(),
-            http_config,
+            inner: ConnPool::new(HttpConfig::default(), connector),
+            config: ClientConfig::default(),
         }
     }
 
@@ -109,179 +118,93 @@ impl<C: Connector> Client<C> {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::async_impl::Client;
-    /// use ylong_http_client::{EmptyBody, Request};
+    /// use ylong_http_client::async_impl::{Body, Client, Request};
+    /// use ylong_http_client::HttpClientError;
     ///
-    /// async fn async_client() {
+    /// async fn async_client() -> Result<(), HttpClientError> {
     ///     let client = Client::new();
-    ///     let response = client.request(Request::new(EmptyBody)).await;
+    ///     let response = client
+    ///         .request(Request::builder().body(Body::empty())?)
+    ///         .await?;
+    ///     Ok(())
     /// }
     /// ```
-    // TODO: change result to `Response<HttpBody>` later.
-    pub async fn request<T: Body>(
-        &self,
-        request: Request<T>,
-    ) -> Result<super::Response, HttpClientError> {
-        let (part, body) = request.into_parts();
-
-        let content_length = part
-            .headers
-            .get("Content-Length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok())
-            .is_some();
-
-        let transfer_encoding = part
-            .headers
-            .get("Transfer-Encoding")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.contains("chunked"))
-            .unwrap_or(false);
-
-        let response = match (content_length, transfer_encoding) {
-            (_, true) => {
-                let request = Request::from_raw_parts(part, ChunkBody::from_async_body(body));
-                self.retry_send_request(request).await
-            }
-            (true, false) => {
-                let request = Request::from_raw_parts(part, TextBody::from_async_body(body));
-                self.retry_send_request(request).await
-            }
-            (false, false) => {
-                let request = Request::from_raw_parts(part, body);
-                self.retry_send_request(request).await
-            }
-        };
-        response.map(super::Response::new)
-    }
-
-    async fn retry_send_request<T: Body>(
-        &self,
-        mut request: Request<T>,
-    ) -> Result<Response<HttpBody>, HttpClientError> {
-        let mut retries = self.client_config.retry.times().unwrap_or(0);
+    pub async fn request(&self, request: Request) -> Result<Response, HttpClientError> {
+        let mut request = request;
+        let mut retries = self.config.retry.times().unwrap_or(0);
         loop {
-            let response = self.send_request_retryable(&mut request).await;
-            if response.is_ok() || retries == 0 {
+            let response = self.send_request(&mut request).await;
+            // Only bodies which are reusable can be retried.
+            if response.is_ok() || retries == 0 || !request.body_mut().reuse() {
                 return response;
             }
             retries -= 1;
         }
     }
+}
 
-    async fn send_request_retryable<T: Body>(
-        &self,
-        request: &mut Request<T>,
-    ) -> Result<Response<HttpBody>, HttpClientError> {
-        let response = self
-            .send_request_with_uri(request.uri().clone(), request)
-            .await?;
-        self.redirect_request(response, request).await
+impl<C: Connector> Client<C> {
+    async fn send_request(&self, request: &mut Request) -> Result<Response, HttpClientError> {
+        let response = self.send_unformatted_request(request).await?;
+        self.redirect(response, request).await
     }
 
-    async fn redirect_request<T: Body>(
+    async fn send_unformatted_request(
         &self,
-        mut response: Response<HttpBody>,
-        request: &mut Request<T>,
-    ) -> Result<Response<HttpBody>, HttpClientError> {
-        let mut redirected_list = vec![];
-        let mut dst_uri = Uri::default();
-        loop {
-            if Redirect::is_redirect(response.status().clone(), request) {
-                redirected_list.push(request.uri().clone());
-                let trigger = Redirect::get_redirect(
-                    &mut dst_uri,
-                    &self.client_config.redirect,
-                    &redirected_list,
-                    &response,
-                    request,
-                )?;
+        request: &mut Request,
+    ) -> Result<Response, HttpClientError> {
+        RequestFormatter::new(&mut *request).format()?;
+        let conn = self.connect_to(request.uri()).await?;
+        self.send_request_on_conn(conn, request).await
+    }
 
-                UriFormatter::new().format(&mut dst_uri)?;
-                let _ = request
-                    .headers_mut()
-                    .insert("Host", format_host_value(&dst_uri)?.as_bytes());
-                match trigger {
-                    TriggerKind::NextLink => {
-                        response = self.send_request_with_uri(dst_uri.clone(), request).await?;
-                        continue;
-                    }
-                    TriggerKind::Stop => {
-                        return Ok(response);
-                    }
-                }
-            } else {
-                return Ok(response);
+    async fn connect_to(&self, uri: &Uri) -> Result<Conn<C::Stream>, HttpClientError> {
+        if let Some(dur) = self.config.connect_timeout.inner() {
+            match timeout(dur, self.inner.connect_to(uri)).await {
+                Err(elapsed) => err_from_other!(Timeout, elapsed),
+                Ok(Ok(conn)) => Ok(conn),
+                Ok(Err(e)) => Err(e),
             }
+        } else {
+            self.inner.connect_to(uri).await
         }
     }
 
-    async fn send_request_with_uri<T: Body>(
+    async fn send_request_on_conn(
         &self,
-        mut uri: Uri,
-        request: &mut Request<T>,
-    ) -> Result<Response<HttpBody>, HttpClientError> {
-        UriFormatter::new().format(&mut uri)?;
-        RequestFormatter::new(request).normalize()?;
-
-        match self.http_config.version {
-            #[cfg(feature = "http2")]
-            HttpVersion::Http2PriorKnowledge => self.http2_request(uri, request).await,
-            HttpVersion::Http1 => {
-                if Version::HTTP1_0 == *request.version() && Method::CONNECT == *request.method() {
-                    return Err(HttpClientError::new_with_message(
-                        ErrorKind::Request,
-                        "Unknown METHOD in HTTP/1.0",
-                    ));
-                }
-                let conn = if let Some(dur) = self.client_config.connect_timeout.inner() {
-                    match timeout(dur, self.inner.connect_to(uri)).await {
-                        Err(_elapsed) => {
-                            return Err(HttpClientError::new_with_message(
-                                ErrorKind::Timeout,
-                                "Connect timeout",
-                            ))
-                        }
-                        Ok(Ok(conn)) => conn,
-                        Ok(Err(e)) => return Err(e),
-                    }
-                } else {
-                    self.inner.connect_to(uri).await?
-                };
-
-                let mut retryable = Retryable::default();
-                if let Some(timeout) = self.client_config.request_timeout.inner() {
-                    TimeoutFuture {
-                        timeout: Some(Box::pin(sleep(timeout))),
-                        future: Box::pin(conn::request(conn, request, &mut retryable)),
-                    }
-                    .await
-                } else {
-                    conn::request(conn, request, &mut retryable).await
-                }
-            }
+        conn: Conn<C::Stream>,
+        request: &mut Request,
+    ) -> Result<Response, HttpClientError> {
+        if let Some(timeout) = self.config.request_timeout.inner() {
+            TimeoutFuture::new(conn::request(conn, request), timeout).await
+        } else {
+            conn::request(conn, request).await
         }
     }
 
-    #[cfg(feature = "http2")]
-    async fn http2_request<T: Body>(
+    async fn redirect(
         &self,
-        uri: Uri,
-        request: &mut Request<T>,
-    ) -> Result<Response<HttpBody>, HttpClientError> {
-        let mut retryable = Retryable::default();
-
-        const RETRY: usize = 1;
-        let mut times = 0;
+        response: Response,
+        request: &mut Request,
+    ) -> Result<Response, HttpClientError> {
+        let mut response = response;
+        let mut info = RedirectInfo::new();
         loop {
-            retryable.set_retry(false);
-            let conn = self.inner.connect_to(uri.clone()).await?;
-            let response = conn::request(conn, request, &mut retryable).await;
-            if retryable.retry() && times < RETRY {
-                times += 1;
-                continue;
+            match self
+                .config
+                .redirect
+                .inner()
+                .redirect(request, &response, &mut info)?
+            {
+                Trigger::NextLink => {
+                    // Here the body should be reused.
+                    if !request.body_mut().reuse() {
+                        *request.body_mut() = Body::empty();
+                    }
+                    response = self.send_unformatted_request(request).await?;
+                }
+                Trigger::Stop => return Ok(response),
             }
-            return response;
         }
     }
 }
@@ -289,23 +212,6 @@ impl<C: Connector> Client<C> {
 impl Default for Client<HttpConnector> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct Retryable {
-    #[cfg(feature = "http2")]
-    retry: bool,
-}
-
-#[cfg(feature = "http2")]
-impl Retryable {
-    pub(crate) fn set_retry(&mut self, retryable: bool) {
-        self.retry = retryable
-    }
-
-    pub(crate) fn retry(&self) -> bool {
-        self.retry
     }
 }
 
@@ -363,39 +269,9 @@ impl ClientBuilder {
     ///
     /// let builder = ClientBuilder::new().http1_only();
     /// ```
+    #[cfg(feature = "http1_1")]
     pub fn http1_only(mut self) -> Self {
         self.http.version = HttpVersion::Http1;
-        self
-    }
-
-    /// Only use HTTP/2.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::async_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new().http2_prior_knowledge();
-    /// ```
-    #[cfg(feature = "http2")]
-    pub fn http2_prior_knowledge(mut self) -> Self {
-        self.http.version = HttpVersion::Http2PriorKnowledge;
-        self
-    }
-
-    /// HTTP/2 settings.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::async_impl::ClientBuilder;
-    /// use ylong_http_client::H2Config;
-    ///
-    /// let builder = ClientBuilder::new().http2_settings(H2Config::default());
-    /// ```
-    #[cfg(feature = "http2")]
-    pub fn http2_settings(mut self, config: H2Config) -> Self {
-        self.http.http2_config = config;
         self
     }
 
@@ -488,10 +364,68 @@ impl ClientBuilder {
         let connector = HttpConnector::new(config);
 
         Ok(Client {
-            inner: ConnPool::new(self.http.clone(), connector),
-            client_config: self.client,
-            http_config: self.http,
+            inner: ConnPool::new(self.http, connector),
+            config: self.client,
         })
+    }
+}
+
+#[cfg(feature = "http2")]
+impl ClientBuilder {
+    /// Only use HTTP/2.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().http2_prior_knowledge();
+    /// ```
+    pub fn http2_prior_knowledge(mut self) -> Self {
+        self.http.version = HttpVersion::Http2PriorKnowledge;
+        self
+    }
+
+    /// Sets the `SETTINGS_MAX_FRAME_SIZE`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().set_http2_max_frame_size(2 << 13);
+    /// ```
+    pub fn set_http2_max_frame_size(mut self, size: u32) -> Self {
+        self.http.http2_config.max_frame_size = size;
+        self
+    }
+
+    /// Sets the `SETTINGS_MAX_HEADER_LIST_SIZE`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().set_http2_max_header_list_size(16 << 20);
+    /// ```
+    pub fn set_http2_max_header_list_size(mut self, size: u32) -> Self {
+        self.http.http2_config.max_header_list_size = size;
+        self
+    }
+
+    /// Sets the `SETTINGS_HEADER_TABLE_SIZE`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().set_http2_max_header_list_size(4096);
+    /// ```
+    pub fn set_http2_header_table_size(mut self, size: u32) -> Self {
+        self.http.http2_config.header_table_size = size;
+        self
     }
 }
 
@@ -740,7 +674,11 @@ impl Default for ClientBuilder {
 #[cfg(test)]
 mod ut_async_impl_client {
     use crate::async_impl::Client;
-    use crate::{CertVerifier, Proxy, ServerCerts};
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    use crate::async_impl::{Body, Request, Response};
+    use crate::Proxy;
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    use crate::{CertVerifier, ServerCerts};
 
     /// UT test cases for `Client::builder`.
     ///
@@ -749,6 +687,7 @@ mod ut_async_impl_client {
     /// 2. Calls `http_config`, `client_config`, `build` on the builder
     ///    respectively.
     /// 3. Checks if the result is as expected.
+    #[cfg(feature = "http1_1")]
     #[test]
     fn ut_client_builder() {
         let builder = Client::builder().http1_only().build();
@@ -797,9 +736,7 @@ mod ut_async_impl_client {
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     async fn client_request_redirect() {
         use ylong_http::h1::ResponseDecoder;
-        use ylong_http::request::uri::Uri;
-        use ylong_http::request::Request;
-        use ylong_http::response::Response;
+        use ylong_http::response::Response as HttpResponse;
 
         use crate::async_impl::{ClientBuilder, HttpBody};
         use crate::util::normalizer::BodyLength;
@@ -813,17 +750,19 @@ mod ut_async_impl_client {
         let content_bytes = "";
         let until_close =
             HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
-        let response = Response::from_raw_parts(result.0, until_close);
-        let mut request = Request::new("this is a body");
-        let request_uri = request.uri_mut();
-        *request_uri = Uri::from_bytes(b"http://example1.com:80/foo?a=1").unwrap();
+        let response = HttpResponse::from_raw_parts(result.0, until_close);
+        let response = Response::new(response);
+        let mut request = Request::builder()
+            .url("http://example1.com:80/foo?a=1")
+            .body(Body::slice("this is a body"))
+            .unwrap();
 
         let client = ClientBuilder::default()
             .redirect(Redirect::limited(2))
             .connect_timeout(Timeout::from_secs(2))
             .build()
             .unwrap();
-        let res = client.redirect_request(response, &mut request).await;
+        let res = client.redirect(response, &mut request).await;
         assert!(res.is_ok())
     }
 
@@ -844,10 +783,11 @@ mod ut_async_impl_client {
 
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     async fn client_request_version_1_0() {
-        use ylong_http::request::Request;
-        let request = Request::connect("http://example1.com:80/foo?a=1")
+        let request = Request::builder()
+            .url("http://example1.com:80/foo?a=1")
+            .method("CONNECT")
             .version("HTTP/1.0")
-            .body("")
+            .body(Body::empty())
             .unwrap();
 
         let client = Client::builder().http1_only().build().unwrap();
@@ -869,8 +809,10 @@ mod ut_async_impl_client {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     struct Verifier;
 
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     impl CertVerifier for Verifier {
         fn verify(&self, _certs: &ServerCerts) -> bool {
             false
@@ -879,11 +821,13 @@ mod ut_async_impl_client {
 
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     async fn client_request_verify() {
-        use ylong_http::request::Request;
         // Creates a `async_impl::Client`
         let client = Client::builder().cert_verifier(Verifier).build().unwrap();
         // Creates a `Request`.
-        let request = Request::get("https://www.example.com").body("").unwrap();
+        let request = Request::builder()
+            .url("https://www.example.com")
+            .body(Body::empty())
+            .unwrap();
         // Sends request and receives a `Response`.
         let response = client.request(request).await;
         assert!(response.is_err())

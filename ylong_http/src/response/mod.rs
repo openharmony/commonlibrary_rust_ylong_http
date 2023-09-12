@@ -45,10 +45,9 @@ impl<T> Response<T> {
         &self.part.version
     }
 
-    /// Gets an immutable reference to the `StatusCode`.
-    // TODO: change this to `status_code`?
-    pub fn status(&self) -> &StatusCode {
-        &self.part.status
+    /// Gets the `StatusCode`.
+    pub fn status(&self) -> StatusCode {
+        self.part.status
     }
 
     /// Gets an immutable reference to the `Headers`.

@@ -50,7 +50,7 @@ pub use chunk::{Chunk, ChunkBody, ChunkBodyDecoder, ChunkExt, ChunkState, Chunks
 pub use empty::EmptyBody;
 pub use mime::{
     MimeMulti, MimeMultiBuilder, MimeMultiDecoder, MimeMultiEncoder, MimePart, MimePartBuilder,
-    MimePartEncoder, MimeType, MultiPart, Part, TokenStatus, XPart,
+    MimePartEncoder, MimeType, MultiPart, MultiPartBase, Part, TokenStatus, XPart,
 };
 pub use text::{Text, TextBody, TextBodyDecoder};
 
@@ -339,7 +339,7 @@ pub mod async_impl {
         /// // read chunk body and return headers
         /// let res = chunk.trailer().await.unwrap().unwrap();
         /// assert_eq!(
-        ///     res.get("accept").unwrap().to_str().unwrap(),
+        ///     res.get("accept").unwrap().to_string().unwrap(),
         ///     "text/html".to_string()
         /// );
         /// # }
@@ -397,63 +397,6 @@ pub mod async_impl {
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let fut = self.get_mut();
             Pin::new(&mut *fut.body).poll_data(cx, fut.buf)
-        }
-    }
-
-    // TODO: Adapter, remove this later.
-    pub(crate) fn poll_read<T: AsyncRead + Unpin>(
-        reader: Pin<&mut T>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
-        let mut read_buf = ReadBuf::new(buf);
-        let filled = read_buf.filled().len();
-        match reader.poll_read(cx, &mut read_buf) {
-            Poll::Ready(Ok(())) => {
-                let new_filled = read_buf.filled().len();
-                Poll::Ready(Ok(new_filled - filled))
-            }
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-
-    // TODO: Adapter, remove this later.
-    impl Body for &'static [u8] {
-        type Error = std::io::Error;
-
-        fn poll_data(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize, Self::Error>> {
-            poll_read(self, cx, buf)
-        }
-    }
-
-    // TODO: Adapter, remove this later.
-    impl Body for &'static str {
-        type Error = std::io::Error;
-
-        fn poll_data(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize, Self::Error>> {
-            poll_read(Pin::new(&mut self.as_bytes()), cx, buf)
-        }
-    }
-
-    // TODO: Adapter, remove this later.
-    impl Body for String {
-        type Error = std::io::Error;
-
-        fn poll_data(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize, Self::Error>> {
-            poll_read(Pin::new(&mut self.as_bytes()), cx, buf)
         }
     }
 }

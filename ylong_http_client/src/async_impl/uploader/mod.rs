@@ -19,9 +19,10 @@ use std::task::{Context, Poll};
 
 pub use builder::{UploaderBuilder, WantsReader};
 pub use operator::{Console, UploadOperator};
-use ylong_http::body::async_impl::Body;
+use ylong_http::body::{MultiPart, MultiPartBase};
 
-use crate::{AsyncRead, ErrorKind, HttpClientError, ReadBuf};
+use crate::error::ErrorKind;
+use crate::runtime::{AsyncRead, ReadBuf};
 
 /// An uploader that can help you upload the request body.
 ///
@@ -47,7 +48,6 @@ use crate::{AsyncRead, ErrorKind, HttpClientError, ReadBuf};
 /// `Console`:
 /// ```no_run
 /// # use ylong_http_client::async_impl::Uploader;
-/// # use ylong_http_client::Response;
 ///
 /// // Creates a default `Uploader` that show progress on console.
 /// let mut uploader = Uploader::console("HelloWorld".as_bytes());
@@ -57,8 +57,8 @@ use crate::{AsyncRead, ErrorKind, HttpClientError, ReadBuf};
 /// ```no_run
 /// # use std::pin::Pin;
 /// # use std::task::{Context, Poll};
-/// # use ylong_http_client::async_impl::{Uploader, UploadOperator};
-/// # use ylong_http_client::{Response, SpeedLimit, Timeout};
+/// # use ylong_http_client::async_impl::{Uploader, UploadOperator, Response};
+/// # use ylong_http_client::{SpeedLimit, Timeout};
 /// # use ylong_http_client::HttpClientError;
 ///
 /// # async fn upload_and_show_progress() {
@@ -122,18 +122,16 @@ impl Uploader<(), ()> {
     }
 }
 
-impl<R, T> Body for Uploader<R, T>
+impl<R, T> AsyncRead for Uploader<R, T>
 where
     R: AsyncRead + Unpin,
     T: UploadOperator + Unpin,
 {
-    type Error = HttpClientError;
-
-    fn poll_data(
+    fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
 
         if this.info.is_none() {
@@ -149,34 +147,24 @@ where
         ) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(e)) if e.error_kind() == ErrorKind::UserAborted => {
-                return Poll::Ready(Ok(0));
+                return Poll::Ready(Ok(()));
             }
-            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-            Poll::Pending => return Poll::Pending,
-        }
-
-        let mut read_buf = ReadBuf::new(buf);
-        let filled = read_buf.filled().len();
-        match Pin::new(&mut this.reader).poll_read(cx, &mut read_buf) {
-            Poll::Ready(Ok(_)) => {}
+            // TODO: Consider another way to handle error.
             Poll::Ready(Err(e)) => {
-                return Poll::Ready(Err(HttpClientError::new_with_cause(
-                    ErrorKind::BodyTransfer,
-                    Some(e),
+                return Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    Box::new(e),
                 )))
             }
             Poll::Pending => return Poll::Pending,
         }
 
-        let new_filled = read_buf.filled().len();
-        let read_bytes = new_filled - filled;
-        info.uploaded_bytes += read_bytes as u64;
-        Poll::Ready(Ok(read_bytes))
+        Pin::new(&mut this.reader).poll_read(cx, buf)
     }
 }
 
-impl<R, T> AsRef<R> for Uploader<R, T> {
-    fn as_ref(&self) -> &R {
+impl<T: UploadOperator + Unpin> MultiPartBase for Uploader<MultiPart, T> {
+    fn multipart(&self) -> &MultiPart {
         &self.reader
     }
 }
@@ -198,12 +186,12 @@ impl UploadInfo {
 
 #[cfg(all(test, feature = "ylong_base"))]
 mod ut_uploader {
-    use ylong_http::body::async_impl::Body;
     use ylong_http::body::{MultiPart, Part};
+    use ylong_runtime::io::AsyncRead;
 
     use crate::async_impl::uploader::{Context, Pin, Poll};
     use crate::async_impl::{UploadOperator, Uploader, UploaderBuilder};
-    use crate::{ErrorKind, HttpClientError};
+    use crate::HttpClientError;
 
     /// UT test cases for `UploadOperator::data`.
     ///
@@ -227,7 +215,11 @@ mod ut_uploader {
 
         let mut size = user_slice.len();
         while size == user_slice.len() {
-            size = uploader.data(user_slice.as_mut_slice()).await.unwrap();
+            let mut buf = ylong_runtime::io::ReadBuf::new(user_slice.as_mut_slice());
+            ylong_runtime::futures::poll_fn(|cx| Pin::new(&mut uploader).poll_read(cx, &mut buf))
+                .await
+                .unwrap();
+            size = buf.filled_len();
             output_vec.extend_from_slice(&user_slice[..size]);
         }
         assert_eq!(&output_vec, b"HelloWorld");
@@ -238,10 +230,11 @@ mod ut_uploader {
             .multipart(multipart)
             .console()
             .build();
-        let size = multi_uploader
-            .data(user_slice.as_mut_slice())
+        let mut buf = ylong_runtime::io::ReadBuf::new(user_slice.as_mut_slice());
+        ylong_runtime::futures::poll_fn(|cx| Pin::new(&mut multi_uploader).poll_read(cx, &mut buf))
             .await
             .unwrap();
+        let size = buf.filled_len();
         assert_eq!(size, 12);
     }
 
@@ -269,10 +262,7 @@ mod ut_uploader {
                 total: Option<u64>,
             ) -> Poll<Result<(), HttpClientError>> {
                 if uploaded > total.unwrap() {
-                    return Poll::Ready(Err(HttpClientError::new_with_message(
-                        ErrorKind::BodyTransfer,
-                        "UploadOperator failed",
-                    )));
+                    return Poll::Ready(err_from_msg!(BodyTransfer, "UploadOperator failed"));
                 }
                 Poll::Ready(Ok(()))
             }

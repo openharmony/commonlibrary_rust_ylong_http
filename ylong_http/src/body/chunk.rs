@@ -192,32 +192,6 @@ impl<T: AsyncRead + Unpin + Send + Sync> ChunkBody<FromAsyncReader<T>> {
     }
 }
 
-impl<T: async_impl::Body + Unpin> ChunkBody<FromAsyncBody<T>> {
-    /// Creates a new `ChunkBody` by `async body`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http::body::ChunkBody;
-    ///
-    /// let task = ChunkBody::from_async_body("".as_bytes());
-    /// ```
-    pub fn from_async_body(body: T) -> Self {
-        ChunkBody {
-            from: FromAsyncBody::new(body),
-            trailer_value: vec![],
-            chunk_data: ChunkData::new(vec![0; CHUNK_SIZE]),
-            data_status: DataState::Partial,
-            encode_status: EncodeStatus::new(),
-            trailer: EncodeTrailer::new(),
-        }
-    }
-
-    fn chunk_encode(&mut self, dst: &mut [u8]) -> usize {
-        self.chunk_encode_reader(dst)
-    }
-}
-
 impl<'a> sync_impl::Body for ChunkBody<FromBytes<'a>> {
     type Error = Infallible;
 
@@ -343,60 +317,6 @@ impl<T: AsyncRead + Unpin + Send + Sync> async_impl::Body for ChunkBody<FromAsyn
     }
 }
 
-impl<T: async_impl::Body> async_impl::Body for ChunkBody<FromAsyncBody<T>> {
-    type Error = T::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
-        let chunk_body = self.get_mut();
-        let mut count = 0;
-        while count != buf.len() {
-            let encode_size = match chunk_body.data_status {
-                DataState::Partial => {
-                    if !chunk_body.encode_status.get_flag() {
-                        match Pin::new(&mut *chunk_body.from)
-                            .poll_data(_cx, &mut chunk_body.chunk_data.chunk_buf)
-                        {
-                            Poll::Ready(Ok(size)) => {
-                                chunk_body.encode_status.set_flag(true);
-                                // chunk idx reset zero
-                                chunk_body.encode_status.set_chunk_idx(0);
-                                chunk_body.chunk_data.chunk_last = size;
-                                let data_size = chunk_body.chunk_encode(&mut buf[count..]);
-                                Poll::Ready(data_size)
-                            }
-                            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                            Poll::Pending => Poll::Pending,
-                        }
-                    } else {
-                        Poll::Ready(chunk_body.chunk_encode(&mut buf[count..]))
-                    }
-                }
-                DataState::Complete => Poll::Ready(chunk_body.trailer_encode(&mut buf[count..])),
-                DataState::Finish => {
-                    return Poll::Ready(Ok(count));
-                }
-            };
-
-            match encode_size {
-                Poll::Ready(size) => {
-                    count += size;
-                }
-                Poll::Pending => {
-                    if count != 0 {
-                        return Poll::Ready(Ok(count));
-                    }
-                    return Poll::Pending;
-                }
-            }
-        }
-        Poll::Ready(Ok(buf.len()))
-    }
-}
-
 impl<'a> ChunkBody<FromBytes<'a>> {
     fn bytes_encode(&mut self, dst: &mut [u8]) -> usize {
         if !self.encode_status.get_flag() {
@@ -435,7 +355,7 @@ impl<T> ChunkBody<T> {
             trailer_vec.extend_from_slice(name.as_bytes());
             trailer_vec.extend_from_slice(b":");
             // to_string will not return err, so can use unwrap directly
-            trailer_vec.extend_from_slice(value.to_str().unwrap().as_bytes());
+            trailer_vec.extend_from_slice(value.to_string().unwrap().as_bytes());
             trailer_vec.extend_from_slice(b"\r\n");
         }
         self.trailer_value = trailer_vec;
@@ -2260,6 +2180,6 @@ mod ut_chunk {
 
         let trailer_headers = decoder.get_trailer().unwrap().unwrap();
         let value = trailer_headers.get("trailer");
-        assert_eq!(value.unwrap().to_str().unwrap(), "value");
+        assert_eq!(value.unwrap().to_string().unwrap(), "value");
     }
 }

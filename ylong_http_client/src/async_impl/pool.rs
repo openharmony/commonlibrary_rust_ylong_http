@@ -16,11 +16,14 @@ use std::future::Future;
 use std::mem::take;
 use std::sync::{Arc, Mutex};
 
+use ylong_http::request::uri::Uri;
+
 use crate::async_impl::Connector;
-use crate::error::HttpClientError;
+use crate::error::{ErrorKind, HttpClientError};
+use crate::runtime::{AsyncRead, AsyncWrite};
+use crate::util::config::{HttpConfig, HttpVersion};
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
 use crate::util::pool::{Pool, PoolKey};
-use crate::{AsyncRead, AsyncWrite, ErrorKind, HttpConfig, HttpVersion, Uri};
 
 pub(crate) struct ConnPool<C, S> {
     pool: Pool<PoolKey, Conns<S>>,
@@ -37,7 +40,7 @@ impl<C: Connector> ConnPool<C, C::Stream> {
         }
     }
 
-    pub(crate) async fn connect_to(&self, uri: Uri) -> Result<Conn<C::Stream>, HttpClientError> {
+    pub(crate) async fn connect_to(&self, uri: &Uri) -> Result<Conn<C::Stream>, HttpClientError> {
         let key = PoolKey::new(
             uri.scheme().unwrap().clone(),
             uri.authority().unwrap().clone(),
@@ -45,7 +48,7 @@ impl<C: Connector> ConnPool<C, C::Stream> {
 
         self.pool
             .get(key, Conns::new)
-            .conn(self.config.clone(), self.connector.clone().connect(&uri))
+            .conn(self.config.clone(), self.connector.clone().connect(uri))
             .await
     }
 }
@@ -104,7 +107,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
                     let dispatcher = ConnDispatcher::http2(
                         config.http2_config,
                         connect_fut.await.map_err(|e| {
-                            HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
+                            HttpClientError::from_error(ErrorKind::Connect, Some(e))
                         })?,
                     );
                     Ok(self.dispatch_conn(dispatcher))
@@ -115,14 +118,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
                 if let Some(conn) = self.get_exist_conn() {
                     return Ok(conn);
                 }
-                let dispatcher =
-                    ConnDispatcher::http1(connect_fut.await.map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::Connect, Some(e))
-                    })?);
+                let dispatcher = ConnDispatcher::http1(
+                    connect_fut
+                        .await
+                        .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?,
+                );
                 Ok(self.dispatch_conn(dispatcher))
             }
             #[cfg(not(feature = "http1_1"))]
-            HttpVersion::Http1 => Err(HttpClientError::new_with_message(
+            HttpVersion::Http11 => Err(HttpClientError::from_str(
                 ErrorKind::Connect,
                 "Invalid HTTP VERSION",
             )),
@@ -138,21 +142,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
     }
 
     fn get_exist_conn(&self) -> Option<Conn<S>> {
-        {
-            let mut list = self.list.lock().unwrap();
-            let mut conn = None;
-            let curr = take(&mut *list);
-            for dispatcher in curr.into_iter() {
-                // Discard invalid dispatchers.
-                if dispatcher.is_shutdown() {
-                    continue;
-                }
-                if conn.is_none() {
-                    conn = dispatcher.dispatch();
-                }
-                list.push(dispatcher);
+        let mut list = self.list.lock().unwrap();
+        let mut conn = None;
+        let curr = take(&mut *list);
+        for dispatcher in curr.into_iter() {
+            // Discard invalid dispatchers.
+            if dispatcher.is_shutdown() {
+                continue;
             }
-            conn
+            if conn.is_none() {
+                conn = dispatcher.dispatch();
+            }
+            list.push(dispatcher);
         }
+        conn
     }
 }

@@ -655,7 +655,7 @@ mod ut_qpack_decoder {
         macro_rules! check_map {
             ($map: expr, { $($(,)? $k: literal => $v: literal)* } $(,)?) => {
                 $(
-                    assert_eq!($map.get($k).unwrap().to_str().unwrap(), $v);
+                    assert_eq!($map.get($k).unwrap().to_string().unwrap(), $v);
                 )*
             }
         }

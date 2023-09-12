@@ -12,11 +12,10 @@
 // limitations under the License.
 
 use std::mem::forget;
-use std::ops::Deref;
 
 use libc::c_int;
 
-use crate::util::c_openssl::x509::{X509Ref, X509Store, X509StoreContextRef, X509};
+use crate::util::c_openssl::x509::{X509StoreContextRef, X509};
 use crate::{ErrorKind, HttpClientError};
 /// ServerCerts is provided to fetch info from X509
 pub struct ServerCerts<'a> {
@@ -44,7 +43,7 @@ impl<'a> ServerCerts<'a> {
         let cert = self
             .inner
             .get_current_cert()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         Ok(cert.get_cert_version() as usize)
     }
 
@@ -64,10 +63,10 @@ impl<'a> ServerCerts<'a> {
         let cert = self
             .inner
             .get_current_cert()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let cert_name = cert
             .get_cert_name()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let mut buf = [0u8; 128];
         let size = 128;
         let res = cert_name.get_x509_name_info(buf.as_mut(), size as c_int);
@@ -91,10 +90,10 @@ impl<'a> ServerCerts<'a> {
         let cert = self
             .inner
             .get_current_cert()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let cert_issuer = cert
             .get_issuer_name()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let mut buf = [0u8; 128];
         let size = 128;
         let res = cert_issuer.get_x509_name_info(buf.as_mut(), size as c_int);
@@ -122,12 +121,12 @@ impl<'a> ServerCerts<'a> {
         let cert = self
             .inner
             .get_current_cert()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let cert_key = cert
             .get_cert()
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
         let target_cert = X509::from_pem(target_pem)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Build, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Build, e))?;
         Ok(target_cert.cmp_certs(cert_key) as usize)
     }
 }

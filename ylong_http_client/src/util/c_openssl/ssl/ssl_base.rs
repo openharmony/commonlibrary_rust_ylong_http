@@ -13,17 +13,21 @@
 
 use core::{cmp, ffi, fmt, str};
 use std::ffi::CString;
+#[cfg(feature = "sync")]
 use std::io::{Read, Write};
 
 use libc::{c_char, c_int, c_long, c_void};
 
+#[cfg(feature = "sync")]
 use super::error::HandshakeError;
-use super::{MidHandshakeSslStream, SslContext, SslErrorCode, SslStream};
+#[cfg(feature = "sync")]
+use super::SslStream;
+use super::{SslContext, SslErrorCode};
 use crate::c_openssl::check_ret;
 use crate::c_openssl::ffi::bio::BIO;
 use crate::c_openssl::ffi::ssl::{
-    SSL_connect, SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio, SSL_get_verify_result,
-    SSL_read, SSL_state_string_long, SSL_write,
+    SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio, SSL_get_verify_result, SSL_read,
+    SSL_state_string_long, SSL_write,
 };
 use crate::c_openssl::foreign::ForeignRef;
 use crate::c_openssl::x509::{
@@ -57,6 +61,9 @@ impl Ssl {
     where
         S: Read + Write,
     {
+        use super::MidHandshakeSslStream;
+        use crate::c_openssl::ffi::ssl::SSL_connect;
+
         let mut stream = SslStream::new_base(self, stream)?;
         let ret = unsafe { SSL_connect(stream.ssl.as_ptr()) };
         if ret > 0 {
