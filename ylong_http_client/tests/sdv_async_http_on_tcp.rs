@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "async")]
+#![cfg(all(feature = "async", feature = "http1_1", feature = "ylong_base"))]
 
 #[macro_use]
 pub mod tcp_server;

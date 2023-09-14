@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import("//build/ohos.gni")
+import("//build/test.gni")
 
 ohos_rust_static_library("ylong_http") {
   subsystem_name = "commonlibrary"
@@ -21,11 +22,23 @@ ohos_rust_static_library("ylong_http") {
   edition = "2021"
 
   features = [
-    "default",
     "http1_1",
     "ylong_base",
   ]
 
   sources = [ "src/lib.rs" ]
+  external_deps = [ "ylong_runtime:ylong_runtime" ]
+}
+
+ohos_rust_unittest("rust_ylong_http_test_ut") {
+  module_out_path = "ylong_http/ylong_http"
+
+  rustflags = [
+    "--cfg=feature=\"http1_1\"",
+    "--cfg=feature=\"ylong_base\"",
+  ]
+
+  sources = [ "src/lib.rs" ]
+  deps = []
   external_deps = [ "ylong_runtime:ylong_runtime" ]
 }

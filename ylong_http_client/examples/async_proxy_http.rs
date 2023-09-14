@@ -14,9 +14,12 @@
 //! This is a simple asynchronous HTTP client example using the
 //! ylong_http_client crate. It demonstrates creating a client, making a
 //! request, and reading the response asynchronously.
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::async_impl::{ClientBuilder, Downloader};
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::{EmptyBody, HttpClientError, Proxy, Request};
 
+#[cfg(feature = "tokio_base")]
 #[tokio::main]
 async fn main() -> Result<(), HttpClientError> {
     // Creates a `async_impl::Client`

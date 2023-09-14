@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "sync")]
+#![cfg(all(feature = "sync", feature = "http1_1", feature = "tokio_base"))]
 
 #[macro_use]
 mod common;

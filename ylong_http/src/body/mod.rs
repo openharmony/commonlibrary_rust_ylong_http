@@ -519,9 +519,15 @@ mod ut_mod {
     /// 2. Gets its mutable reference.
     /// 3. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_asyn_body_mut_asyn_body_data() {
+    #[test]
+    fn ut_asyn_body_mut_asyn_body_data() {
+        let handle = ylong_runtime::spawn(async move {
+            asyn_body_mut_asyn_body_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn asyn_body_mut_asyn_body_data() {
         use crate::body::async_impl::Body;
 
         let mut body = EmptyBody::new();

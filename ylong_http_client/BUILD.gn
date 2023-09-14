@@ -40,7 +40,7 @@ ohos_rust_shared_library("ylong_http_client_inner") {
   external_deps = [ "ylong_runtime:ylong_runtime" ]
 }
 
-ohos_rust_unittest("unittest") {
+ohos_rust_unittest("rust_ylong_http_client_test_ut") {
   module_out_path = "ylong_http/ylong_http_client"
 
   rustflags = [
@@ -60,4 +60,12 @@ ohos_rust_unittest("unittest") {
     "//third_party/rust/crates/libc:lib",
   ]
   external_deps = [ "ylong_runtime:ylong_runtime" ]
+}
+
+group("unittest") {
+  testonly = true
+  deps = [
+    ":rust_ylong_http_client_test_ut",
+    "../ylong_http:rust_ylong_http_test_ut",
+  ]
 }

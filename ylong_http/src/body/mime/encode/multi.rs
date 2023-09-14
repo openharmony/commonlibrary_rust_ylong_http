@@ -542,9 +542,16 @@ mod ut_mime_multi_encoder {
     /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes
     ///    asynchronously.
     /// 5. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mime_multi_encoder_data_many_parts_nesting_then_async_data() {
+
+    #[test]
+    fn ut_mime_multi_encoder_data_many_parts_nesting_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mime_multi_encoder_data_many_parts_nesting_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mime_multi_encoder_data_many_parts_nesting_then_async_data() {
         let multi1 = MimeMulti::builder()
             .set_content_type(b"multipart/mixed", b"abc".to_vec())
             .add_part(
