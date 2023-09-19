@@ -491,7 +491,8 @@ impl ResponseDecoder {
                 {
                     complete_value[..last_visible + 1].to_vec()
                 } else {
-                    return Err(ErrorKind::H1(H1Error::InvalidResponse).into());
+                    // Return value even it is empty.
+                    Vec::new()
                 };
                 self.headers = header_insert(
                     take(&mut self.head_key),
@@ -827,6 +828,14 @@ mod ut_decoder {
             [] as [(&str, &str); 0],
             r#""#.as_bytes()
         );
+        // Decode a response with a header and an empty value.
+        test_unit_complete!(
+            "HTTP/1.1 304 \r\nempty_header: \r\n\r\n".as_bytes(),
+            "HTTP/1.1",
+            304_u16,
+            [("empty_header", "")],
+            r#""#.as_bytes()
+        );
     }
 
     /// UT test cases for `ResponseDecoder::decode`.
@@ -964,7 +973,6 @@ mod ut_decoder {
         test_unit_invalid!("HTTP/1.1 304 OK\r\nA;ge:270646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:270\r646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:270\r646\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
-        test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:  \r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:270646\r\r\nDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:270646\r\n\rDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
         test_unit_invalid!("HTTP/1.1 304 OK\r\nAge:270646\r\n\rDate:Mon, 19 Dec 2022 01:46:59 GMT\r\nEtag:\"3147526947+gzip\"\r\n\r\r\nbody part".as_bytes(), Some(HttpError::from(ErrorKind::H1(H1Error::InvalidResponse))));
