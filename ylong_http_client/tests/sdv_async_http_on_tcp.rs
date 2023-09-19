@@ -11,23 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "async")]
+#![cfg(all(feature = "async", feature = "http1_1", feature = "ylong_base"))]
 
 #[macro_use]
 pub mod tcp_server;
 
-use tokio::runtime::Runtime;
 use ylong_http::body::async_impl::Body;
 
 use crate::tcp_server::{format_header_str, TcpHandle};
-
-fn init_test_work_runtime(thread_num: usize) -> Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(thread_num)
-        .enable_all()
-        .build()
-        .expect("Build runtime failed.")
-}
 
 /// SDV test cases for `async::Client`.
 ///
@@ -45,7 +36,6 @@ fn sdv_async_client_send_request() {
     // `GET` request
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "GET",
             Path: "/data",
@@ -63,7 +53,6 @@ fn sdv_async_client_send_request() {
     // `HEAD` request.
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "HEAD",
             Path: "/data",
@@ -80,7 +69,6 @@ fn sdv_async_client_send_request() {
     // `Post` Request.
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "POST",
             Path: "/data",
@@ -98,7 +86,6 @@ fn sdv_async_client_send_request() {
     // `HEAD` request without body.
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "HEAD",
             Path: "/data",
@@ -114,7 +101,6 @@ fn sdv_async_client_send_request() {
     // `PUT` request.
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "PUT",
             Path: "/data",
@@ -126,6 +112,23 @@ fn sdv_async_client_send_request() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "3",
             Body: "Hi!",
+        },
+    );
+
+    // The content-length of `Response` is 0.
+    async_client_test_on_tcp!(
+        HTTP;
+        Request: {
+            Method: "GET",
+            Path: "/data",
+            Header: "Content-Length", "6",
+            Body: "Hello!",
+        },
+        Response: {
+            Status: 200,
+            Version: "HTTP/1.1",
+            Header: "Content-Length", "0",
+            Body: "",
         },
     );
 }
@@ -142,7 +145,6 @@ fn sdv_async_client_send_request() {
 fn sdv_client_send_request_repeatedly() {
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 2,
         Request: {
             Method: "GET",
             Path: "/data",
@@ -182,7 +184,6 @@ fn sdv_client_send_request_repeatedly() {
 fn sdv_client_making_multiple_connections() {
     async_client_test_on_tcp!(
         HTTP;
-        RuntimeThreads: 10,
         ClientNum: 5,
         Request: {
             Method: "GET",

@@ -15,78 +15,57 @@ import("//build/ohos.gni")
 import("//build/test.gni")
 
 ohos_rust_shared_library("ylong_http_client_inner") {
+  part_name = "ylong_http"
+  subsystem_name = "commonlibrary"
+
   crate_name = "ylong_http_client_inner"
-  crate_type = "dylib"
-  crate_root = "src/lib.rs"
+  edition = "2021"
 
-  subsystem_name = "commonlibrary"
-  part_name = "ylong_http"
+  features = [
+    "async",
+    "c_openssl_3_0",
+    "http1_1",
+    "ylong_base",
+    "__c_openssl",
+    "__tls",
+  ]
 
   sources = [ "src/lib.rs" ]
   deps = [
-    "//commonlibrary/rust/ylong_http/ylong_http:lib",
+    "../ylong_http:ylong_http",
     "//third_party/openssl:libcrypto_shared",
     "//third_party/openssl:libssl_shared",
     "//third_party/rust/crates/libc:lib",
-    "//third_party/rust/crates/tokio/tokio:lib",
   ]
-  features = [
-    "default",
-    "async",
-    "http1_1",
-    "c_openssl_3_0",
-    "__tls",
-    "__c_openssl",
-    "tokio_base",
-  ]
+  external_deps = [ "ylong_runtime:ylong_runtime" ]
 }
 
-ohos_rust_shared_library("ylong_http_client") {
-  crate_name = "ylong_http_client"
-  crate_type = "dylib"
-  crate_root = "src/lib.rs"
-
-  subsystem_name = "commonlibrary"
-  part_name = "ylong_http"
-
-  sources = [ "src/lib.rs" ]
-  deps = [
-    "//commonlibrary/rust/ylong_http/ylong_http:lib",
-    "//third_party/openssl:libcrypto_shared",
-    "//third_party/openssl:libssl_shared",
-    "//third_party/rust/crates/libc:lib",
-    "//third_party/rust/crates/tokio/tokio:lib",
-  ]
-  features = [
-    "default",
-    "async",
-    "http1_1",
-    "c_openssl_3_0",
-    "__tls",
-    "__c_openssl",
-    "tokio_base",
-  ]
-}
-
-ohos_rust_unittest("rust_ylong_http_client_unit_test") {
-  module_out_path = "commonlibrary/rust/ylong_http"
-  sources = [ "src/lib.rs" ]
-  deps = [
-    ":ylong_http_client",
-    "//commonlibrary/rust/ylong_http/ylong_http:lib",
-    "//third_party/openssl:libcrypto_shared",
-    "//third_party/openssl:libssl_shared",
-    "//third_party/rust/crates/libc:lib",
-    "//third_party/rust/crates/tokio/tokio:lib",
-  ]
+ohos_rust_unittest("rust_ylong_http_client_test_ut") {
+  module_out_path = "ylong_http/ylong_http_client"
 
   rustflags = [
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"async\"",
     "--cfg=feature=\"http1_1\"",
     "--cfg=feature=\"c_openssl_3_0\"",
     "--cfg=feature=\"__tls\"",
     "--cfg=feature=\"__c_openssl\"",
-    "--cfg=feature=\"tokio_base\"",
+    "--cfg=feature=\"ylong_base\"",
+  ]
+
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "../ylong_http:ylong_http",
+    "//third_party/openssl:libcrypto_shared",
+    "//third_party/openssl:libssl_shared",
+    "//third_party/rust/crates/libc:lib",
+  ]
+  external_deps = [ "ylong_runtime:ylong_runtime" ]
+}
+
+group("unittest") {
+  testonly = true
+  deps = [
+    ":rust_ylong_http_client_test_ut",
+    "../ylong_http:rust_ylong_http_test_ut",
   ]
 }

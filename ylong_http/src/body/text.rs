@@ -546,9 +546,15 @@ mod ut_text {
     /// 1. Creates a `TextBody<FromBytes<'_>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_text_body_from_bytes_asyn_data() {
+    #[test]
+    fn ut_text_body_from_bytes_asyn_data() {
+        let handle = ylong_runtime::spawn(async move {
+            text_body_from_bytes_asyn_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn text_body_from_bytes_asyn_data() {
         use crate::body::async_impl::Body;
 
         let bytes = b"Hello World!";
@@ -601,9 +607,15 @@ mod ut_text {
     /// 1. Creates a `TextBody<FromAsyncReader<T>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_text_body_from_async_reader_asyn_data() {
+    #[test]
+    fn ut_text_body_from_async_reader_asyn_data() {
+        let handle = ylong_runtime::spawn(async move {
+            text_body_from_async_reader_asyn_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn text_body_from_async_reader_asyn_data() {
         use crate::body::async_impl::Body;
 
         let reader = "Hello World!".as_bytes();

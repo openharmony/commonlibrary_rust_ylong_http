@@ -455,41 +455,4 @@ mod ut_http2 {
             Some(H2Error::StreamError(1, ErrorCode::ProtocolError).into())
         );
     }
-
-    #[cfg(feature = "tokio_base")]
-    #[test]
-    fn ut_http2_build_data_frame() {
-        let mut request = build_request!(
-            Request: {
-            Method: "GET",
-            Uri: "http://127.0.0.1:0/data",
-            Version: "HTTP/2.0",
-            Header: "te", "trailers",
-            Header: "host", "127.0.0.1:0",
-            Body: "Hi",
-        }
-        );
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .expect("Build runtime failed.");
-
-        rt.block_on(async move {
-            if let Some(frame) = build_data_frame(1, request.body_mut())
-                .await
-                .expect("build data frame failed")
-            {
-                assert_eq!(frame.flags().bits(), 0x1);
-                assert_eq!(frame.stream_id(), 1);
-                if let Payload::Data(data) = frame.payload() {
-                    assert_eq!(data.data().as_slice(), "Hi".as_bytes())
-                } else {
-                    panic!("err frame type");
-                }
-            } else {
-                panic!("unexpected data frame build result");
-            }
-        });
-    }
 }

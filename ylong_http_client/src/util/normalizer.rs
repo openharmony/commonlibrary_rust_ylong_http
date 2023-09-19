@@ -159,13 +159,15 @@ impl<'a> BodyLengthParser<'a> {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.parse::<usize>().ok());
 
-            return if let Some(len) = content_length_valid {
-                Ok(BodyLength::Length(len))
-            } else {
-                Err(HttpClientError::new_with_message(
+            return match content_length_valid {
+                // If `content-length` is 0, the io stream cannot be read,
+                // otherwise it will get stuck.
+                Some(0) => Ok(BodyLength::Empty),
+                Some(len) => Ok(BodyLength::Length(len)),
+                None => Err(HttpClientError::new_with_message(
                     ErrorKind::Request,
                     "Invalid response content-length",
-                ))
+                )),
             };
         }
 

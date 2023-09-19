@@ -14,10 +14,12 @@
 //! This is a simple asynchronous HTTP2 client example using the
 //! ylong_http_client crate. It demonstrates creating a client, making a
 //! request, and reading the response asynchronously.
-
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::async_impl::{Body, ClientBuilder};
+#[cfg(feature = "tokio_base")]
 use ylong_http_client::{HttpClientError, RequestBuilder, StatusCode, TextBody, Version};
 
+#[cfg(feature = "tokio_base")]
 fn main() -> Result<(), HttpClientError> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)

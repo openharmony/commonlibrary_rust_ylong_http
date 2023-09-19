@@ -76,7 +76,7 @@ pub(crate) use ylong_runtime::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     Mutex as AsyncMutex, MutexGuard, RecvError as TryRecvError,
 };
-#[cfg(feature = "ylong_base")]
+#[cfg(all(feature = "ylong_base", feature = "async"))]
 pub(crate) use ylong_runtime::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::TcpStream,

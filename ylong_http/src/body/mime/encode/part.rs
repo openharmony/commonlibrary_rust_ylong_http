@@ -381,9 +381,15 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_owned`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mime_part_encoder_body_from_owned_then_async_data() {
+    #[test]
+    fn ut_mime_part_encoder_body_from_owned_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mime_part_encoder_body_from_owned_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mime_part_encoder_body_from_owned_then_async_data() {
         part_encode_compare! (
             MimePart: {
                 BodyOwned: b"123456".to_vec(),
@@ -402,9 +408,15 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_bytes`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mime_part_encoder_body_from_bytes_then_async_data() {
+    #[test]
+    fn ut_mime_part_encoder_body_from_bytes_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mime_part_encoder_body_from_bytes_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mime_part_encoder_body_from_bytes_then_async_data() {
         part_encode_compare! (
             MimePart: {
                 BodySlice: b"123456",
@@ -423,9 +435,15 @@ mod ut_mime_part_encoder {
     /// 2. Sets headers and sets body.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_mime_part_encoder_common_then_async_data() {
+    #[test]
+    fn ut_mime_part_encoder_common_then_async_data() {
+        let handle = ylong_runtime::spawn(async move {
+            mime_part_encoder_common_then_async_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn mime_part_encoder_common_then_async_data() {
         part_encode_compare! (
             MimePart: {
                 Header: "accept", "text/html",
