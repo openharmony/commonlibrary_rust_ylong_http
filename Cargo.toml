@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    # web
     "ylong_http",
     "ylong_http_client",
 ]

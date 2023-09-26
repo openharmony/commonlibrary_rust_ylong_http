@@ -4,16 +4,14 @@ version = "1.0.0"
 edition = "2021"
 description = "Ylong HTTP Client implementation"
 license = "Apache-2.0"
-repository = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_http"
+repository = "https://gitee.com/openharmony/commonlibrary_rust_ylong_http"
 keywords = ["ylong", "http", "client"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ylong_http = { path = "../ylong_http", features = ["full"] }
 libc = { version = "0.2.134", optional = true }
 tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"], optional = true }
-ylong_runtime = { git = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
 
 [dev-dependencies]
 hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }

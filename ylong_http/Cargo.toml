@@ -4,10 +4,8 @@ version = "1.0.0"
 edition = "2021"
 description = "HTTP utility implementation"
 license = "Apache-2.0"
-repository = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_http"
+repository = "https://gitee.com/openharmony/commonlibrary_rust_ylong_http"
 keywords = ["ylong", "http"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = []
@@ -27,7 +25,7 @@ ylong_base = ["ylong_runtime"]            # Uses asynchronous components of `ylo
 
 [dependencies]
 tokio = { version = "1.20.1", features = ["io-util"], optional = true }
-ylong_runtime = { git = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_runtime.git", optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.20.1", features = ["io-util", "rt-multi-thread", "macros"] }
