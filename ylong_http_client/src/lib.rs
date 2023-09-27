@@ -67,7 +67,7 @@ pub use util::*;
 // Runtime components import adapter.
 #[cfg(any(feature = "tokio_base", feature = "ylong_base"))]
 pub(crate) mod runtime {
-    #[cfg(all(feature = "tokio_base", feature = "http2"))]
+    #[cfg(all(feature = "tokio_base", any(feature = "http2", feature = "http3")))]
     pub(crate) use tokio::{
         io::{split, ReadHalf, WriteHalf},
         spawn,
@@ -79,22 +79,24 @@ pub(crate) mod runtime {
             },
             Mutex as AsyncMutex, MutexGuard,
         },
-        task::JoinHandle,
     };
     #[cfg(all(feature = "tokio_base", feature = "async"))]
     pub(crate) use tokio::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
+        task::{spawn_blocking, JoinHandle},
         time::{sleep, timeout, Sleep},
     };
     #[cfg(feature = "ylong_base")]
     pub(crate) use ylong_runtime::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
+        spawn_blocking,
+        task::JoinHandle,
         time::{sleep, timeout, Sleep},
     };
     // TODO add ReadHalf and WriteHalf
-    #[cfg(all(feature = "ylong_base", feature = "http2"))]
+    #[cfg(all(feature = "ylong_base", any(feature = "http2", feature = "http3")))]
     pub(crate) use ylong_runtime::{
         spawn,
         sync::{
@@ -105,7 +107,6 @@ pub(crate) mod runtime {
             },
             Mutex as AsyncMutex, MutexGuard,
         },
-        task::JoinHandle,
     };
 
     #[cfg(all(feature = "ylong_base", feature = "http2"))]

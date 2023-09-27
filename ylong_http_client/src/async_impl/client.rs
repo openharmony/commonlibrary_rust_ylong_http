@@ -18,6 +18,7 @@ use ylong_http::request::uri::Uri;
 use super::pool::ConnPool;
 use super::timeout::TimeoutFuture;
 use super::{conn, Connector, HttpConnector, Request, Response};
+use crate::async_impl::dns::{DefaultDnsResolver, Resolver};
 use crate::async_impl::interceptor::{IdleInterceptor, Interceptor, Interceptors};
 use crate::async_impl::request::Message;
 use crate::error::HttpClientError;
@@ -89,6 +90,21 @@ impl Client<HttpConnector> {
     /// ```
     pub fn new() -> Self {
         Self::with_connector(HttpConnector::default())
+    }
+
+    /// Creates a new, default `AsyncClient` with a given dns resolver.
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::{Client, DefaultDnsResolver};
+    ///
+    /// let client = Client::with_dns_resolver(DefaultDnsResolver::default());
+    /// ```
+    pub fn with_dns_resolver<R>(resolver: R) -> Self
+    where
+        R: Resolver,
+    {
+        Self::with_connector(HttpConnector::with_dns_resolver(resolver))
     }
 
     /// Creates a new, default [`async_impl::ClientBuilder`].
@@ -270,6 +286,8 @@ pub struct ClientBuilder {
     fchown: Option<FchownConfig>,
 
     interceptors: Arc<Interceptors>,
+    /// Resolver to http DNS.
+    resolver: Arc<dyn Resolver>,
 
     /// Options and flags that is related to `TLS`.
     #[cfg(feature = "__tls")]
@@ -294,6 +312,7 @@ impl ClientBuilder {
             #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
             fchown: None,
             interceptors: Arc::new(IdleInterceptor),
+            resolver: Arc::new(DefaultDnsResolver::default()),
             #[cfg(feature = "__tls")]
             tls: crate::util::TlsConfig::builder(),
         }
@@ -441,6 +460,23 @@ impl ClientBuilder {
         self
     }
 
+    /// Adds a dns `Resolver` to the `Client`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::{ClientBuilder, DefaultDnsResolver};
+    ///
+    /// let builder = ClientBuilder::new().dns_resolver(DefaultDnsResolver::default());
+    /// ```
+    pub fn dns_resolver<R>(mut self, resolver: R) -> Self
+    where
+        R: Resolver,
+    {
+        self.resolver = Arc::new(resolver);
+        self
+    }
+
     /// Constructs a `Client` based on the given settings.
     ///
     /// # Examples
@@ -480,9 +516,10 @@ impl ClientBuilder {
             fchown: self.fchown,
             #[cfg(feature = "__tls")]
             tls: tls_builder.build()?,
+            timeout: self.client.connect_timeout.clone(),
         };
 
-        let connector = HttpConnector::new(config);
+        let connector = HttpConnector::new(config, self.resolver);
 
         Ok(Client {
             inner: ConnPool::new(self.http, connector),

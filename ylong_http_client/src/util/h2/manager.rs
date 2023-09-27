@@ -436,11 +436,7 @@ impl ConnManager {
         cx: &mut Context<'_>,
         frame: Frame,
     ) -> Poll<Result<(), H2Error>> {
-        match self
-            .controller
-            .streams
-            .recv_remote_reset(frame.stream_id())
-        {
+        match self.controller.streams.recv_remote_reset(frame.stream_id()) {
             StreamEndState::OK => self.controller.send_message_to_stream(
                 cx,
                 frame.stream_id(),
