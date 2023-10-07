@@ -260,3 +260,54 @@ impl Default for DownloadConfig {
         }
     }
 }
+
+#[cfg(all(test, feature = "ylong_base"))]
+mod ut_downloader {
+    use ylong_http::h1::ResponseDecoder;
+    use ylong_http::response::Response;
+
+    use crate::async_impl::adapter::Response as adpater_resp;
+    use crate::async_impl::{Downloader, HttpBody, StreamData};
+    use crate::util::normalizer::BodyLength;
+
+    impl StreamData for &[u8] {
+        fn shutdown(&self) {
+            println!("Shutdown")
+        }
+    }
+
+    /// UT test cases for `Downloader::download`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Downloader`.
+    /// 2. Calls `download` method.
+    /// 3. Checks if the result is correct.
+    #[test]
+    fn ut_download() {
+        let handle = ylong_runtime::spawn(async move {
+            download().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn download() {
+        let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nLocation: \t example3.com:80 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let box_stream = Box::new("".as_bytes());
+        let chunk_body_bytes = "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            000; message = last\r\n\
+            \r\n\
+            ";
+        let chunk =
+            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+        let response = Response::from_raw_parts(result.0, chunk);
+        let mut downloader = Downloader::console(adpater_resp::new(response));
+        let res = downloader.download().await;
+        assert!(res.is_ok());
+    }
+}
