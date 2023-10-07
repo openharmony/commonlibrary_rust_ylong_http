@@ -677,13 +677,7 @@ impl Default for ClientBuilder {
 
 #[cfg(test)]
 mod ut_async_impl_client {
-    use ylong_http::h1::ResponseDecoder;
-    use ylong_http::request::uri::Uri;
-    use ylong_http::request::Request;
-    use ylong_http::response::Response;
-
-    use crate::async_impl::{Client, HttpBody};
-    use crate::util::normalizer::BodyLength;
+    use crate::async_impl::Client;
     use crate::Proxy;
 
     /// UT test cases for `Client::builder`.
@@ -738,8 +732,15 @@ mod ut_async_impl_client {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     async fn client_request_redirect() {
-        use crate::async_impl::ClientBuilder;
+        use ylong_http::h1::ResponseDecoder;
+        use ylong_http::request::uri::Uri;
+        use ylong_http::request::Request;
+        use ylong_http::response::Response;
+
+        use crate::async_impl::{ClientBuilder, HttpBody};
+        use crate::util::normalizer::BodyLength;
         use crate::util::{Redirect, Timeout};
 
         let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nLocation: \t http://example3.com:80/foo?a=1 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();

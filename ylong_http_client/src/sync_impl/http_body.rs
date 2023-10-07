@@ -110,7 +110,9 @@ impl Body for HttpBody {
 
     fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
         match self.kind {
-            Kind::Chunk(ref mut chunk) => chunk.get_trailer(),
+            Kind::Chunk(ref mut chunk) => chunk.decoder.get_trailer().map_err(|_| {
+                HttpClientError::new_with_message(ErrorKind::BodyDecode, "Get trailer failed")
+            }),
             _ => Ok(None),
         }
     }
@@ -301,14 +303,6 @@ impl Chunk {
             if chunk.trailer().is_some() {
                 if chunk.state() == &ChunkState::Finish {
                     finished = true;
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
-                    self.trailer.extend_from_slice(b"\r\n");
-                    break;
-                } else if chunk.state() == &ChunkState::DataCrlf {
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
-                    self.trailer.extend_from_slice(b"\r\n");
-                } else {
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
                 }
             } else {
                 if chunk.size() == 0 && chunk.state() != &ChunkState::MetaSize {
@@ -338,55 +332,6 @@ impl Chunk {
         }
         Ok((idx, finished))
     }
-
-    fn get_trailer(&self) -> Result<Option<Headers>, HttpClientError> {
-        if self.trailer.is_empty() {
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::BodyDecode,
-                "No trailer received",
-            ));
-        }
-
-        let mut colon = 0;
-        let mut lf = 0;
-        let mut trailer_header_name = HeaderName::from_bytes(b"")
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-        let mut trailer_headers = Headers::new();
-        for (i, b) in self.trailer.iter().enumerate() {
-            if *b == b' ' {
-                continue;
-            }
-            if *b == b':' {
-                colon = i;
-                if lf == 0 {
-                    let trailer_name = &self.trailer[..colon];
-                    trailer_header_name = HeaderName::from_bytes(trailer_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e))
-                    })?;
-                } else {
-                    let trailer_name = &self.trailer[lf + 1..colon];
-                    trailer_header_name = HeaderName::from_bytes(trailer_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e))
-                    })?;
-                }
-                continue;
-            }
-
-            if *b == b'\n' {
-                lf = i;
-                let trailer_value = &self.trailer[colon + 1..lf - 1];
-                let trailer_header_value = HeaderValue::from_bytes(trailer_value)
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-                let _ = trailer_headers
-                    .insert::<HeaderName, HeaderValue>(
-                        trailer_header_name.clone(),
-                        trailer_header_value.clone(),
-                    )
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-            }
-        }
-        Ok(Some(trailer_headers))
-    }
 }
 
 #[cfg(test)]
@@ -409,28 +354,5 @@ mod ut_syn_http_body {
         let data = body.data(&mut buf);
         assert!(data.is_ok());
         assert_eq!(data.unwrap(), 0);
-    }
-
-    /// UT test cases for `Chunk::get_trailers`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Chunk` and set `Trailer`.
-    /// 2. Calls `get_trailer` method.
-    /// 3. Checks if the result is correct.
-    #[test]
-    fn ut_http_body_chunk() {
-        let mut chunk = Chunk {
-            decoder: ChunkBodyDecoder::new().contains_trailer(true),
-            pre: None,
-            io: None,
-            trailer: vec![],
-        };
-        let trailer_info = "Trailer1:value1\r\nTrailer2:value2\r\n";
-        chunk.trailer.extend_from_slice(trailer_info.as_bytes());
-        let data = chunk.get_trailer().unwrap().unwrap();
-        let value1 = data.get("Trailer1");
-        assert_eq!(value1.unwrap().to_str().unwrap(), "value1");
-        let value2 = data.get("Trailer2");
-        assert_eq!(value2.unwrap().to_str().unwrap(), "value2");
     }
 }
