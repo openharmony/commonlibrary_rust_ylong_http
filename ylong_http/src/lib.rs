@@ -43,7 +43,7 @@ pub mod version;
 
 mod pseudo;
 #[cfg(test)]
-pub(crate) mod test_util;
+pub mod test_util;
 
 #[cfg(feature = "tokio_base")]
 pub(crate) use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};

@@ -13,5 +13,6 @@
 
 // TODO: `HTTP/3` Module.
 
-mod parts;
-mod qpack;
+
+pub mod parts;
+pub mod qpack;

@@ -10,15 +10,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub enum H3Error_QPACK {
+pub enum H3errorQpack {
     ConnectionError(ErrorCode),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ErrorCode {
-    QPACK_DECOMPRESSION_FAILED = 0x0200,
+    QpackDecompressionFailed = 0x0200,
 
-    QPACK_ENCODER_STREAM_ERROR = 0x0201,
+    QpackEncoderStreamError = 0x0201,
 
-    QPACK_DECODER_STREAM_ERROR = 0x0202,
+    QpackDecoderStreamError = 0x0202,
 }

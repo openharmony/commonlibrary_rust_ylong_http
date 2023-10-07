@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use crate::h3::qpack::error::{ErrorCode, H3Error_QPACK};
+use crate::h3::qpack::error::{ErrorCode, H3errorQpack};
 use std::cmp::Ordering;
 
 pub(crate) struct Integer {
@@ -64,13 +64,13 @@ impl IntegerDecoder {
     /// Continues computing the integer based on the next byte of the input.
     /// Returns `Ok(Some(index))` if the result is obtained, otherwise returns
     /// `Ok(None)`, and returns Err in case of overflow.
-    pub(crate) fn next_byte(&mut self, byte: u8) -> Result<Option<usize>, H3Error_QPACK> {
+    pub(crate) fn next_byte(&mut self, byte: u8) -> Result<Option<usize>, H3errorQpack> {
         self.index = 1usize
             .checked_shl(self.shift - 1)
             .and_then(|res| res.checked_mul((byte & 0x7f) as usize))
             .and_then(|res| res.checked_add(self.index))
-            .ok_or(H3Error_QPACK::ConnectionError(
-                ErrorCode::QPACK_DECOMPRESSION_FAILED,
+            .ok_or(H3errorQpack::ConnectionError(
+                ErrorCode::QpackDecompressionFailed,
             ))?; //todo: modify the error code
         self.shift += 7;
         match (byte & 0x80) == 0x00 {

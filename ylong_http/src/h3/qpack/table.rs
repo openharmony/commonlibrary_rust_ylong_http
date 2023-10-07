@@ -89,13 +89,10 @@ impl<'a> TableSearcher<'a> {
         self.dynamic.field_name(index)
     }
 
-    pub(crate) fn can_index(&self, header: &Field, value: &str) -> bool {
-        //todo
-        true
-    }
+
 }
 
-pub(crate) struct DynamicTable {
+pub struct DynamicTable {
     queue: VecDeque<(Field, String)>,
     // The size of the dynamic table is the sum of the size of its entries
     size: usize,
@@ -103,19 +100,17 @@ pub(crate) struct DynamicTable {
     pub(crate) insert_count: usize,
     remove_count: usize,
     pub(crate) known_received_count: usize,
-    pub(crate) ref_count: HashMap<usize, usize>,
 }
 
 impl DynamicTable {
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
+    pub fn with_empty() -> Self {
         Self {
             queue: VecDeque::new(),
             size: 0,
-            capacity,
+            capacity: 0,
             insert_count: 0,
             remove_count: 0,
             known_received_count: 0,
-            ref_count: HashMap::new(),
         }
     }
 
@@ -135,30 +130,32 @@ impl DynamicTable {
         self.insert_count += 1;
         self.size += field.len() + value.len() + 32;
         self.queue.push_back((field.clone(), value.clone()));
-        self.ref_count
-            .insert(self.queue.len() + self.remove_count - 1, 0);
         self.fit_size();
         match self.index(&field, &value) {
             x => x,
-            _ => Some(TableIndex::None),
         }
     }
 
-    pub(crate) fn have_enough_space(&self, field: &Field, value: &String) -> bool {
-        if self.size + field.len() + value.len() + 32 <= self.capacity {
+    pub(crate) fn have_enough_space(
+        &self,
+        field: &Field,
+        value: &String,
+        insert_length: &usize,
+    ) -> bool {
+        if self.size + field.len() + value.len() + 32 <= self.capacity - insert_length {
             return true;
         } else {
             let mut eviction_space = 0;
             for (i, (h, v)) in self.queue.iter().enumerate() {
-                if let Some(0) = self.ref_count.get(&(i + self.remove_count)) {
+                if i <= self.known_received_count {
                     eviction_space += h.len() + v.len() + 32;
                 } else {
-                    if eviction_space >= field.len() + value.len() + 32 {
+                    if eviction_space - insert_length >= field.len() + value.len() + 32 {
                         return true;
                     }
                     return false;
                 }
-                if eviction_space >= field.len() + value.len() + 32 {
+                if eviction_space - insert_length >= field.len() + value.len() + 32 {
                     return true;
                 }
             }
@@ -239,9 +236,9 @@ pub(crate) enum TableIndex {
 /// whereas the HPACK static table is indexed from 1.
 /// When the decoder encounters an invalid static table
 /// index in a field line format, it MUST treat this
-/// as a connection error of type QPACK_DECOMPRESSION_FAILED.
+/// as a connection error of type QpackDecompressionFailed.
 /// If this index is received on the encoder stream,
-/// this MUST be treated as a connection error of type QPACK_ENCODER_STREAM_ERROR.
+/// this MUST be treated as a connection error of type QpackEncoderStreamError.
 ///
 
 struct StaticTable;
@@ -599,7 +596,6 @@ impl StaticTable {
                 ("accept-ranges", _) => Some(TableIndex::FieldName(32)),
                 ("access-control-allow-headers", "cache-control") => Some(TableIndex::Field(33)),
                 ("access-control-allow-headers", "content-type") => Some(TableIndex::Field(34)),
-                ("access-control-allow-headers", _) => Some(TableIndex::FieldName(33)),
                 ("access-control-allow-origin", "*") => Some(TableIndex::Field(35)),
                 ("access-control-allow-origin", _) => Some(TableIndex::FieldName(35)),
                 ("cache-control", "max-age=0") => Some(TableIndex::Field(36)),
@@ -690,13 +686,12 @@ impl StaticTable {
                 ("x-frame-options", _) => Some(TableIndex::FieldName(97)),
                 _ => None,
             },
-            _ => None,
         }
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(crate) enum Field {
+pub enum Field {
     Authority,
     Method,
     Path,

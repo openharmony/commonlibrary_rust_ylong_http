@@ -43,7 +43,7 @@ impl Parts {
         self.pseudo.is_empty() && self.map.is_empty()
     }
 
-    pub(crate) fn update(&mut self, headers: Field, value: String) {
+    pub fn update(&mut self, headers: Field, value: String) {
         match headers {
             Field::Authority => self.pseudo.authority = Some(value),
             Field::Method => self.pseudo.method = Some(value),

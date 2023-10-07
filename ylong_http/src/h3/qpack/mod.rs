@@ -11,15 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod decoder;
-mod encoder;
-mod error;
+pub mod decoder;
+pub mod encoder;
+pub(crate) mod error;
 mod format;
 mod integer;
-pub(crate) mod table;
-
+pub mod table;
 use crate::h3::qpack::format::decoder::Name;
+pub(crate) use decoder::FiledLines;
 pub(crate) use decoder::QpackDecoder;
+pub(crate) use encoder::DecoderInst;
 pub(crate) use encoder::QpackEncoder;
 
 pub(crate) struct RequireInsertCount(usize);
@@ -75,7 +76,7 @@ impl DecoderInstPrefixBit {
         }
     }
 
-    pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
+    pub(crate) fn prefix_midbit_value(&self) -> MidBit {
         match self.0 {
             _ => MidBit {
                 n: None,

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) fn decode(str: &str) -> Option<Vec<u8>> {
+pub fn decode(str: &str) -> Option<Vec<u8>> {
     if str.len() % 2 != 0 {
         return None;
     }
