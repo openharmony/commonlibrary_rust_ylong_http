@@ -70,7 +70,7 @@ impl IntegerDecoder {
             .and_then(|res| res.checked_mul((byte & 0x7f) as usize))
             .and_then(|res| res.checked_add(self.index))
             .ok_or(H3errorQpack::ConnectionError(
-                ErrorCode::QpackDecompressionFailed,
+                ErrorCode::DecompressionFailed,
             ))?; //todo: modify the error code
         self.shift += 7;
         match (byte & 0x80) == 0x00 {

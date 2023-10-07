@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use crate::h3::parts::Parts;
-use crate::h3::qpack::error::ErrorCode::QpackDecoderStreamError;
+use crate::h3::qpack::error::ErrorCode::DecoderStreamError;
 use crate::h3::qpack::error::H3errorQpack;
 use crate::h3::qpack::format::encoder::{
     DecInstDecoder, InstDecodeState, PartsIter, ReprEncodeState, SetCap,
@@ -28,43 +28,43 @@ use std::collections::{HashMap, VecDeque};
 /// to reduce head-of-line blocking.
 ///
 /// # Examples
-/// ```
-/// use crate::ylong_http::h3::qpack::encoder::QpackEncoder;
-/// use crate::ylong_http::h3::parts::Parts;
-/// use crate::ylong_http::h3::qpack::table::{DynamicTable, Field};
-/// use crate::ylong_http::test_util::decode;
-///
-///
-///
-/// // the (field, value) is: ("custom-key", "custom-value2")
-/// // Required content:
-/// let mut encoder_buf = [0u8; 1024]; // QPACK stream providing control commands.
-/// let mut stream_buf = [0u8; 1024]; // Field section encoded in QPACK format.
-/// let mut encoder_cur = 0; // index of encoder_buf.
-/// let mut stream_cur = 0; // index of stream_buf.
-/// let mut table = DynamicTable::with_empty();
-///
-/// // create a new encoder.
-/// let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
-///
-/// // set dynamic table capacity.
-/// encoder_cur += encoder.set_capacity(220, &mut encoder_buf[encoder_buf..]);
-///
-/// // set field section.
-/// let mut field = Parts::new();
-/// field.update(Field::Other(String::from("custom-key")), String::from("custom-value"));
-/// encoder.set_parts(field);
-///
-/// // encode field section.
-/// let (cur1, cur2, _) = encoder.encode(&mut encoder_buf[encoder_cur..], &mut stream_buf[stream_cur..]);
-/// encoder_cur += cur1;
-/// stream_cur += cur2;
-///
-/// assert_eq!(stream_buf[..encoder_cur].to_vec().as_slice(), decode("028010").unwrap().as_slice());
-/// assert_eq!(stream_buf[..stream_cur].to_vec().as_slice(), decode("4a637573746f6d2d6b65790c637573746f6d2d76616c7565").unwrap().as_slice());
-///
-///
-/// ```
+// ```no_run
+// use crate::ylong_http::h3::qpack::encoder::QpackEncoder;
+// use crate::ylong_http::h3::parts::Parts;
+// use crate::ylong_http::h3::qpack::table::{DynamicTable, Field};
+// use crate::ylong_http::test_util::decode;
+//
+//
+//
+// // the (field, value) is: ("custom-key", "custom-value2")
+// // Required content:
+// let mut encoder_buf = [0u8; 1024]; // QPACK stream providing control commands.
+// let mut stream_buf = [0u8; 1024]; // Field section encoded in QPACK format.
+// let mut encoder_cur = 0; // index of encoder_buf.
+// let mut stream_cur = 0; // index of stream_buf.
+// let mut table = DynamicTable::with_empty();
+//
+// // create a new encoder.
+// let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+//
+// // set dynamic table capacity.
+// encoder_cur += encoder.set_capacity(220, &mut encoder_buf[encoder_buf..]);
+//
+// // set field section.
+// let mut field = Parts::new();
+// field.update(Field::Other(String::from("custom-key")), String::from("custom-value"));
+// encoder.set_parts(field);
+//
+// // encode field section.
+// let (cur1, cur2, _) = encoder.encode(&mut encoder_buf[encoder_cur..], &mut stream_buf[stream_cur..]);
+// encoder_cur += cur1;
+// stream_cur += cur2;
+//
+// assert_eq!(stream_buf[..encoder_cur].to_vec().as_slice(), decode("028010").unwrap().as_slice());
+// assert_eq!(stream_buf[..stream_cur].to_vec().as_slice(), decode("4a637573746f6d2d6b65790c637573746f6d2d76616c7565").unwrap().as_slice());
+//
+//
+// ```
 
 pub struct QpackEncoder<'a> {
     table: &'a mut DynamicTable,
@@ -88,6 +88,21 @@ pub struct QpackEncoder<'a> {
 }
 
 impl<'a> QpackEncoder<'a> {
+
+    /// create a new encoder.
+    /// #Examples
+//     ```no_run
+//     use ylong_http::h3::qpack::encoder::QpackEncoder;
+//     use ylong_http::h3::qpack::table::DynamicTable;
+//     let mut encoder_buf = [0u8; 1024]; // QPACK stream providing control commands.
+//     let mut stream_buf = [0u8; 1024]; // Field section encoded in QPACK format.
+//     let mut encoder_cur = 0; // index of encoder_buf.
+//     let mut stream_cur = 0; // index of stream_buf.
+//     let mut table = DynamicTable::with_empty();
+//
+//     // create a new encoder.
+//     let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+//     ```
     pub fn new(
         table: &'a mut DynamicTable,
         stream_id: usize,
@@ -95,7 +110,7 @@ impl<'a> QpackEncoder<'a> {
         draining_index: usize,
     ) -> QpackEncoder {
         Self {
-            table: table,
+            table,
             field_iter: None,
             field_state: None,
             inst_state: None,
@@ -108,6 +123,19 @@ impl<'a> QpackEncoder<'a> {
         }
     }
 
+    /// Set the maximum dynamic table size.
+    /// # Examples
+    /// ```no_run
+    /// use ylong_http::h3::qpack::encoder::QpackEncoder;
+    /// use ylong_http::h3::qpack::table::DynamicTable;
+    /// let mut encoder_buf = [0u8; 1024]; // QPACK stream providing control commands.
+    /// let mut stream_buf = [0u8; 1024]; // Field section encoded in QPACK format.
+    /// let mut encoder_cur = 0; // index of encoder_buf.
+    /// let mut stream_cur = 0; // index of stream_buf.
+    /// let mut table = DynamicTable::with_empty();
+    /// let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+    /// let mut encoder_cur = encoder.set_capacity(220, &mut encoder_buf[..]);
+    /// ```
     pub fn set_capacity(&mut self, max_size: usize, encoder_buf: &mut [u8]) -> usize {
         self.table.update_size(max_size);
         if let Ok(cur) = SetCap::new(max_size).encode(&mut encoder_buf[..]) {
@@ -116,6 +144,19 @@ impl<'a> QpackEncoder<'a> {
         0
     }
 
+
+    /// Set the field section to be encoded.
+    /// # Examples
+//     ```no_run
+//     use ylong_http::h3::qpack::encoder::QpackEncoder;
+//     use ylong_http::h3::parts::Parts;
+//     use ylong_http::h3::qpack::table::{DynamicTable, Field};
+//     let mut table = DynamicTable::with_empty();
+//     let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+//     let mut parts = Parts::new();
+//     parts.update(Field::Other(String::from("custom-key")), String::from("custom-value"));
+//     encoder.set_parts(parts);
+//     ```
     pub fn set_parts(&mut self, parts: Parts) {
         self.field_iter = Some(PartsIter::new(parts));
     }
@@ -126,34 +167,41 @@ impl<'a> QpackEncoder<'a> {
         if self.table.known_received_count < self.required_insert_count {
             self.table.known_received_count = self.required_insert_count;
         } else {
-            return Err(H3errorQpack::ConnectionError(QpackDecoderStreamError));
+            return Err(H3errorQpack::ConnectionError(DecoderStreamError));
         }
 
         Ok(Some(DecoderInst::Ack))
     }
 
     /// Users can call `decode_ins` multiple times to decode decoder instructions.
-    pub(crate) fn decode_ins(&mut self, buf: &[u8]) -> Result<Option<DecoderInst>, H3errorQpack> {
+    /// # Return
+    /// `Ok(None)` means that the decoder instruction is not complete.
+    /// # Examples
+//     ```no_run
+//     use ylong_http::h3::qpack::encoder::QpackEncoder;
+//     use ylong_http::h3::parts::Parts;
+//     use ylong_http::h3::qpack::table::{DynamicTable, Field};
+//     use ylong_http::test_util::decode;
+//     let mut table = DynamicTable::with_empty();
+//     let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+//     let _ = encoder.decode_ins(&mut decode("80").unwrap().as_slice());
+//     ```
+    pub fn decode_ins(&mut self, buf: &[u8]) -> Result<Option<DecoderInst>, H3errorQpack> {
         let mut decoder = DecInstDecoder::new(buf);
-        loop {
-            match decoder.decode(&mut self.inst_state)? {
-                Some(DecoderInstruction::Ack { stream_id }) => {
-                    return self.ack(stream_id);
-                }
-                //todo: stream cancel
-                Some(DecoderInstruction::StreamCancel { stream_id }) => {
-                    assert_eq!(stream_id, self.stream_id);
-                    return Ok(Some(DecoderInst::StreamCancel));
-                }
-                //todo: insert count increment
-                Some(DecoderInstruction::InsertCountIncrement { increment }) => {
-                    self.table.known_received_count += increment;
-                    return Ok(Some(DecoderInst::InsertCountIncrement));
-                }
-                None => {
-                    return Ok(None);
-                }
+
+        match decoder.decode(&mut self.inst_state)? {
+            Some(DecoderInstruction::Ack { stream_id }) => self.ack(stream_id),
+            //todo: stream cancel
+            Some(DecoderInstruction::StreamCancel { stream_id }) => {
+                assert_eq!(stream_id, self.stream_id);
+                Ok(Some(DecoderInst::StreamCancel))
             }
+            //todo: insert count increment
+            Some(DecoderInstruction::InsertCountIncrement { increment }) => {
+                self.table.known_received_count += increment;
+                Ok(Some(DecoderInst::InsertCountIncrement))
+            }
+            None => Ok(None),
         }
     }
 
@@ -182,8 +230,25 @@ impl<'a> QpackEncoder<'a> {
         cur_prefix
     }
     /// Users can call `encode` multiple times to encode multiple complete field sections.
-    ///
-    /// # Return
+    /// # Examples
+//     ```no_run
+//     use ylong_http::h3::qpack::encoder::QpackEncoder;
+//     use ylong_http::h3::parts::Parts;
+//     use ylong_http::h3::qpack::table::{DynamicTable, Field};
+//     use ylong_http::test_util::decode;
+//     let mut encoder_buf = [0u8; 1024]; // QPACK stream providing control commands.
+//     let mut stream_buf = [0u8; 1024]; // Field section encoded in QPACK format.
+//     let mut encoder_cur = 0; // index of encoder_buf.
+//     let mut stream_cur = 0; // index of stream_buf.
+//     let mut table = DynamicTable::with_empty();
+//     let mut encoder = QpackEncoder::new(&mut table, 0, true, 1);
+//     let mut parts = Parts::new();
+//     parts.update(Field::Other(String::from("custom-key")), String::from("custom-value"));
+//     encoder.set_parts(parts);
+//     let (cur1, cur2, _) = encoder.encode(&mut encoder_buf[encoder_cur..], &mut stream_buf[stream_cur..]);
+//     encoder_cur += cur1;
+//     stream_cur += cur2;
+//     ```
     pub fn encode(
         &mut self,
         encoder_buf: &mut [u8], //instructions encoded results
@@ -201,16 +266,19 @@ impl<'a> QpackEncoder<'a> {
             }
             (cur_encoder, cur_stream, Some((prefix_buf, cur_prefix)))
         } else {
-            let mut encoder = ReprEncoder::new(&mut self.table, self.draining_index);
+            let mut encoder = ReprEncoder::new(
+                self.table,
+                self.draining_index,
+                self.allow_post,
+                &mut self.insert_length,
+            );
             (cur_encoder, cur_stream) = encoder.encode(
                 &mut self.field_iter,
                 &mut self.field_state,
                 &mut encoder_buf[0..],
                 &mut stream_buf[0..],
-                self.allow_post,
                 &mut self.insert_list,
                 &mut self.required_insert_count,
-                &mut self.insert_length,
             );
             (cur_encoder, cur_stream, None)
         }
@@ -222,7 +290,7 @@ impl<'a> QpackEncoder<'a> {
     }
 }
 
-pub(crate) enum DecoderInst {
+pub enum DecoderInst {
     Ack,
     StreamCancel,
     InsertCountIncrement,

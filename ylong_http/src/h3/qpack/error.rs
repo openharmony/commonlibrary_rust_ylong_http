@@ -16,9 +16,9 @@ pub enum H3errorQpack {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ErrorCode {
-    QpackDecompressionFailed = 0x0200,
+    DecompressionFailed = 0x0200,
 
-    QpackEncoderStreamError = 0x0201,
+    EncoderStreamError = 0x0201,
 
-    QpackDecoderStreamError = 0x0202,
+    DecoderStreamError = 0x0202,
 }

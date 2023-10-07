@@ -11,52 +11,81 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::h3::parts::Parts;
-use crate::h3::qpack::error::ErrorCode::QpackDecoderStreamError;
+use crate::h3::qpack::error::ErrorCode::DecoderStreamError;
 use crate::h3::qpack::error::H3errorQpack;
 use crate::h3::qpack::format::decoder::DecResult;
 use crate::h3::qpack::integer::{Integer, IntegerDecoder, IntegerEncoder};
 use crate::h3::qpack::table::{DynamicTable, Field, TableIndex, TableSearcher};
 use crate::h3::qpack::{DecoderInstPrefixBit, DecoderInstruction, EncoderInstruction, PrefixMask};
 use crate::headers::HeadersIntoIter;
-use crate::pseudo::PseudoHeaders;
+use crate::h3::pseudo::PseudoHeaders;
 use std::arch::asm;
 use std::cmp::{max, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::result;
 use std::sync::Arc;
 
-pub(crate) struct ReprEncoder<'a> {
+pub struct ReprEncoder<'a> {
     table: &'a mut DynamicTable,
     draining_index: usize,
+    allow_post: bool,
+    insert_length: &'a mut usize,
 }
 
 impl<'a> ReprEncoder<'a> {
     /// Creates a new, empty `ReprEncoder`.
-    pub(crate) fn new(table: &'a mut DynamicTable, draining_index: usize) -> Self {
+    /// # Examples
+//     ```no_run
+//     use ylong_http::h3::qpack::table::DynamicTable;
+//     use ylong_http::h3::qpack::format::encoder::ReprEncoder;
+//     let mut table = DynamicTable::new(4096);
+//     let mut insert_length = 0;
+//     let mut encoder = ReprEncoder::new(&mut table, 0, true, &mut insert_length);
+//     ```
+    pub fn new(
+        table: &'a mut DynamicTable,
+        draining_index: usize,
+        allow_post: bool,
+        insert_length: &'a mut usize,
+    ) -> Self {
         Self {
             table,
             draining_index,
+            allow_post,
+            insert_length,
         }
     }
 
-    /// written to `dst` and the length of the decoded content will be returned.
+    /// written to `buffer` and the length of the decoded content will be returned.
+    /// # Examples
+//     ```no_run
+//     use std::collections::VecDeque;use ylong_http::h3::qpack::table::DynamicTable;
+//     use ylong_http::h3::qpack::format::encoder::ReprEncoder;
+//     let mut table = DynamicTable::new(4096);
+//     let mut insert_length = 0;
+//     let mut encoder = ReprEncoder::new(&mut table, 0, true, &mut insert_length);
+//     let mut qpack_buffer = [0u8; 1024];
+//     let mut stream_buffer = [0u8; 1024]; // stream buffer
+//     let mut insert_list = VecDeque::new(); // fileds to insert
+//     let mut required_insert_count = 0; // RFC required.
+//     let mut field_iter = None; // for field iterator
+//     let mut field_state = None; // for field encode state
+//     encoder.encode(&mut field_iter, &mut field_state, &mut qpack_buffer, &mut stream_buffer, &mut insert_list, &mut required_insert_count);
     pub(crate) fn encode(
         &mut self,
         field_iter: &mut Option<PartsIter>,
         field_state: &mut Option<ReprEncodeState>,
         encoder_buffer: &mut [u8],
         stream_buffer: &mut [u8],
-        allow_post: bool,
         insert_list: &mut VecDeque<(Field, String)>,
         required_insert_count: &mut usize,
-        insert_length: &mut usize,
     ) -> (usize, usize) {
         let mut cur_encoder = 0;
         let mut cur_stream = 0;
         let mut base = self.table.insert_count;
         if let Some(mut iter) = field_iter.take() {
             while let Some((h, v)) = iter.next() {
-                let searcher = TableSearcher::new(&self.table);
+                let searcher = TableSearcher::new(self.table);
                 let mut stream_result: Result<usize, ReprEncodeState> = Result::Ok(0);
                 let mut encoder_result: Result<usize, ReprEncodeState> = Result::Ok(0);
                 let static_index = searcher.find_index_static(&h, &v);
@@ -80,10 +109,10 @@ impl<'a> ReprEncoder<'a> {
                             dynamic_name_index = searcher.find_index_name_dynamic(&h, &v);
                         }
 
-                        if self.table.have_enough_space(&h, &v, &insert_length) {
+                        if self.table.have_enough_space(&h, &v, self.insert_length) {
                             if !self.should_index(&dynamic_index) {
                                 if let Some(TableIndex::Field(index)) = dynamic_index {
-                                    encoder_result = Duplicate::new(base - index.clone() - 1)
+                                    encoder_result = Duplicate::new(base - index - 1)
                                         .encode(&mut encoder_buffer[cur_encoder..]);
                                     self.table.update(h.clone(), v.clone());
                                     base = max(base, self.table.insert_count);
@@ -100,7 +129,7 @@ impl<'a> ReprEncoder<'a> {
                                     // insert with name reference in static table
                                     (Some(TableIndex::FieldName(index)), _, _) => {
                                         InsertWithName::new(
-                                            index.clone(),
+                                            *index,
                                             v.clone().into_bytes(),
                                             false,
                                             true,
@@ -111,7 +140,7 @@ impl<'a> ReprEncoder<'a> {
                                     (_, Some(TableIndex::FieldName(index)), true) => {
                                         // convert abs index to rel index
                                         InsertWithName::new(
-                                            base - index.clone() - 1,
+                                            base - index - 1,
                                             v.clone().into_bytes(),
                                             false,
                                             false,
@@ -120,7 +149,7 @@ impl<'a> ReprEncoder<'a> {
                                     }
                                     // Duplicate
                                     (_, Some(TableIndex::FieldName(index)), false) => {
-                                        let res = Duplicate::new(index.clone())
+                                        let res = Duplicate::new(*index)
                                             .encode(&mut encoder_buffer[cur_encoder..]);
                                         self.table.update(h.clone(), v.clone());
                                         base = max(base, self.table.insert_count);
@@ -143,9 +172,9 @@ impl<'a> ReprEncoder<'a> {
                                 self.draining_index += 1;
                             }
                             insert_list.push_back((h.clone(), v.clone()));
-                            *insert_length += h.len() + v.len() + 32;
+                            *self.insert_length += h.len() + v.len() + 32;
                         }
-                        if allow_post && !is_duplicate {
+                        if self.allow_post && !is_duplicate {
                             for (post_index, (t_h, t_v)) in insert_list.iter().enumerate() {
                                 if t_h == &h && t_v == &v {
                                     dynamic_index = Some(TableIndex::Field(post_index))
@@ -249,50 +278,48 @@ impl<'a> ReprEncoder<'a> {
 
         (cur_encoder, cur_stream)
     }
-    /// ## 2.1.1.1. Avoiding Prohibited Insertions
-    /// To ensure that the encoder is not prevented from adding new entries, the encoder can
-    /// avoid referencing entries that are close to eviction. Rather than reference such an
-    /// entry, the encoder can emit a Duplicate instruction (Section 4.3.4) and reference
-    /// the duplicate instead.
-    ///
-    /// Determining which entries are too close to eviction to reference is an encoder preference.
-    /// One heuristic is to target a fixed amount of available space in the dynamic table:
-    /// either unused space or space that can be reclaimed by evicting non-blocking entries.
-    /// To achieve this, the encoder can maintain a draining index, which is the smallest
-    /// absolute index (Section 3.2.4) in the dynamic table that it will emit a reference for.
-    /// As new entries are inserted, the encoder increases the draining index to maintain the
-    /// section of the table that it will not reference. If the encoder does not create new
-    /// references to entries with an absolute index lower than the draining index, the number
-    /// of unacknowledged references to those entries will eventually become zero, allowing
-    /// them to be evicted.
-    ///
-    ///     <-- Newer Entries          Older Entries -->
-    /// (Larger Indices)       (Smaller Indices)
-    /// +--------+---------------------------------+----------+
-    /// | Unused |          Referenceable          | Draining |
-    /// | Space  |             Entries             | Entries  |
-    /// +--------+---------------------------------+----------+
-    /// ^                                 ^          ^
-    /// |                                 |          |
-    /// Insertion Point                 Draining Index  Dropping
-    /// Point
+    // ## 2.1.1.1. Avoiding Prohibited Insertions
+    // To ensure that the encoder is not prevented from adding new entries, the encoder can
+    // avoid referencing entries that are close to eviction. Rather than reference such an
+    // entry, the encoder can emit a Duplicate instruction (Section 4.3.4) and reference
+    // the duplicate instead.
+    //
+    // Determining which entries are too close to eviction to reference is an encoder preference.
+    // One heuristic is to target a fixed amount of available space in the dynamic table:
+    // either unused space or space that can be reclaimed by evicting non-blocking entries.
+    // To achieve this, the encoder can maintain a draining index, which is the smallest
+    // absolute index (Section 3.2.4) in the dynamic table that it will emit a reference for.
+    // As new entries are inserted, the encoder increases the draining index to maintain the
+    // section of the table that it will not reference. If the encoder does not create new
+    // references to entries with an absolute index lower than the draining index, the number
+    // of unacknowledged references to those entries will eventually become zero, allowing
+    // them to be evicted.
+    //
+    //     <-- Newer Entries          Older Entries -->
+    // (Larger Indices)       (Smaller Indices)
+    // +--------+---------------------------------+----------+
+    // | Unused |          Referenceable          | Draining |
+    // | Space  |             Entries             | Entries  |
+    // +--------+---------------------------------+----------+
+    // ^                                 ^          ^
+    // |                                 |          |
+    // Insertion Point                 Draining Index  Dropping
+    // Point
     pub(crate) fn should_index(&self, index: &Option<TableIndex>) -> bool {
         match index {
             Some(TableIndex::Field(x)) => {
                 if *x < self.draining_index {
                     return false;
                 }
-                return true;
+                true
             }
             Some(TableIndex::FieldName(x)) => {
                 if *x < self.draining_index {
                     return false;
                 }
-                return true;
+                true
             }
-            _ => {
-                return true;
-            }
+            _ => true,
         }
     }
 }
@@ -773,7 +800,7 @@ impl DecInstIndex {
                 DecResult::Decoded(DecoderInstruction::InsertCountIncrement { increment: index })
             }
             DecResult::Error(e) => e.into(),
-            _ => DecResult::Error(H3errorQpack::ConnectionError(QpackDecoderStreamError)),
+            _ => DecResult::Error(H3errorQpack::ConnectionError(DecoderStreamError)),
         }
     }
 }

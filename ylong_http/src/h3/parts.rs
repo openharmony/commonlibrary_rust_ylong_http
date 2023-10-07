@@ -12,8 +12,10 @@
 // limitations under the License.
 
 use crate::h3::qpack::table::Field;
+use crate::h3::pseudo::PseudoHeaders;
 use crate::headers::Headers;
-use crate::pseudo::PseudoHeaders;
+
+/// HTTP2 HEADERS frame payload implementation.
 #[derive(PartialEq, Eq, Clone)]
 pub struct Parts {
     pub(crate) pseudo: PseudoHeaders,
@@ -43,13 +45,13 @@ impl Parts {
         self.pseudo.is_empty() && self.map.is_empty()
     }
 
-    pub fn update(&mut self, headers: Field, value: String) {
+    pub(crate) fn update(&mut self, headers: Field, value: String) {
         match headers {
-            Field::Authority => self.pseudo.authority = Some(value),
-            Field::Method => self.pseudo.method = Some(value),
-            Field::Path => self.pseudo.path = Some(value),
-            Field::Scheme => self.pseudo.scheme = Some(value),
-            Field::Status => self.pseudo.status = Some(value),
+            Field::Authority => self.pseudo.set_authority(Some(value)),
+            Field::Method => self.pseudo.set_method(Some(value)),
+            Field::Path => self.pseudo.set_path(Some(value)),
+            Field::Scheme => self.pseudo.set_scheme(Some(value)),
+            Field::Status => self.pseudo.set_status(Some(value)),
             Field::Other(header) => self.map.append(header.as_str(), value.as_str()).unwrap(),
         }
     }

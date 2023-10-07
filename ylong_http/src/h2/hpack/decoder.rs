@@ -229,11 +229,11 @@ mod ut_hpack_decoder {
                 $pseudo: expr,
                 { $a: expr, $m: expr, $p: expr, $sc: expr, $st: expr } $(,)?
             ) => {
-                assert_eq!($pseudo.authority, $a);
-                assert_eq!($pseudo.method, $m);
-                assert_eq!($pseudo.path, $p);
-                assert_eq!($pseudo.scheme, $sc);
-                assert_eq!($pseudo.status, $st);
+                assert_eq!($pseudo.authority(), $a);
+                assert_eq!($pseudo.method(), $m);
+                assert_eq!($pseudo.path(), $p);
+                assert_eq!($pseudo.scheme(), $sc);
+                assert_eq!($pseudo.status(), $st);
             };
         }
 
@@ -335,7 +335,7 @@ mod ut_hpack_decoder {
             hpack_test_case!(
                 HpackDecoder::with_max_size(4096, MAX_HEADER_LIST_SIZE),
                 "040c2f73616d706c652f70617468",
-                { None, None, Some(String::from("/sample/path")), None, None },
+                { None, None, Some("/sample/path"), None, None },
                 { 0 }
             );
 
@@ -351,7 +351,7 @@ mod ut_hpack_decoder {
             hpack_test_case!(
                 HpackDecoder::with_max_size(4096, MAX_HEADER_LIST_SIZE),
                 "82",
-                { None, Some(String::from("GET")), None, None, None },
+                { None, Some("GET"), None, None, None },
                 { 0 }
             );
 
@@ -362,7 +362,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828684410f7777772e6578616d706c652e636f6d",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/")), Some(String::from("http")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/"), Some("http"), None },
                     { 57, Authority => "www.example.com" }
                 );
 
@@ -370,7 +370,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828684be58086e6f2d6361636865",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/")), Some(String::from("http")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/"), Some("http"), None },
                     { "cache-control" => "no-cache" },
                     { 110, "cache-control" => "no-cache", Authority => "www.example.com" }
                 );
@@ -379,7 +379,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828785bf400a637573746f6d2d6b65790c637573746f6d2d76616c7565",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/index.html")), Some(String::from("https")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/index.html"), Some("https"), None },
                     { "custom-key" => "custom-value" },
                     { 164, "custom-key" => "custom-value", "cache-control" => "no-cache", Authority => "www.example.com" }
                 );
@@ -392,7 +392,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828684418cf1e3c2e5f23a6ba0ab90f4ff",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/")), Some(String::from("http")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/"), Some("http"), None },
                     { 57, Authority => "www.example.com" }
                 );
 
@@ -400,7 +400,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828684be5886a8eb10649cbf",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/")), Some(String::from("http")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/"), Some("http"), None },
                     { "cache-control" => "no-cache" },
                     { 110, "cache-control" => "no-cache", Authority => "www.example.com" }
                 );
@@ -409,7 +409,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "828785bf408825a849e95ba97d7f8925a849e95bb8e8b4bf",
-                    { Some(String::from("www.example.com")), Some(String::from("GET")), Some(String::from("/index.html")), Some(String::from("https")), None },
+                    { Some("www.example.com"), Some("GET"), Some("/index.html"), Some("https"), None },
                     { "custom-key" => "custom-value" },
                     { 164, "custom-key" => "custom-value", "cache-control" => "no-cache", Authority => "www.example.com" }
                 );
@@ -426,7 +426,7 @@ mod ut_hpack_decoder {
                     2032303a31333a323120474d546e1768\
                     747470733a2f2f7777772e6578616d70\
                     6c652e636f6d",
-                    { None, None, None, None, Some(String::from("302")) },
+                    { None, None, None, None, Some("302") },
                     {
                         "location" => "https://www.example.com",
                         "date" => "Mon, 21 Oct 2013 20:13:21 GMT",
@@ -445,7 +445,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "4803333037c1c0bf",
-                    { None, None, None, None, Some(String::from("307")) },
+                    { None, None, None, None, Some("307") },
                     {
                         "cache-control" => "private",
                         "date" => "Mon, 21 Oct 2013 20:13:21 GMT",
@@ -470,7 +470,7 @@ mod ut_hpack_decoder {
                     5541585157454f49553b206d61782d61\
                     67653d333630303b2076657273696f6e\
                     3d31",
-                    { None, None, None, None, Some(String::from("200")) },
+                    { None, None, None, None, Some("200") },
                     {
                         "cache-control" => "private",
                         "date" => "Mon, 21 Oct 2013 20:13:22 GMT",
@@ -497,7 +497,7 @@ mod ut_hpack_decoder {
                     941054d444a8200595040b8166e082a6\
                     2d1bff6e919d29ad171863c78f0b97c8\
                     e9ae82ae43d3",
-                    { None, None, None, None, Some(String::from("302")) },
+                    { None, None, None, None, Some("302") },
                     {
                         "location" => "https://www.example.com",
                         "date" => "Mon, 21 Oct 2013 20:13:21 GMT",
@@ -516,7 +516,7 @@ mod ut_hpack_decoder {
                 hpack_test_case!(
                     &mut hpack_decoder,
                     "4883640effc1c0bf",
-                    { None, None, None, None, Some(String::from("307")) },
+                    { None, None, None, None, Some("307") },
                     {
                         "cache-control" => "private",
                         "date" => "Mon, 21 Oct 2013 20:13:21 GMT",
@@ -539,7 +539,7 @@ mod ut_hpack_decoder {
                     77ad94e7821dd7f2e6c7b335dfdfcd5b\
                     3960d5af27087f3672c1ab270fb5291f\
                     9587316065c003ed4ee5b1063d5007",
-                    { None, None, None, None, Some(String::from("200")) },
+                    { None, None, None, None, Some("200") },
                     {
                         "cache-control" => "private",
                         "date" => "Mon, 21 Oct 2013 20:13:22 GMT",
@@ -562,7 +562,7 @@ mod ut_hpack_decoder {
             hpack_test_case!(
                 HpackDecoder::with_max_size(4096, MAX_HEADER_LIST_SIZE),
                 "04", "0c", "2f", "73", "61", "6d", "70", "6c", "65", "2f", "70", "61", "74", "68",
-                { None, None, Some(String::from("/sample/path")), None, None },
+                { None, None, Some("/sample/path"), None, None },
                 { 0 }
             );
 
@@ -573,7 +573,7 @@ mod ut_hpack_decoder {
                 "941054d444a8200595040b8166e082a6",
                 "2d1bff6e919d29ad171863c78f0b97c8",
                 "e9ae82ae43d3",
-                { None, None, None, None, Some(String::from("302")) },
+                { None, None, None, None, Some("302") },
                 {
                     "location" => "https://www.example.com",
                     "date" => "Mon, 21 Oct 2013 20:13:21 GMT",

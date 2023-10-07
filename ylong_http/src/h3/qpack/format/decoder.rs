@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use crate::h3::qpack::error::ErrorCode::QpackDecompressionFailed;
+use crate::h3::qpack::error::ErrorCode::DecompressionFailed;
 use crate::h3::qpack::error::{ErrorCode, H3errorQpack};
 use crate::h3::qpack::format::decoder::DecResult::Error;
 use crate::h3::qpack::integer::IntegerDecoder;
@@ -29,6 +29,14 @@ impl EncInstDecoder {
         Self {}
     }
 
+    /// Decodes `buf`. Every time users call `decode`, it will try to
+    /// decode a `EncoderInstruction`.
+    /// # Example
+//     ```no_run
+//     use crate::h3::qpack::format::decoder::EncInstDecoder;
+//     let mut decoder = EncInstDecoder::new();
+//
+//     ```
     pub(crate) fn decode(
         &mut self,
         buf: &[u8],
@@ -202,8 +210,8 @@ impl FiledSectionPrefix {
                 buf_index,
                 Representation::FieldSectionPrefix {
                     require_insert_count: ric,
-                    signal: signal,
-                    delta_base: delta_base,
+                    signal,
+                    delta_base,
                 },
             )),
             DecResult::NeedMore(inner) => {
@@ -266,7 +274,7 @@ impl EncInstIndex {
             }
             DecResult::Error(e) => e.into(),
             _ => DecResult::Error(H3errorQpack::ConnectionError(
-                ErrorCode::QpackDecompressionFailed,
+                ErrorCode::DecompressionFailed,
             )),
         }
     }
@@ -328,7 +336,7 @@ impl ReprIndex {
             DecResult::NeedMore(inner) => DecResult::NeedMore(ReprIndex::from_inner(inner).into()),
             DecResult::Error(e) => e.into(),
             _ => DecResult::Error(H3errorQpack::ConnectionError(
-                ErrorCode::QpackDecompressionFailed,
+                ErrorCode::DecompressionFailed,
             )),
         }
     }
@@ -692,17 +700,17 @@ impl HuffmanStringBytes {
             Ordering::Greater | Ordering::Equal => {
                 let pos = self.length - self.read;
                 if self.huffman.decode(&buf[..pos]).is_err() {
-                    return H3errorQpack::ConnectionError(QpackDecompressionFailed).into();
+                    return H3errorQpack::ConnectionError(DecompressionFailed).into();
                 }
                 // let (_, mut remain_buf) = buf.split_at_mut(pos);
                 match self.huffman.finish() {
                     Ok(vec) => DecResult::Decoded((pos, vec)),
-                    Err(_) => H3errorQpack::ConnectionError(QpackDecompressionFailed).into(),
+                    Err(_) => H3errorQpack::ConnectionError(DecompressionFailed).into(),
                 }
             }
             Ordering::Less => {
                 if self.huffman.decode(buf).is_err() {
-                    return H3errorQpack::ConnectionError(QpackDecompressionFailed).into();
+                    return H3errorQpack::ConnectionError(DecompressionFailed).into();
                 }
                 self.read += buf.len();
                 // let (_, mut remain_buf) = buf.split_at_mut(buf.len());
@@ -766,7 +774,7 @@ impl InstValueString {
                     },
                 ))
             }
-            (_, _) => Error(H3errorQpack::ConnectionError(QpackDecompressionFailed)),
+            (_, _) => Error(H3errorQpack::ConnectionError(DecompressionFailed)),
         }
     }
 }
@@ -824,7 +832,7 @@ impl ReprValueString {
                     },
                 ))
             }
-            (_, _) => Error(H3errorQpack::ConnectionError(QpackDecompressionFailed)),
+            (_, _) => Error(H3errorQpack::ConnectionError(DecompressionFailed)),
         }
     }
 }

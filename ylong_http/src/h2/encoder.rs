@@ -1240,10 +1240,12 @@ mod ut_frame_encoder {
         let mut frame_encoder = FrameEncoder::new(4096, 8190);
 
         let mut new_parts = Parts::new();
-        new_parts.pseudo.method = Some("GET".to_string());
-        new_parts.pseudo.scheme = Some("https".to_string());
-        new_parts.pseudo.path = Some("/code".to_string());
-        new_parts.pseudo.authority = Some("example.com".to_string());
+        new_parts.pseudo.set_method(Some("GET".to_string()));
+        new_parts.pseudo.set_scheme(Some("https".to_string()));
+        new_parts.pseudo.set_path(Some("/code".to_string()));
+        new_parts
+            .pseudo
+            .set_authority(Some("example.com".to_string()));
         let mut frame_flag = FrameFlags::empty();
         frame_flag.set_end_headers(true);
         frame_flag.set_end_stream(true);
@@ -1396,10 +1398,12 @@ mod ut_frame_encoder {
         let mut encoder = FrameEncoder::new(4096, 8190);
 
         let mut new_parts = Parts::new();
-        new_parts.pseudo.method = Some("GET".to_string());
-        new_parts.pseudo.scheme = Some("https".to_string());
-        new_parts.pseudo.path = Some("/code".to_string());
-        new_parts.pseudo.authority = Some("example.com".to_string());
+        new_parts.pseudo.set_method(Some("GET".to_string()));
+        new_parts.pseudo.set_scheme(Some("https".to_string()));
+        new_parts.pseudo.set_path(Some("/code".to_string()));
+        new_parts
+            .pseudo
+            .set_authority(Some("example.com".to_string()));
         let mut frame_flag = FrameFlags::empty();
         frame_flag.set_end_headers(true);
         frame_flag.set_end_stream(false);
@@ -1707,10 +1711,12 @@ mod ut_frame_encoder {
         let mut frame_encoder = FrameEncoder::new(4096, 8190);
         let mut new_parts = Parts::new();
         assert!(new_parts.is_empty());
-        new_parts.pseudo.method = Some("GET".to_string());
-        new_parts.pseudo.scheme = Some("https".to_string());
-        new_parts.pseudo.path = Some("/code".to_string());
-        new_parts.pseudo.authority = Some("example.com".to_string());
+        new_parts.pseudo.set_method(Some("GET".to_string()));
+        new_parts.pseudo.set_scheme(Some("https".to_string()));
+        new_parts.pseudo.set_path(Some("/code".to_string()));
+        new_parts
+            .pseudo
+            .set_authority(Some("example.com".to_string()));
 
         let mut frame_flag = FrameFlags::empty();
         frame_flag.set_end_headers(false);

@@ -14,7 +14,7 @@
 pub mod decoder;
 pub mod encoder;
 pub(crate) mod error;
-mod format;
+pub mod format;
 mod integer;
 pub mod table;
 use crate::h3::qpack::format::decoder::Name;
@@ -77,12 +77,10 @@ impl DecoderInstPrefixBit {
     }
 
     pub(crate) fn prefix_midbit_value(&self) -> MidBit {
-        match self.0 {
-            _ => MidBit {
-                n: None,
-                t: None,
-                h: None,
-            },
+        MidBit {
+            n: None,
+            t: None,
+            h: None,
         }
     }
 }

@@ -129,9 +129,7 @@ impl DynamicTable {
         self.size += field.len() + value.len() + 32;
         self.queue.push_back((field.clone(), value.clone()));
         self.fit_size();
-        match self.index(&field, &value) {
-            x => x,
-        }
+        self.index(&field, &value)
     }
 
     pub(crate) fn have_enough_space(
@@ -181,9 +179,8 @@ impl DynamicTable {
         // find latest
         let mut index = None;
         for (n, (h, v)) in self.queue.iter().enumerate() {
-            match (header == h, value == v, &index) {
-                (true, true, _) => index = Some(TableIndex::Field(n + self.remove_count)),
-                _ => {}
+            if let (true, true, _) = (header == h, value == v, &index) {
+                index = Some(TableIndex::Field(n + self.remove_count))
             }
         }
         index
@@ -193,9 +190,8 @@ impl DynamicTable {
         // find latest
         let mut index = None;
         for (n, (h, v)) in self.queue.iter().enumerate() {
-            match (header == h, value == v, &index) {
-                (true, _, _) => index = Some(TableIndex::FieldName(n + self.remove_count)),
-                _ => {}
+            if let (true, _, _) = (header == h, value == v, &index) {
+                index = Some(TableIndex::FieldName(n + self.remove_count))
             }
         }
         index
