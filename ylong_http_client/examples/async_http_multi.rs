@@ -19,27 +19,23 @@ use ylong_http_client::async_impl::{Client, Downloader};
 use ylong_http_client::{HttpClientError, Request};
 
 fn main() -> Result<(), HttpClientError> {
-    let handle = ylong_runtime::spawn(async move {
-        let _ = client_send().await.unwrap();
-    });
+    let mut handles = Vec::new();
+    for _ in 0..4 {
+        handles.push(ylong_runtime::spawn(async move {
+            let client = Client::new();
+            let request = Request::get("127.0.0.1:3000")
+                .body("".as_bytes())
+                .map_err(|e| HttpClientError::other(Some(e)))
+                .unwrap();
+            // Sends request and receives a `Response`.
+            let response = client.request(request).await.unwrap();
 
-    let _ = ylong_runtime::block_on(handle);
-    Ok(())
-}
-
-async fn client_send() -> Result<(), HttpClientError> {
-    // Creates a `async_impl::Client`
-    let client = Client::new();
-
-    // Creates a `Request`.
-    let request = Request::get("127.0.0.1:3000")
-        .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
-
-    // Sends request and receives a `Response`.
-    let response = client.request(request).await?;
-
-    // Reads the body of `Response` by using `BodyReader`.
-    let _ = Downloader::console(response).download().await;
+            // Reads the body of `Response` by using `BodyReader`.
+            let _ = Downloader::console(response).download().await;
+        }))
+    }
+    for handle in handles {
+        let _ = ylong_runtime::block_on(handle);
+    }
     Ok(())
 }

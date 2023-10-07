@@ -52,3 +52,51 @@ where
         }
     }
 }
+
+#[cfg(all(test, feature = "ylong_base"))]
+mod ut_timeout {
+    use ylong_http::response::status::StatusCode;
+    use ylong_http::response::{Response, ResponsePart};
+    use ylong_http::version::Version;
+
+    use crate::async_impl::timeout::TimeoutFuture;
+    use crate::async_impl::HttpBody;
+    use crate::util::normalizer::BodyLength;
+    use crate::HttpClientError;
+
+    /// UT test cases for `TimeoutFuture`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Future`.
+    /// 2. Calls `ylong_runtime::block_on` to run the future.
+    /// 3. Checks if result is correct.
+    #[test]
+    fn ut_timeout_future() {
+        let future1 = Box::pin(async {
+            let part = ResponsePart {
+                version: Version::HTTP1_1,
+                status: StatusCode::OK,
+                headers: Default::default(),
+            };
+            let body = HttpBody::new(BodyLength::Empty, Box::new([].as_slice()), &[]).unwrap();
+            Ok(Response::from_raw_parts(part, body))
+        });
+
+        let future2 = Box::pin(async {
+            Result::<Response<HttpBody>, HttpClientError>::Err(HttpClientError::user_aborted())
+        });
+
+        let time_future1 = TimeoutFuture {
+            timeout: None,
+            future: future1,
+        };
+
+        let time_future2 = TimeoutFuture {
+            timeout: None,
+            future: future2,
+        };
+
+        assert!(ylong_runtime::block_on(time_future1).is_ok());
+        assert!(ylong_runtime::block_on(time_future2).is_err());
+    }
+}

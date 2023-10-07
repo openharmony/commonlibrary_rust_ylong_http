@@ -159,24 +159,109 @@ impl<'a> BodyLengthParser<'a> {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.parse::<usize>().ok());
 
-            return if let Some(len) = content_length_valid {
-                Ok(BodyLength::Length(len))
-            } else {
-                Err(HttpClientError::new_with_message(
+            return match content_length_valid {
+                // If `content-length` is 0, the io stream cannot be read,
+                // otherwise it will get stuck.
+                Some(0) => Ok(BodyLength::Empty),
+                Some(len) => Ok(BodyLength::Length(len)),
+                None => Err(HttpClientError::new_with_message(
                     ErrorKind::Request,
                     "Invalid response content-length",
-                ))
+                )),
             };
         }
 
         Ok(BodyLength::UntilClose)
     }
 }
-
+#[derive(PartialEq, Debug)]
 pub(crate) enum BodyLength {
     #[cfg(feature = "http1_1")]
     Chunk,
     Length(usize),
     Empty,
     UntilClose,
+}
+
+#[cfg(test)]
+mod ut_normalizer {
+    use ylong_http::h1::ResponseDecoder;
+    use ylong_http::request::method::Method;
+    use ylong_http::request::uri::{Uri, UriBuilder};
+    use ylong_http::request::Request;
+    use ylong_http::response::Response;
+
+    use crate::normalizer::UriFormatter;
+    use crate::util::normalizer::{BodyLength, BodyLengthParser, RequestFormatter};
+
+    /// UT test cases for `UriFormatter::format`.
+    ///
+    /// # Brief
+    /// 1. Creates a `UriFormatter`.
+    /// 2. Calls `UriFormatter::format` with `Uri` to get the result.
+    /// 3. Checks if the uri port result is correct.
+    #[test]
+    fn ut_uri_format() {
+        let mut uri = UriBuilder::new()
+            .scheme("http")
+            .authority("example.com")
+            .path("/foo")
+            .query("a=1")
+            .build()
+            .unwrap();
+        let uni = UriFormatter::new();
+        let _ = uni.format(&mut uri);
+        assert_eq!(uri.port().unwrap().as_str(), "80");
+    }
+
+    /// UT test cases for `RequestFormatter::normalize`.
+    ///
+    /// # Brief
+    /// 1. Creates a `RequestFormatter`.
+    /// 2. Calls `UriFormatter::normalize` to get the result.
+    /// 3. Checks if the request's header result is correct.
+    #[test]
+    fn ut_request_format() {
+        let mut request = Request::new("this is a body");
+        let request_uri = request.uri_mut();
+        *request_uri = Uri::from_bytes(b"http://example1.com").unwrap();
+        let mut formater = RequestFormatter::new(&mut request);
+        let _ = formater.normalize();
+        let (part, _) = request.into_parts();
+        let res = part.headers.get("Host").unwrap();
+        assert_eq!(res.to_str().unwrap().as_bytes(), b"example1.com:80");
+    }
+
+    /// UT test cases for `BodyLengthParser::parse`.
+    ///
+    /// # Brief
+    /// 1. Creates a `BodyLengthParser`.
+    /// 2. Calls `BodyLengthParser::parse` to get the result.
+    /// 3. Checks if the BodyLength result is correct.
+    #[test]
+    fn ut_body_length_parser() {
+        let response_str = "HTTP/1.1 202 \r\nAge: \t 270646 \t \t\r\nLocation: \t example3.com:80 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+        let method = Method::GET;
+        let body_len_parser = BodyLengthParser::new(&method, &result.0);
+        let res = body_len_parser.parse().unwrap();
+        assert_eq!(res, BodyLength::UntilClose);
+
+        let response_str = "HTTP/1.1 202 \r\nTransfer-Encoding: \t chunked \t \t\r\nLocation: \t example3.com:80 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+        let method = Method::GET;
+        let body_len_parser = BodyLengthParser::new(&method, &result.0);
+        let res = body_len_parser.parse().unwrap();
+        assert_eq!(res, BodyLength::Chunk);
+
+        let response_str = "HTTP/1.1 202 \r\nContent-Length: \t 20 \t \t\r\nLocation: \t example3.com:80 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+        let method = Method::GET;
+        let body_len_parser = BodyLengthParser::new(&method, &result.0);
+        let res = body_len_parser.parse().unwrap();
+        assert_eq!(res, BodyLength::Length(20));
+    }
 }

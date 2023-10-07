@@ -1456,3 +1456,24 @@ pub(crate) mod http2 {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod ut_dispatch {
+    use crate::dispatcher::{Conn, ConnDispatcher, Dispatcher};
+
+    /// UT test cases for `ConnDispatcher::is_shutdown`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ConnDispatcher`.
+    /// 2. Calls `ConnDispatcher::is_shutdown` to get the result.
+    /// 3. Calls `ConnDispatcher::dispatch` to get the result.
+    /// 4. Checks if the result is false.
+    #[test]
+    fn ut_is_shutdown() {
+        let conn = ConnDispatcher::http1(b"Data");
+        let res = conn.is_shutdown();
+        assert!(!res);
+        let res = conn.dispatch();
+        assert!(res.is_some());
+    }
+}

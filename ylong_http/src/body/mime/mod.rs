@@ -688,9 +688,15 @@ mod ut_mime {
     /// 1. Creates a `MultiPart` and sets values.
     /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_multipart_poll_data() {
+    #[test]
+    fn ut_multipart_poll_data() {
+        let handle = ylong_runtime::spawn(async move {
+            multipart_poll_data().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn multipart_poll_data() {
         let mut mp = MultiPart::new().part(
             Part::new()
                 .name("name")
@@ -722,9 +728,15 @@ mod ut_mime {
     /// 1. Creates a `MultiPart` and sets values.
     /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
     /// 3. Checks whether the result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_multipart_poll_data_stream() {
+    #[test]
+    fn ut_multipart_poll_data_stream() {
+        let handle = ylong_runtime::spawn(async move {
+            multipart_poll_data_stream().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn multipart_poll_data_stream() {
         let mut mp = MultiPart::new().part(
             Part::new()
                 .name("name")

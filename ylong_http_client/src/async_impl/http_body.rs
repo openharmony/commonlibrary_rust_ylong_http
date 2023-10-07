@@ -568,9 +568,11 @@ impl Chunk {
 
 #[cfg(test)]
 mod ut_async_http_body {
-    use ylong_http::body::ChunkBodyDecoder;
-
+    use ylong_http::body::{async_impl, ChunkBodyDecoder};
     use crate::async_impl::http_body::Chunk;
+    use crate::async_impl::HttpBody;
+    use crate::util::normalizer::BodyLength;
+    use crate::ErrorKind;
 
     /// UT test cases for `Chunk::get_trailers`.
     ///
@@ -593,5 +595,193 @@ mod ut_async_http_body {
         assert_eq!(value1.unwrap().to_str().unwrap(), "value1");
         let value2 = data.get("Trailer2");
         assert_eq!(value2.unwrap().to_str().unwrap(), "value2");
+    }
+
+    /// UT test cases for `Body::data`.
+    ///
+    /// # Brief
+    /// 1. Creates a chunk `HttpBody`.
+    /// 2. Calls `data` method get boxstream.
+    /// 3. Checks if data size is correct.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_asnyc_http_body_chunk2() {
+        let handle = ylong_runtime::spawn(async move {
+            http_body_chunk2().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn http_body_chunk2() {
+        let box_stream = Box::new(
+            "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            000; message = last\r\n\
+            accept:text/html\r\n\r\n\
+        "
+            .as_bytes(),
+        );
+        let chunk_body_bytes = "";
+        let mut chunk =
+            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+
+        let mut buf = [0u8; 32];
+        // Read body part
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+
+        let box_stream = Box::new("".as_bytes());
+        let chunk_body_no_trailer_bytes = "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            0\r\n\r\n\
+            ";
+
+        let mut chunk = HttpBody::new(
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_no_trailer_bytes.as_bytes(),
+        )
+        .unwrap();
+
+        let mut buf = [0u8; 32];
+        // Read body part
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+        assert_eq!(&buf[..read], b"hello");
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 12);
+        assert_eq!(&buf[..read], b"hello world!");
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 0);
+        assert_eq!(&buf[..read], b"");
+        match async_impl::Body::trailer(&mut chunk) {
+            Ok(_) => (),
+            Err(e) => assert_eq!(e.error_kind(), ErrorKind::BodyDecode),
+        }
+    }
+
+    /// UT test cases for `Body::data`.
+    ///
+    /// # Brief
+    /// 1. Creates a empty `HttpBody`.
+    /// 2. Calls `HttpBody::new` to create empty http body.
+    /// 3. Checks if http body is empty.
+    #[test]
+    fn http_body_empty_err() {
+        let box_stream = Box::new("".as_bytes());
+        let content_bytes = "hello";
+
+        match HttpBody::new(BodyLength::Empty, box_stream, content_bytes.as_bytes()) {
+            Ok(_) => (),
+            Err(e) => assert_eq!(e.error_kind(), ErrorKind::Request),
+        }
+    }
+
+    /// UT test cases for text `HttpBody::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a text `HttpBody`.
+    /// 2. Calls `HttpBody::new` to create text http body.
+    /// 3. Checks if result is correct.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_http_body_text() {
+        let handle = ylong_runtime::spawn(async move {
+            http_body_text().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn http_body_text() {
+        let box_stream = Box::new("hello world".as_bytes());
+        let content_bytes = "";
+
+        let mut text =
+            HttpBody::new(BodyLength::Length(11), box_stream, content_bytes.as_bytes()).unwrap();
+
+        let mut buf = [0u8; 5];
+        // Read body part
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 1);
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 0);
+
+        let box_stream = Box::new("".as_bytes());
+        let content_bytes = "hello";
+
+        let mut text =
+            HttpBody::new(BodyLength::Length(5), box_stream, content_bytes.as_bytes()).unwrap();
+
+        let mut buf = [0u8; 32];
+        // Read body part
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut text, &mut buf).await.unwrap();
+        assert_eq!(read, 0);
+    }
+
+    /// UT test cases for until_close `HttpBody::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a until_close `HttpBody`.
+    /// 2. Calls `HttpBody::new` to create until_close http body.
+    /// 3. Checks if result is correct.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_http_body_until_close() {
+        let handle = ylong_runtime::spawn(async move {
+            http_body_until_close().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn http_body_until_close() {
+        let box_stream = Box::new("hello world".as_bytes());
+        let content_bytes = "";
+
+        let mut until_close =
+            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+
+        let mut buf = [0u8; 5];
+        // Read body part
+        let read = async_impl::Body::data(&mut until_close, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut until_close, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut until_close, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(read, 1);
+
+        let box_stream = Box::new("".as_bytes());
+        let content_bytes = "hello";
+
+        let mut until_close =
+            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+
+        let mut buf = [0u8; 5];
+        // Read body part
+        let read = async_impl::Body::data(&mut until_close, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(read, 5);
+        let read = async_impl::Body::data(&mut until_close, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(read, 0);
     }
 }

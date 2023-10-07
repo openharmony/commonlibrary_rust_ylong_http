@@ -16,6 +16,7 @@
 use core::convert::TryFrom;
 use std::net::IpAddr;
 
+use ylong_http::error::HttpError;
 use ylong_http::headers::HeaderValue;
 use ylong_http::request::uri::{Authority, Scheme, Uri};
 
@@ -94,7 +95,6 @@ impl Proxy {
 
     pub(crate) fn via_proxy(&self, uri: &Uri) -> Uri {
         let info = self.intercept.proxy_info();
-
         let mut builder = Uri::builder();
         builder = builder
             .scheme(info.scheme().clone())
@@ -113,10 +113,11 @@ impl Proxy {
     }
 
     pub(crate) fn is_intercepted(&self, uri: &Uri) -> bool {
+        // uri is formatted uri, use unwrap directly
         let no_proxy = self
             .no_proxy
             .as_ref()
-            .map(|no_proxy| no_proxy.contain(uri.to_string().as_str()))
+            .map(|no_proxy| no_proxy.contain(uri.host().unwrap().as_str()))
             .unwrap_or(false);
 
         match self.intercept {
@@ -160,11 +161,9 @@ impl ProxyInfo {
                 return Err(HttpClientError::new_with_cause(ErrorKind::Build, Some(e)));
             }
         };
-
         // Makes sure that all parts of uri exist.
         UriFormatter::new().format(&mut uri)?;
         let (scheme, authority, _, _) = uri.into_parts();
-
         // `scheme` and `authority` must have values after formatting.
         Ok(Self {
             basic_auth: None,
@@ -204,7 +203,14 @@ impl NoProxy {
         let mut domains_list = Vec::new();
 
         for host in no_proxy_vec {
-            match host.parse::<IpAddr>() {
+            let address = match Uri::from_bytes(host.as_bytes()) {
+                Ok(uri) => uri,
+                Err(_) => {
+                    continue;
+                }
+            };
+            // use unwrap directly, host has been checked before
+            match address.host().unwrap().as_str().parse::<IpAddr>() {
                 Ok(ip) => ip_list.push(Ip::Address(ip)),
                 Err(_) => domains_list.push(host.to_string()),
             }
@@ -262,6 +268,20 @@ mod ut_proxy {
 
     use crate::util::proxy::{Proxies, Proxy};
 
+    /// UT test cases for `Proxy::via_proxy`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Proxy`.
+    /// 2. Calls `Proxy::via_proxy` with some `Uri`to get the results.
+    /// 4. Checks if the test result is correct.
+    #[test]
+    fn ut_via_proxy() {
+        let proxy = Proxy::http("http://www.example.com").unwrap();
+        let uri = Uri::from_bytes(b"http://www.example2.com").unwrap();
+        let res = proxy.via_proxy(&uri);
+        assert_eq!(res.to_string(), "http://www.example.com:80");
+    }
+
     /// UT test cases for `Proxies`.
     ///
     /// # Brief
@@ -302,6 +322,22 @@ mod ut_proxy {
         assert_eq!(info.authority.to_string(), "www.aaa.com:80");
 
         let uri = Uri::from_bytes(b"http://no_proxy.aaa.com").unwrap();
+        assert!(proxies.match_proxy(&uri).is_none());
+
+        let mut proxies = Proxies::default();
+        let mut proxy = Proxy::http("http://www.aaa.com").unwrap();
+        proxy.no_proxy(".aaa.com");
+        proxies.add_proxy(proxy);
+
+        let uri = Uri::from_bytes(b"http://no_proxy.aaa.com").unwrap();
+        assert!(proxies.match_proxy(&uri).is_none());
+
+        let mut proxies = Proxies::default();
+        let mut proxy = Proxy::http("http://127.0.0.1:3000").unwrap();
+        proxy.no_proxy("http://127.0.0.1:80");
+        proxies.add_proxy(proxy);
+
+        let uri = Uri::from_bytes(b"http://127.0.0.1:80").unwrap();
         assert!(proxies.match_proxy(&uri).is_none());
     }
 }

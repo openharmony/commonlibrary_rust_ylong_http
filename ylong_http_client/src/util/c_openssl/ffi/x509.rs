@@ -22,7 +22,7 @@ extern "C" {
     /// Returns a human readable error string for verification error n.
     pub(crate) fn X509_verify_cert_error_string(n: c_long) -> *const c_char;
 
-    /// Attempts to decode len bytes at *ppin.\
+    /// Attempts to decode len bytes at *ppin.
     /// If successful a pointer to the TYPE structure is returned and *ppin is
     /// incremented to the byte following the parsed data.
     pub(crate) fn d2i_X509(
@@ -56,12 +56,16 @@ extern "C" {
 
     pub(crate) fn X509_VERIFY_PARAM_set_hostflags(param: *mut X509_VERIFY_PARAM, flags: c_uint);
 
+    /// If name is NUL-terminated, namelen may be zero, otherwise namelen must
+    /// be set to the length of name.
     pub(crate) fn X509_VERIFY_PARAM_set1_host(
         param: *mut X509_VERIFY_PARAM,
         name: *const c_char,
         namelen: size_t,
     ) -> c_int;
 
+    /// The ip argument is in binary format, in network byte-order and iplen
+    /// must be set to 4 for IPv4 and 16 for IPv6.
     pub(crate) fn X509_VERIFY_PARAM_set1_ip(
         param: *mut X509_VERIFY_PARAM,
         ip: *const c_uchar,

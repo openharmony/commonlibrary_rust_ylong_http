@@ -612,6 +612,9 @@ impl Certificate {
 
 #[cfg(test)]
 mod ut_openssl_adapter {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
     use crate::util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion};
     use crate::{AlpnProtocol, AlpnProtocolList, Certificate};
 
@@ -778,6 +781,43 @@ mod ut_openssl_adapter {
             .ssl_new("host name")
             .expect("Ssl build error.")
             .into_inner();
+    }
+
+    /// UT test cases for `TlsConfig::ssl` and `SslRef::set_verify_hostname`.
+    ///
+    /// # Brief
+    /// 1. Creates a `TlsConfig` by calling `TlsConfigBuilder::new` and
+    ///    `TlsConfigBuilder::build`.
+    /// 2. Sets hostname "" and verify_hostname.
+    /// 3. Creates a `Ssl` by calling `TlsConfig::ssl_new` then creates a
+    ///    `SslStream`.
+    /// 4. Calls `write` and `read` by `SslStream`.
+    /// 5. Checks if retures the segmentation fault `invalid memory reference`.
+    #[cfg(feature = "sync")]
+    #[test]
+    fn ut_tls_ssl_verify_hostname() {
+        let config = TlsConfigBuilder::new()
+            .sni(false)
+            .danger_accept_invalid_hostnames(false)
+            .build()
+            .expect("TlsConfig build error.");
+
+        let domain = String::from("");
+        let ssl = config
+            .ssl_new(domain.as_str())
+            .expect("Ssl build error.")
+            .into_inner();
+        let stream = TcpStream::connect("huawei.com:443").expect("Tcp stream error.");
+        let mut tls_stream = ssl.connect(stream).expect("Tls stream error.");
+
+        tls_stream
+            .write_all(b"GET / HTTP/1.0\r\n\r\n")
+            .expect("Stream write error.");
+        let mut res = vec![];
+        tls_stream
+            .read_to_end(&mut res)
+            .expect("Stream read error.");
+        println!("{}", String::from_utf8_lossy(&res));
     }
 
     /// UT test cases for `Cert::from_pem`.

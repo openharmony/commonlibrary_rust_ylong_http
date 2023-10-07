@@ -677,7 +677,14 @@ impl Default for ClientBuilder {
 
 #[cfg(test)]
 mod ut_async_impl_client {
-    use crate::async_impl::Client;
+    use ylong_http::h1::ResponseDecoder;
+    use ylong_http::request::uri::Uri;
+    use ylong_http::request::Request;
+    use ylong_http::response::Response;
+
+    use crate::async_impl::{Client, HttpBody};
+    use crate::util::normalizer::BodyLength;
+    use crate::Proxy;
 
     /// UT test cases for `Client::builder`.
     ///
@@ -689,7 +696,11 @@ mod ut_async_impl_client {
     #[test]
     fn ut_client_builder() {
         let builder = Client::builder().http1_only().build();
-        assert!(builder.is_ok())
+        assert!(builder.is_ok());
+        let builder_proxy = Client::builder()
+            .proxy(Proxy::http("http://www.example.com").build().unwrap())
+            .build();
+        assert!(builder_proxy.is_ok());
     }
 
     /// UT test cases for `ClientBuilder::default`.
@@ -710,5 +721,46 @@ mod ut_async_impl_client {
             .connect_timeout(Timeout::from_secs(9))
             .build();
         assert!(builder.is_ok())
+    }
+
+    /// UT test cases for `ClientBuilder::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
+    /// 2. Set redirect for client and call `Client::redirect_request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    #[test]
+    fn ut_client_request_redirect() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_redirect().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn client_request_redirect() {
+        use crate::async_impl::ClientBuilder;
+        use crate::util::{Redirect, Timeout};
+
+        let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nLocation: \t http://example3.com:80/foo?a=1 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+
+        let box_stream = Box::new("hello world".as_bytes());
+        let content_bytes = "";
+        let until_close =
+            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+        let response = Response::from_raw_parts(result.0, until_close);
+        let mut request = Request::new("this is a body");
+        let request_uri = request.uri_mut();
+        *request_uri = Uri::from_bytes(b"http://example1.com:80/foo?a=1").unwrap();
+
+        let client = ClientBuilder::default()
+            .redirect(Redirect::limited(2))
+            .connect_timeout(Timeout::from_secs(2))
+            .build()
+            .unwrap();
+        let res = client.redirect_request(response, &mut request).await;
+        assert!(res.is_ok())
     }
 }

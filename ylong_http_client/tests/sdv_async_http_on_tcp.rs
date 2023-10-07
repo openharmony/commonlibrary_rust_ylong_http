@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "async")]
+#![cfg(all(feature = "async", feature = "http1_1", feature = "ylong_base"))]
 
 #[macro_use]
 pub mod tcp_server;
@@ -112,6 +112,23 @@ fn sdv_async_client_send_request() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "3",
             Body: "Hi!",
+        },
+    );
+
+    // The content-length of `Response` is 0.
+    async_client_test_on_tcp!(
+        HTTP;
+        Request: {
+            Method: "GET",
+            Path: "/data",
+            Header: "Content-Length", "6",
+            Body: "Hello!",
+        },
+        Response: {
+            Status: 200,
+            Version: "HTTP/1.1",
+            Header: "Content-Length", "0",
+            Body: "",
         },
     );
 }

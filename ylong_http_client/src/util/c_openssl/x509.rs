@@ -160,8 +160,10 @@ impl X509VerifyParamRef {
     }
 
     pub(crate) fn set_host(&mut self, host: &str) -> Result<(), ErrorStack> {
+        let c_host = if host.is_empty() { "\0" } else { host };
         check_ret(unsafe {
-            X509_VERIFY_PARAM_set1_host(self.as_ptr(), host.as_ptr() as *const _, host.len())
+            // Must ensure name is NUL-terminated when namelen == 0.
+            X509_VERIFY_PARAM_set1_host(self.as_ptr(), c_host.as_ptr() as *const _, host.len())
         })
         .map(|_| ())
     }

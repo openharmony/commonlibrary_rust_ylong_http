@@ -4,16 +4,14 @@ version = "1.0.0"
 edition = "2021"
 description = "Ylong HTTP Client implementation"
 license = "Apache-2.0"
-repository = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_http"
+repository = "https://gitee.com/openharmony/commonlibrary_rust_ylong_http"
 keywords = ["ylong", "http", "client"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-ylong_http = { path = "../ylong_http", features = ["full"] }
+ylong_http = { path = "../ylong_http" }
 libc = { version = "0.2.134", optional = true }
 tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"], optional = true }
-ylong_runtime = { git = "https://gitee.com/openharmony-sig/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
 
 [dev-dependencies]
 hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }
@@ -48,7 +46,12 @@ c_openssl_3_0 = ["__c_openssl"]         # Uses TLS by FFI of C-openssl 3.0.
 [[example]]
 name = "async_http"
 path = "examples/async_http.rs"
-required-features = ["async", "http1_1", "tokio_base"]
+required-features = ["async", "http1_1", "ylong_base"]
+
+[[example]]
+name = "async_http_multi"
+path = "examples/async_http_multi.rs"
+required-features = ["async", "http1_1", "ylong_base"]
 
 [[example]]
 name = "async_http2"
@@ -78,7 +81,7 @@ required-features = ["async", "http1_1", "tokio_base"]
 [[example]]
 name = "async_redirect_http"
 path = "examples/async_redirect_http.rs"
-required-features = ["async", "http1_1"]
+required-features = ["async", "http1_1", "tokio_base"]
 
 [[example]]
 name = "sync_http"
@@ -93,34 +96,4 @@ required-features = ["sync", "http1_1"]
 [[example]]
 name = "sync_proxy_http"
 path = "examples/sync_proxy_http.rs"
-required-features = ["sync", "http1_1"]
-
-[[test]]
-name = "sdv_async_http"
-path = "./tests/sdv_async_http.rs"
-required-features = ["async", "http1_1", "tokio_base"]
-
-[[test]]
-name = "sdv_sync_http"
-path = "./tests/sdv_sync_http.rs"
-required-features = ["sync", "http1_1", "tokio_base"]
-
-[[test]]
-name = "sdv_async_https_c_ssl"
-path = "./tests/sdv_async_https_c_ssl.rs"
-required-features = ["async", "http1_1", "__tls", "tokio_base"]
-
-[[test]]
-name = "sdv_sync_https_c_ssl"
-path = "./tests/sdv_sync_https_c_ssl.rs"
-required-features = ["sync", "http1_1", "__tls", "tokio_base"]
-
-[[test]]
-name = "sdv_async_http_on_tcp"
-path = "./tests/sdv_async_http_on_tcp.rs"
-required-features = ["async", "http1_1", "ylong_base"]
-
-[[test]]
-name = "sdv_sync_http_on_tcp"
-path = "./tests/sdv_sync_http_on_tcp.rs"
 required-features = ["sync", "http1_1"]

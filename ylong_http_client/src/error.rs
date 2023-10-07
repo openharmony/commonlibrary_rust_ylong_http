@@ -197,3 +197,71 @@ impl Display for CauseMessage {
 }
 
 impl Error for CauseMessage {}
+
+#[cfg(test)]
+mod ut_util_error {
+    use crate::{ErrorKind, HttpClientError};
+
+    /// UT test cases for `ErrorKind::as_str`.
+    ///
+    /// # Brief
+    /// 1. Transfer ErrorKind to str a by calling `ErrorKind::as_str`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_err_as_str() {
+        assert_eq!(ErrorKind::BodyDecode.as_str(), "Body Decode Error");
+        assert_eq!(ErrorKind::BodyTransfer.as_str(), "Body Transfer Error");
+        assert_eq!(ErrorKind::Build.as_str(), "Build Error");
+        assert_eq!(ErrorKind::Connect.as_str(), "Connect Error");
+        assert_eq!(
+            ErrorKind::ConnectionUpgrade.as_str(),
+            "Connection Upgrade Error"
+        );
+        assert_eq!(ErrorKind::Other.as_str(), "Other Error");
+        assert_eq!(ErrorKind::Redirect.as_str(), "Redirect Error");
+        assert_eq!(ErrorKind::Request.as_str(), "Request Error");
+        assert_eq!(ErrorKind::Timeout.as_str(), "Timeout Error");
+        assert_eq!(ErrorKind::UserAborted.as_str(), "User Aborted Error");
+    }
+
+    /// UT test cases for `HttpClientError` error kind function.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::user_aborted`, `HttpClientError::other`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_err_kind() {
+        let user_aborted = HttpClientError::user_aborted();
+        assert_eq!(user_aborted.error_kind(), ErrorKind::UserAborted);
+        let other = HttpClientError::other(Some("error"));
+        assert_eq!(other.error_kind(), ErrorKind::Other);
+    }
+
+    /// UT test cases for `HttpClientError::new_with_cause` function.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::new_with_cause`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_err_with_cause() {
+        let error_build = HttpClientError::new_with_cause(ErrorKind::Build, Some("error"));
+        assert_eq!(error_build.error_kind(), ErrorKind::Build);
+    }
+
+    /// UT test cases for `HttpClientError::new_with_message` function.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::new_with_message`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_err_with_message() {
+        let error_request = HttpClientError::new_with_message(ErrorKind::Request, "error");
+        assert_eq!(error_request.error_kind(), ErrorKind::Request);
+        let error_timeout = HttpClientError::new_with_message(ErrorKind::Timeout, "error");
+        assert_eq!(
+            format!("{:?}", error_timeout),
+            "HttpClientError { ErrorKind: Timeout, Cause: error }"
+        );
+        assert_eq!(format!("{error_timeout}"), "Timeout Error: error");
+    }
+}
