@@ -1348,7 +1348,7 @@ mod ut_uri {
         );
 
         uri_test_case!(
-            br#"https://www.example.com:80/message/email?name='\^'"#,
+            br"https://www.example.com:80/message/email?name='\^'",
             Err(HttpError::from(ErrorKind::Uri(InvalidUri::InvalidByte))),
         );
 

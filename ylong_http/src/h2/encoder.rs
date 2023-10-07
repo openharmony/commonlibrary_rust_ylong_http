@@ -1308,7 +1308,7 @@ mod ut_frame_encoder {
         assert_eq!(third_encoded, 6);
 
         // Validate the encoded settings
-        let mut expected_encoded_settings = vec![0u8; 60];
+        let mut expected_encoded_settings = [0u8; 60];
         for (i, setting) in settings_payload.iter().enumerate() {
             let offset = i * 6;
             let (id, value) = match setting {
@@ -1628,7 +1628,7 @@ mod ut_frame_encoder {
         assert_eq!(second_encoded, 13);
 
         // Validate the encoded GOAWAY frame.
-        let mut expected_encoded_goaway = vec![0u8; 13];
+        let mut expected_encoded_goaway = [0u8; 13];
         expected_encoded_goaway[0..4].copy_from_slice(&(last_stream_id as u32).to_be_bytes());
         expected_encoded_goaway[4..8].copy_from_slice(&(error_code).to_be_bytes());
 

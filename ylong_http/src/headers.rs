@@ -1074,7 +1074,7 @@ mod ut_headers {
     fn ut_header_value_iter() {
         let mut value = HeaderValue::from_bytes(b"text/html").unwrap();
         value.append_bytes(b"application/xml").unwrap();
-        let value_to_compare = vec!["text/html", "application/xml"];
+        let value_to_compare = ["text/html", "application/xml"];
 
         for (index, sub_value) in value.iter().enumerate() {
             assert_eq!(sub_value, value_to_compare[index].as_bytes());
