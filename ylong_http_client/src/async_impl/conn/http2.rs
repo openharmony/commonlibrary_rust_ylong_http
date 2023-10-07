@@ -40,9 +40,9 @@ pub(crate) async fn request<S, T>(
     request: &mut Request<T>,
     retryable: &mut Retryable,
 ) -> Result<Response<HttpBody>, HttpClientError>
-where
-    T: Body,
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    where
+        T: Body,
+        S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
 {
     let part = request.part().clone();
     let body = request.body_mut();
@@ -83,8 +83,8 @@ fn frame_2_response<S>(
     headers_frame: Frame,
     retryable: &mut Retryable,
 ) -> Result<Response<HttpBody>, HttpClientError>
-where
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    where
+        S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
 {
     let part = match headers_frame.payload() {
         Payload::Headers(headers) => {

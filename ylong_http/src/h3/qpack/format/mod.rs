@@ -10,20 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+pub(crate) mod decoder;
+pub mod encoder;
 
-pub fn decode(str: &str) -> Option<Vec<u8>> {
-    if str.len() % 2 != 0 {
-        return None;
-    }
-    let mut vec = Vec::new();
-    let mut remained = str;
-    while !remained.is_empty() {
-        let (left, right) = remained.split_at(2);
-        match u8::from_str_radix(left, 16) {
-            Ok(num) => vec.push(num),
-            Err(_) => return None,
-        }
-        remained = right;
-    }
-    Some(vec)
-}
+pub(crate) use encoder::ReprEncoder;
