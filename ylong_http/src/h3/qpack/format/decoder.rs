@@ -231,31 +231,31 @@ impl EncInstIndex {
                 DecResult::Decoded((buf_index, EncoderInstruction::SetCap { capacity: index }))
             }
             DecResult::Decoded((
-                                   buf_index,
-                                   EncoderInstPrefixBit::INSERTWITHINDEX,
-                                   mid_bit,
-                                   index,
-                               )) => {
+                buf_index,
+                EncoderInstPrefixBit::INSERTWITHINDEX,
+                mid_bit,
+                index,
+            )) => {
                 let res = InstValueString::new(
                     EncoderInstPrefixBit::INSERTWITHINDEX,
                     mid_bit,
                     Name::Index(index),
                 )
-                    .decode(&buf[buf_index..]);
+                .decode(&buf[buf_index..]);
                 return_res!(res, buf_index)
             }
             DecResult::Decoded((
-                                   buf_index,
-                                   EncoderInstPrefixBit::INSERTWITHLITERAL,
-                                   mid_bit,
-                                   namelen,
-                               )) => {
+                buf_index,
+                EncoderInstPrefixBit::INSERTWITHLITERAL,
+                mid_bit,
+                namelen,
+            )) => {
                 let res = InstNameAndValue::new(
                     EncoderInstPrefixBit::INSERTWITHLITERAL,
                     mid_bit,
                     namelen,
                 )
-                    .decode(&buf[buf_index..]);
+                .decode(&buf[buf_index..]);
                 return_res!(res, buf_index)
             }
             DecResult::Decoded((remain_buf, EncoderInstPrefixBit::DUPLICATE, _, index)) => {
@@ -297,29 +297,29 @@ impl ReprIndex {
                     mid_bit,
                     Name::Index(index),
                 )
-                    .decode(&buf[buf_index..]);
+                .decode(&buf[buf_index..]);
                 return_res!(res, buf_index)
             }
             DecResult::Decoded((
-                                   buf_index,
-                                   ReprPrefixBit::LITERALWITHPOSTINDEXING,
-                                   mid_bit,
-                                   index,
-                               )) => {
+                buf_index,
+                ReprPrefixBit::LITERALWITHPOSTINDEXING,
+                mid_bit,
+                index,
+            )) => {
                 let res = ReprValueString::new(
                     ReprPrefixBit::LITERALWITHPOSTINDEXING,
                     mid_bit,
                     Name::Index(index),
                 )
-                    .decode(&buf[buf_index..]);
+                .decode(&buf[buf_index..]);
                 return_res!(res, buf_index)
             }
             DecResult::Decoded((
-                                   buf_index,
-                                   ReprPrefixBit::LITERALWITHLITERALNAME,
-                                   mid_bit,
-                                   namelen,
-                               )) => {
+                buf_index,
+                ReprPrefixBit::LITERALWITHLITERALNAME,
+                mid_bit,
+                namelen,
+            )) => {
                 let res =
                     ReprNameAndValue::new(ReprPrefixBit::LITERALWITHLITERALNAME, mid_bit, namelen)
                         .decode(&buf[buf_index..]);
@@ -647,7 +647,7 @@ pub(crate) struct LengthFirstByte;
 
 impl LengthFirstByte {
     fn decode(self, buf: &[u8]) -> DecResult<(usize, Vec<u8>), LiteralString> {
-        let  buf_index = 1;
+        let buf_index = 1;
         if buf.is_empty() {
             return DecResult::NeedMore(self.into());
         }

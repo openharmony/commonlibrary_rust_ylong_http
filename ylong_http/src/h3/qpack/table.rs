@@ -88,8 +88,6 @@ impl<'a> TableSearcher<'a> {
     pub(crate) fn find_field_name_dynamic(&self, index: usize) -> Option<Field> {
         self.dynamic.field_name(index)
     }
-
-
 }
 
 pub struct DynamicTable {

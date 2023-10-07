@@ -105,7 +105,7 @@ impl<'a> ReprEncoder<'a> {
                                             false,
                                             true,
                                         )
-                                            .encode(&mut encoder_buffer[cur_encoder..])
+                                        .encode(&mut encoder_buffer[cur_encoder..])
                                     }
                                     // insert with name reference in dynamic table
                                     (_, Some(TableIndex::FieldName(index)), true) => {
@@ -116,7 +116,7 @@ impl<'a> ReprEncoder<'a> {
                                             false,
                                             false,
                                         )
-                                            .encode(&mut encoder_buffer[cur_encoder..])
+                                        .encode(&mut encoder_buffer[cur_encoder..])
                                     }
                                     // Duplicate
                                     (_, Some(TableIndex::FieldName(index)), false) => {
@@ -136,7 +136,7 @@ impl<'a> ReprEncoder<'a> {
                                         v.clone().into_bytes(),
                                         false,
                                     )
-                                        .encode(&mut encoder_buffer[cur_encoder..]),
+                                    .encode(&mut encoder_buffer[cur_encoder..]),
                                 }
                             };
                             if self.table.size() + h.len() + v.len() + 32 >= self.table.capacity() {
@@ -169,7 +169,7 @@ impl<'a> ReprEncoder<'a> {
                                         false,
                                         false,
                                     )
-                                        .encode(&mut stream_buffer[cur_stream..]);
+                                    .encode(&mut stream_buffer[cur_stream..]);
                                 } else {
                                     stream_result = IndexingWithName::new(
                                         base - index - 1,
@@ -178,7 +178,7 @@ impl<'a> ReprEncoder<'a> {
                                         false,
                                         false,
                                     )
-                                        .encode(&mut stream_buffer[cur_stream..]);
+                                    .encode(&mut stream_buffer[cur_stream..]);
                                 }
                                 *required_insert_count = max(*required_insert_count, index + 1);
                             }
@@ -194,7 +194,7 @@ impl<'a> ReprEncoder<'a> {
                                         true,
                                         false,
                                     )
-                                        .encode(&mut stream_buffer[cur_stream..]);
+                                    .encode(&mut stream_buffer[cur_stream..]);
                                 }
                             } else {
                                 stream_result = IndexingWithLiteral::new(
@@ -203,7 +203,7 @@ impl<'a> ReprEncoder<'a> {
                                     false,
                                     false,
                                 )
-                                    .encode(&mut stream_buffer[cur_stream..]);
+                                .encode(&mut stream_buffer[cur_stream..]);
                             }
                         }
                     } else {

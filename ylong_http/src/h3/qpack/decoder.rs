@@ -152,13 +152,13 @@ impl<'a> QpackDecoder<'a> {
         loop {
             match decoder.decode(&buf[cnt..], &mut self.repr_state)? {
                 Some((
-                         offset,
-                         Representation::FieldSectionPrefix {
-                             require_insert_count,
-                             signal,
-                             delta_base,
-                         },
-                     )) => {
+                    offset,
+                    Representation::FieldSectionPrefix {
+                        require_insert_count,
+                        signal,
+                        delta_base,
+                    },
+                )) => {
                     cnt += offset;
                     if require_insert_count.0 == 0 {
                         self.require_insert_count = 0;
@@ -191,36 +191,36 @@ impl<'a> QpackDecoder<'a> {
                     searcher.search(Representation::IndexedWithPostIndex { index })?;
                 }
                 Some((
-                         offset,
-                         Representation::LiteralWithIndexing {
-                             mid_bit,
-                             name,
-                             value,
-                         },
-                     )) => {
+                    offset,
+                    Representation::LiteralWithIndexing {
+                        mid_bit,
+                        name,
+                        value,
+                    },
+                )) => {
                     println!("offset:{}", offset);
                     cnt += offset;
                     searcher.search_literal_with_indexing(mid_bit, name, value)?;
                 }
                 Some((
-                         offset,
-                         Representation::LiteralWithPostIndexing {
-                             mid_bit,
-                             name,
-                             value,
-                         },
-                     )) => {
+                    offset,
+                    Representation::LiteralWithPostIndexing {
+                        mid_bit,
+                        name,
+                        value,
+                    },
+                )) => {
                     cnt += offset;
                     searcher.search_literal_with_post_indexing(mid_bit, name, value)?;
                 }
                 Some((
-                         offset,
-                         Representation::LiteralWithLiteralName {
-                             mid_bit,
-                             name,
-                             value,
-                         },
-                     )) => {
+                    offset,
+                    Representation::LiteralWithLiteralName {
+                        mid_bit,
+                        name,
+                        value,
+                    },
+                )) => {
                     cnt += offset;
                     searcher.search_listeral_with_literal(mid_bit, name, value)?;
                 }

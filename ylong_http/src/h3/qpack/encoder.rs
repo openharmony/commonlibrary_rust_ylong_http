@@ -432,7 +432,7 @@ mod ut_qpack_encoder {
             parts.update(field.clone(), value.clone());
             encoder.set_parts(parts);
             let mut stream_buf = [0u8; 1024];
-            let ( cur1,  cur2, _) = encoder.encode(
+            let (cur1, cur2, _) = encoder.encode(
                 &mut encoder_buf[encoder_cur..],
                 &mut stream_buf[stream_cur..],
             );
@@ -458,7 +458,7 @@ mod ut_qpack_encoder {
             String::from("custom-value1"),
         );
         encoder.set_parts(parts);
-        let ( cur1,  cur2, _) = encoder.encode(
+        let (cur1, cur2, _) = encoder.encode(
             &mut encoder_buf[encoder_cur..],
             &mut stream_buf[stream_cur..],
         );
@@ -470,7 +470,7 @@ mod ut_qpack_encoder {
             String::from("custom-value2"),
         );
         encoder.set_parts(parts);
-        let ( cur1,  cur2, _) = encoder.encode(
+        let (cur1, cur2, _) = encoder.encode(
             &mut encoder_buf[encoder_cur..],
             &mut stream_buf[stream_cur..],
         );
@@ -481,7 +481,10 @@ mod ut_qpack_encoder {
             stream_buf[..stream_cur]
         );
         assert_eq!(
-            [74, 99, 117, 115, 116, 111, 109, 45, 107, 101, 121, 13, 99, 117, 115, 116, 111, 109, 45, 118, 97, 108, 117, 101, 49],
+            [
+                74, 99, 117, 115, 116, 111, 109, 45, 107, 101, 121, 13, 99, 117, 115, 116, 111,
+                109, 45, 118, 97, 108, 117, 101, 49
+            ],
             encoder_buf[..encoder_cur]
         )
     }
@@ -491,7 +494,7 @@ mod ut_qpack_encoder {
         let mut table = DynamicTable::with_empty();
         let mut encoder = QpackEncoder::new(&mut table, 0, false, 1);
         let _ = encoder.set_capacity(60, &mut encoder_buf[..]);
-        let  encoder_cur = 0;
+        let encoder_cur = 0;
         let mut stream_buf = [0u8; 100];
         let mut stream_cur = 0;
         let mut parts = Parts::new();
@@ -500,7 +503,7 @@ mod ut_qpack_encoder {
             String::from("custom-value1"),
         );
         encoder.set_parts(parts);
-        let ( _,  cur2, _) = encoder.encode(
+        let (_, cur2, _) = encoder.encode(
             &mut encoder_buf[encoder_cur..],
             &mut stream_buf[stream_cur..],
         );
