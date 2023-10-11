@@ -295,8 +295,82 @@ pub mod async_impl {
         }
 
         /// Gets trailer headers.
-        fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
-            Ok(None)
+        fn poll_trailer(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<Headers>, Self::Error>> {
+            Poll::Ready(Ok(None))
+        }
+
+        /// Returns a future that reads part of the trailer data, returning the
+        /// headers which were read. Trialer data will be written into
+        /// buf as headers.
+        ///
+        /// # Return Value
+        ///
+        /// - `Ok(Some(headers))`:
+        /// If the trailer has been completely read, headers will be returned.
+        ///
+        /// - `Ok(None)`:
+        /// If return none, means trailer is empty.
+        ///
+        /// - `Err(e)`:
+        /// An error occurred while reading trailer data.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use ylong_http::body::async_impl::Body;
+        /// use ylong_http::body::ChunkBody;
+        /// # async fn read_trailer_data() {
+        /// let box_stream = Box::new("".as_bytes());
+        /// // Chunk body contain trailer data
+        /// let chunk_body_bytes = "\
+        ///             5\r\n\
+        ///             hello\r\n\
+        ///             C ; type = text ;end = !\r\n\
+        ///             hello world!\r\n\
+        ///             000; message = last\r\n\
+        ///             accept:text/html\r\n\r\n\
+        ///             ";
+        ///
+        /// // Gets `ChunkBody`
+        /// let mut chunk = ChunkBody::from_bytes(chunk_body_bytes.as_bytes());
+        /// // read chunk body and return headers
+        /// let res = chunk.trailer().await.unwrap().unwrap();
+        /// assert_eq!(
+        ///     res.get("accept").unwrap().to_str().unwrap(),
+        ///     "text/html".to_string()
+        /// );
+        /// # }
+        /// ```
+        fn trailer<'a>(&'a mut self) -> TrailerFuture<'a, Self>
+        where
+            Self: 'a,
+        {
+            TrailerFuture { body: self }
+        }
+    }
+
+    /// A future that reads data from trailer, returning whole headers
+    /// were read.
+    ///
+    /// This future is the return value of `async_impl::Body::trailer`.
+    pub struct TrailerFuture<'a, T>
+    where
+        T: Body + 'a,
+    {
+        body: &'a mut T,
+    }
+
+    impl<'a, T> Future for TrailerFuture<'a, T>
+    where
+        T: Body + 'a,
+    {
+        type Output = Result<Option<Headers>, T::Error>;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let fut = self.get_mut();
+            Pin::new(&mut *fut.body).poll_trailer(cx)
         }
     }
 

@@ -20,13 +20,13 @@ use ylong_http::body::TextBodyDecoder;
 #[cfg(feature = "http1_1")]
 use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 use ylong_http::headers::Headers;
-#[cfg(feature = "http1_1")]
-use ylong_http::headers::{HeaderName, HeaderValue};
 
 use super::{Body, StreamData};
 use crate::error::{ErrorKind, HttpClientError};
 use crate::util::normalizer::BodyLength;
 use crate::{AsyncRead, ReadBuf, Sleep};
+
+const TRAILER_SIZE: usize = 1024;
 
 /// `HttpBody` is the body part of the `Response` returned by `Client::request`.
 /// `HttpBody` implements `Body` trait, so users can call related methods to get
@@ -140,11 +140,42 @@ impl Body for HttpBody {
         }
     }
 
-    fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
+    fn poll_trailer(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<Headers>, Self::Error>> {
+        // Get trailer data from io
+        if let Some(delay) = self.sleep.as_mut() {
+            if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
+                return Poll::Ready(Err(HttpClientError::new_with_message(
+                    ErrorKind::Timeout,
+                    "Request timeout",
+                )));
+            }
+        }
+
+        let mut read_buf = [0_u8; TRAILER_SIZE];
+
         match self.kind {
             #[cfg(feature = "http1_1")]
-            Kind::Chunk(ref mut chunk) => chunk.get_trailer(),
-            _ => Ok(None),
+            Kind::Chunk(ref mut chunk) => {
+                match chunk.data(cx, &mut read_buf) {
+                    Poll::Ready(Ok(_)) => {}
+                    Poll::Pending => {
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(Err(e)) => {
+                        return Poll::Ready(Err(HttpClientError::new_with_cause(
+                            ErrorKind::BodyTransfer,
+                            Some(e),
+                        )));
+                    }
+                }
+                Poll::Ready(Ok(chunk.decoder.get_trailer().map_err(|_| {
+                    HttpClientError::new_with_message(ErrorKind::BodyDecode, "Get trailer failed")
+                })?))
+            }
+            _ => Poll::Ready(Ok(None)),
         }
     }
 }
@@ -360,17 +391,15 @@ struct Chunk {
     decoder: ChunkBodyDecoder,
     pre: Option<Cursor<Vec<u8>>>,
     io: Option<BoxStreamData>,
-    trailer: Vec<u8>,
 }
 
 #[cfg(feature = "http1_1")]
 impl Chunk {
     pub(crate) fn new(pre: &[u8], io: BoxStreamData) -> Self {
         Self {
-            decoder: ChunkBodyDecoder::new().contains_trailer(false),
+            decoder: ChunkBodyDecoder::new().contains_trailer(true),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
-            trailer: vec![],
         }
     }
 }
@@ -474,18 +503,11 @@ impl Chunk {
 
         let mut finished = false;
         let mut ptrs = Vec::new();
+
         for chunk in chunks.into_iter() {
             if chunk.trailer().is_some() {
                 if chunk.state() == &ChunkState::Finish {
                     finished = true;
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
-                    self.trailer.extend_from_slice(b"\r\n");
-                    break;
-                } else if chunk.state() == &ChunkState::DataCrlf {
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
-                    self.trailer.extend_from_slice(b"\r\n");
-                } else {
-                    self.trailer.extend_from_slice(chunk.trailer().unwrap());
                 }
             } else {
                 if chunk.size() == 0 && chunk.state() != &ChunkState::MetaSize {
@@ -515,86 +537,79 @@ impl Chunk {
         }
         Ok((idx, finished))
     }
-
-    fn get_trailer(&self) -> Result<Option<Headers>, HttpClientError> {
-        if self.trailer.is_empty() {
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::BodyDecode,
-                "No trailer received",
-            ));
-        }
-
-        let mut colon = 0;
-        let mut lf = 0;
-        let mut trailer_header_name = HeaderName::from_bytes(b"")
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-        let mut trailer_headers = Headers::new();
-        for (i, b) in self.trailer.iter().enumerate() {
-            if *b == b' ' {
-                continue;
-            }
-            if *b == b':' {
-                colon = i;
-                if lf == 0 {
-                    let trailer_name = &self.trailer[..colon];
-                    trailer_header_name = HeaderName::from_bytes(trailer_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e))
-                    })?;
-                } else {
-                    let trailer_name = &self.trailer[lf + 1..colon];
-                    trailer_header_name = HeaderName::from_bytes(trailer_name).map_err(|e| {
-                        HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e))
-                    })?;
-                }
-                continue;
-            }
-
-            if *b == b'\n' {
-                lf = i;
-                let trailer_value = &self.trailer[colon + 1..lf - 1];
-                let trailer_header_value = HeaderValue::from_bytes(trailer_value)
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-                let _ = trailer_headers
-                    .insert::<HeaderName, HeaderValue>(
-                        trailer_header_name.clone(),
-                        trailer_header_value.clone(),
-                    )
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
-            }
-        }
-        Ok(Some(trailer_headers))
-    }
 }
 
 #[cfg(test)]
 mod ut_async_http_body {
-    use crate::async_impl::http_body::Chunk;
+    use ylong_http::body::async_impl;
     use crate::async_impl::HttpBody;
     use crate::util::normalizer::BodyLength;
     use crate::ErrorKind;
-    use ylong_http::body::{async_impl, ChunkBodyDecoder};
 
-    /// UT test cases for `Chunk::get_trailers`.
+    /// UT test cases for `HttpBody::trailer`.
     ///
     /// # Brief
-    /// 1. Creates a `Chunk` and set `Trailer`.
-    /// 2. Calls `get_trailer` method.
-    /// 3. Checks if the result is correct.
+    /// 1. Creates a `HttpBody` by calling `HttpBody::new`.
+    /// 2. Calls `trailer` to get headers.
+    /// 3. Checks if the test result is correct.
     #[test]
-    fn ut_http_body_chunk() {
-        let mut chunk = Chunk {
-            decoder: ChunkBodyDecoder::new().contains_trailer(true),
-            pre: None,
-            io: None,
-            trailer: vec![],
-        };
-        let trailer_info = "Trailer1:value1\r\nTrailer2:value2\r\n";
-        chunk.trailer.extend_from_slice(trailer_info.as_bytes());
-        let data = chunk.get_trailer().unwrap().unwrap();
-        let value1 = data.get("Trailer1");
-        assert_eq!(value1.unwrap().to_str().unwrap(), "value1");
-        let value2 = data.get("Trailer2");
-        assert_eq!(value2.unwrap().to_str().unwrap(), "value2");
+    fn ut_asnyc_chunk_trailer_1() {
+        let handle = ylong_runtime::spawn(async move {
+            asnyc_chunk_trailer_1().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn asnyc_chunk_trailer_1() {
+        let box_stream = Box::new("".as_bytes());
+        let chunk_body_bytes = "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            000; message = last\r\n\
+            accept:text/html\r\n\r\n\
+            ";
+        let mut chunk =
+            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let res = async_impl::Body::trailer(&mut chunk)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            res.get("accept").unwrap().to_str().unwrap(),
+            "text/html".to_string()
+        );
+        let box_stream = Box::new("".as_bytes());
+        let chunk_body_no_trailer_bytes = "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            0\r\n\r\n\
+            ";
+
+        let mut chunk = HttpBody::new(
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_no_trailer_bytes.as_bytes(),
+        )
+        .unwrap();
+
+        let mut buf = [0u8; 32];
+        // Read body part
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 5);
+        assert_eq!(&buf[..read], b"hello");
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 12);
+        assert_eq!(&buf[..read], b"hello world!");
+        let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
+        assert_eq!(read, 0);
+        assert_eq!(&buf[..read], b"");
+        // try read trailer part
+        let res = async_impl::Body::trailer(&mut chunk).await.unwrap();
+        assert!(res.is_none());
     }
 
     /// UT test cases for `Body::data`.
@@ -660,10 +675,8 @@ mod ut_async_http_body {
         let read = async_impl::Body::data(&mut chunk, &mut buf).await.unwrap();
         assert_eq!(read, 0);
         assert_eq!(&buf[..read], b"");
-        match async_impl::Body::trailer(&mut chunk) {
-            Ok(_) => (),
-            Err(e) => assert_eq!(e.error_kind(), ErrorKind::BodyDecode),
-        }
+        let res = async_impl::Body::trailer(&mut chunk).await.unwrap();
+        assert!(res.is_none());
     }
 
     /// UT test cases for `Body::data`.
@@ -698,6 +711,7 @@ mod ut_async_http_body {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn http_body_text() {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";
@@ -745,6 +759,7 @@ mod ut_async_http_body {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn http_body_until_close() {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";

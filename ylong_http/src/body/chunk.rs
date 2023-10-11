@@ -937,8 +937,10 @@ pub struct ChunkBodyDecoder {
     chunk_num: usize,
     total_size: usize,
     rest_size: usize,
-    size_vec: Vec<u8>,
+    hex_count: i64,
+    trailer: Vec<u8>,
     cr_meet: bool,
+    chunk_flag: bool,
     is_last_chunk: bool,
     is_chunk_trailer: bool,
     is_trailer: bool,
@@ -960,8 +962,10 @@ impl ChunkBodyDecoder {
             chunk_num: 0,
             total_size: 0,
             rest_size: 0,
-            size_vec: vec![],
+            hex_count: 0,
+            trailer: vec![],
             cr_meet: false,
+            chunk_flag: false,
             is_last_chunk: false,
             is_chunk_trailer: false,
             is_trailer: false,
@@ -976,6 +980,16 @@ impl ChunkBodyDecoder {
         self
     }
 
+    fn merge_trailer(&mut self, chunk: &Chunk) {
+        if chunk.state() == &ChunkState::Finish || chunk.state() == &ChunkState::DataCrlf {
+            self.trailer.extend_from_slice(chunk.trailer().unwrap());
+            if !self.trailer.is_empty() {
+                self.trailer.extend_from_slice(b"\r\n");
+            }
+        } else {
+            self.trailer.extend_from_slice(chunk.trailer().unwrap());
+        }
+    }
     /// Decode interface of the chunk decoder.
     /// It transfers a u8 slice pointing to the chunk data and returns the data
     /// of a chunk and the remaining data. When the data in the u8 slice is
@@ -1030,10 +1044,17 @@ impl ChunkBodyDecoder {
             }?;
 
             chunk.set_id(self.chunk_num);
+
+            if chunk.trailer.is_some() {
+                self.merge_trailer(&chunk);
+            }
+
             remains = rest;
             match (chunk.is_complete(), self.is_last_chunk) {
                 (false, _) => {
-                    if self.is_chunk_trailer && chunk.state == ChunkState::Data {
+                    if self.is_chunk_trailer
+                        && (chunk.state == ChunkState::Data || chunk.state == ChunkState::DataCrlf)
+                    {
                         results.push(chunk);
                         self.chunk_num += 1;
                         if remains.is_empty() {
@@ -1062,6 +1083,59 @@ impl ChunkBodyDecoder {
         Ok((results, remains))
     }
 
+    /// Get trailer headers.
+    pub fn get_trailer(&self) -> Result<Option<Headers>, HttpError> {
+        if self.trailer.is_empty() {
+            return Ok(None);
+        }
+
+        let mut colon = 0;
+        let mut lf = 0;
+        let mut trailer_header_name = HeaderName::from_bytes(b"")?;
+        let mut trailer_headers = Headers::new();
+        for (i, b) in self.trailer.iter().enumerate() {
+            if *b == b' ' {
+                continue;
+            }
+
+            if *b == b':' {
+                colon = i;
+                if lf == 0 {
+                    let trailer_name = &self.trailer[..colon];
+                    trailer_header_name = HeaderName::from_bytes(trailer_name)?;
+                } else {
+                    let trailer_name = &self.trailer[lf + 1..colon];
+                    trailer_header_name = HeaderName::from_bytes(trailer_name)?;
+                }
+                continue;
+            }
+
+            if *b == b'\n' {
+                if &self.trailer[i - 2..i - 1] == "\n".as_bytes() {
+                    break;
+                }
+                lf = i;
+                let trailer_value = &self.trailer[colon + 1..lf - 1];
+                let trailer_header_value = HeaderValue::from_bytes(trailer_value)?;
+                let _ = trailer_headers.insert::<HeaderName, HeaderValue>(
+                    trailer_header_name.clone(),
+                    trailer_header_value.clone(),
+                )?;
+            }
+        }
+
+        Ok(Some(trailer_headers))
+    }
+
+    fn hex_to_decimal(mut count: i64, num: i64) -> Result<i64, HttpError> {
+        count = count
+            .checked_mul(16)
+            .ok_or_else(|| HttpError::from(ErrorKind::InvalidInput))?;
+        count
+            .checked_add(num)
+            .ok_or_else(|| HttpError::from(ErrorKind::InvalidInput))
+    }
+
     fn decode_size<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
         self.stage = Stage::Size;
         if buf.is_empty() {
@@ -1077,36 +1151,50 @@ impl ChunkBodyDecoder {
                 buf,
             ));
         }
+        self.chunk_flag = false;
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'0' => {
                     if buf.len() <= i + 1 {
+                        self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
                         continue;
                     }
                     if buf[i + 1] != b';' && buf[i + 1] != b' ' && buf[i + 1] != b'\r' {
+                        self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
                         continue;
                     }
-                    if self.is_trailer {
+                    if self.is_trailer && !self.chunk_flag {
                         self.is_chunk_trailer = true;
                         return self.skip_extension(&buf[i..]);
                     } else {
+                        self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
                         continue;
                     }
                 }
-                b'1'..=b'9' | b'A'..=b'F' | b'a'..=b'f' => {}
+                b'1'..=b'9' => {
+                    self.hex_count = Self::hex_to_decimal(self.hex_count, b as i64 - '0' as i64)?;
+                    self.chunk_flag = true;
+                    continue;
+                }
+
+                b'a'..=b'f' => {
+                    self.hex_count =
+                        Self::hex_to_decimal(self.hex_count, b as i64 - 'a' as i64 + 10i64)?;
+                    self.chunk_flag = true;
+                    continue;
+                }
+                b'A'..=b'F' => {
+                    self.hex_count =
+                        Self::hex_to_decimal(self.hex_count, b as i64 - 'A' as i64 + 10i64)?;
+                    self.chunk_flag = true;
+                    continue;
+                }
                 b' ' | b'\t' | b';' | b'\r' | b'\n' => {
                     if self.is_chunk_trailer {
                         return self.skip_trailer_crlf(&buf[i..]);
                     } else {
-                        self.size_vec.extend_from_slice(&buf[..i]);
-                        self.total_size = usize::from_str_radix(
-                            unsafe { from_utf8_unchecked(self.size_vec.as_slice()) },
-                            16,
-                        )
-                        .map_err(|_| {
-                            <ErrorKind as Into<HttpError>>::into(ErrorKind::InvalidInput)
-                        })?;
-                        self.size_vec.clear();
+                        self.total_size = self.hex_count as usize;
+                        self.hex_count = 0;
                         // Decode to the last chunk
                         return if self.total_size == 0 {
                             self.is_last_chunk = true;
@@ -1120,7 +1208,6 @@ impl ChunkBodyDecoder {
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
-        self.size_vec.extend_from_slice(buf);
         Ok((
             Chunk {
                 id: 0,
@@ -1252,6 +1339,7 @@ impl ChunkBodyDecoder {
                         return Err(ErrorKind::InvalidInput.into());
                     }
                     self.cr_meet = false;
+                    self.is_trailer_crlf = true;
                     return self.decode_trailer_data(&buf[i + 1..]);
                 }
                 _ => return Err(ErrorKind::InvalidInput.into()),
@@ -1289,7 +1377,7 @@ impl ChunkBodyDecoder {
             ));
         }
 
-        if buf[0] == b'\r' {
+        if buf[0] == b'\r' && self.is_trailer_crlf {
             self.is_last_chunk = true;
         }
 
@@ -1312,7 +1400,7 @@ impl ChunkBodyDecoder {
                 _ => {}
             }
         }
-
+        self.is_trailer_crlf = false;
         Ok((
             Chunk {
                 id: 0,
@@ -1341,6 +1429,7 @@ impl ChunkBodyDecoder {
                 &buf[buf.len()..],
             ));
         }
+
         let rest = self.rest_size;
         if buf.len() >= rest {
             self.rest_size = 0;
@@ -1396,6 +1485,7 @@ impl ChunkBodyDecoder {
                         ))
                     } else {
                         self.cr_meet = false;
+                        self.is_trailer_crlf = true;
                         self.stage = Stage::TrailerData;
                         let complete_chunk = Chunk {
                             id: 0,
@@ -1513,6 +1603,13 @@ mod ut_chunk {
         res.extend_from_slice(b"\r\n");
         res
     }
+
+    /// UT test cases for `ChunkBody::set_trailer`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ChunkBody` by calling `ChunkBody::set_trailer`.
+    /// 2. Encodes chunk body by calling `ChunkBody::data`
+    /// 3. Checks if the test result is correct.
     #[test]
     fn ut_chunk_body_encode_trailer_0() {
         let mut headers = Headers::new();
@@ -1577,9 +1674,15 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_bytes`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_asnyc_chunk_body_encode_0() {
+    #[test]
+    fn ut_asnyc_chunk_body_encode_0() {
+        let handle = ylong_runtime::spawn(async move {
+            asnyc_chunk_body_encode_0().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn asnyc_chunk_body_encode_0() {
         let content = data_message();
         let mut task = ChunkBody::from_bytes(content.as_slice());
         let mut user_slice = [0_u8; 20];
@@ -1601,9 +1704,15 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_async_reader`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
-    #[cfg(feature = "tokio_base")]
-    #[tokio::test]
-    async fn ut_asnyc_chunk_body_encode_1() {
+    #[test]
+    fn ut_asnyc_chunk_body_encode_1() {
+        let handle = ylong_runtime::spawn(async move {
+            asnyc_chunk_body_encode_1().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn asnyc_chunk_body_encode_1() {
         let content = data_message();
         let mut task = ChunkBody::from_async_reader(content.as_slice());
         let mut user_slice = [0_u8; 1024];
@@ -1849,7 +1958,7 @@ mod ut_chunk {
         let res = decoder.decode(&chunk_body_bytes[87..119]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
-            id: 3,
+            id: 4,
             state: ChunkState::DataCrlf,
             size: 0,
             extension: ChunkExt::new(),
@@ -1862,7 +1971,7 @@ mod ut_chunk {
         let res = decoder.decode(&chunk_body_bytes[119..121]);
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
-            id: 3,
+            id: 5,
             state: ChunkState::Finish,
             size: 0,
             extension: ChunkExt::new(),
@@ -2085,5 +2194,68 @@ mod ut_chunk {
                 "hello".as_bytes()
             )
         );
+    }
+
+    /// UT test cases for `ChunkBodyDecoder::decode`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ChunkBodyDecoder` by calling `ChunkBodyDecoder::new`.
+    /// 2. Decodes chunk body by calling `ChunkBodyDecoder::decode`
+    /// 3. Checks if the test result is correct.
+    #[test]
+    fn ut_chunk_body_decode_7() {
+        let mut decoder = ChunkBodyDecoder::new().contains_trailer(true);
+        let buf = b"010\r\nAAAAAAAAAAAAAAAA\r\n0\r\ntrailer:value\r\n\r\n";
+        let res = decoder.decode(&buf[0..23]); // 010\r\nAAAAAAAAAAAAAAAA\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 0,
+            state: ChunkState::Finish,
+            size: 16,
+            extension: ChunkExt::new(),
+            data: "AAAAAAAAAAAAAAAA".as_bytes(),
+            trailer: None,
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[23..39]); // 0\r\ntrailer:value
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 1,
+            state: ChunkState::Data,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some("trailer:value".as_bytes()),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[39..41]); //\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 2,
+            state: ChunkState::DataCrlf,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some(&[] as &[u8]),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[41..]); //\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 3,
+            state: ChunkState::Finish,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some(&[] as &[u8]),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let trailer_headers = decoder.get_trailer().unwrap().unwrap();
+        let value = trailer_headers.get("trailer");
+        assert_eq!(value.unwrap().to_str().unwrap(), "value");
     }
 }
