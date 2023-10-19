@@ -33,7 +33,7 @@ const TEMP_BUF_SIZE: usize = 16 * 1024;
 
 pub(crate) async fn request<S>(
     mut conn: Http1Conn<S>,
-    message: Message<'_>,
+    mut message: Message,
 ) -> Result<Response, HttpClientError>
 where
     S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
@@ -41,12 +41,15 @@ where
     message
         .interceptor
         .intercept_connection(conn.raw_mut().conn_detail())?;
-    message.interceptor.intercept_request(message.request)?;
+    message
+        .interceptor
+        .intercept_request(message.request.ref_mut())?;
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
 
     // Encodes and sends Request-line and Headers(non-body fields).
-    let mut part_encoder = RequestEncoder::new(message.request.part().clone());
-    if conn.raw_mut().is_proxy() && message.request.uri().scheme() == Some(&Scheme::HTTP) {
+    let mut part_encoder = RequestEncoder::new(message.request.ref_mut().part().clone());
+    if conn.raw_mut().is_proxy() && message.request.ref_mut().uri().scheme() == Some(&Scheme::HTTP)
+    {
         part_encoder.absolute_uri(true);
     }
     loop {
@@ -69,6 +72,7 @@ where
 
     let content_length = message
         .request
+        .ref_mut()
         .part()
         .headers
         .get("Content-Length")
@@ -78,6 +82,7 @@ where
 
     let transfer_encoding = message
         .request
+        .ref_mut()
         .part()
         .headers
         .get("Transfer-Encoding")
@@ -85,7 +90,7 @@ where
         .map(|v| v.contains("chunked"))
         .unwrap_or(false);
 
-    let body = message.request.body_mut();
+    let body = message.request.ref_mut().body_mut();
 
     match (content_length, transfer_encoding) {
         (_, true) => {
@@ -161,7 +166,7 @@ where
         }
     }
 
-    let length = match BodyLengthParser::new(message.request.method(), &part).parse() {
+    let length = match BodyLengthParser::new(message.request.ref_mut().method(), &part).parse() {
         Ok(length) => length,
         Err(e) => {
             conn.shutdown();

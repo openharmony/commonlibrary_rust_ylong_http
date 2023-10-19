@@ -147,422 +147,205 @@ pub(crate) mod http1 {
 
 #[cfg(feature = "http2")]
 pub(crate) mod http2 {
-    use std::collections::{HashMap, VecDeque};
-    use std::future::Future;
-    use std::mem::take;
+    use std::collections::HashMap;
+    use std::marker::PhantomData;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
-    use std::task::{Context, Poll, Waker};
+    use std::task::{Context, Poll};
 
-    use ylong_http::error::HttpError;
-    use ylong_http::h2;
-    use ylong_http::h2::Payload::Settings;
     use ylong_http::h2::{
-        ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, FrameKind, FramesIntoIter,
-        Goaway, H2Error, Payload, RstStream, Setting, SettingsBuilder,
+        ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, Goaway, H2Error, Payload,
+        Settings, SettingsBuilder,
     };
 
-    use super::{ConnDispatcher, Dispatcher};
-    use crate::dispatcher::http2::StreamState::Closed;
-    use crate::error::{ErrorKind, HttpClientError};
     use crate::runtime::{
-        unbounded_channel, AsyncMutex, AsyncRead, AsyncWrite, MutexGuard, ReadBuf, TryRecvError,
-        UnboundedReceiver, UnboundedSender,
+        unbounded_channel, AsyncRead, AsyncWrite, AsyncWriteExt, UnboundedReceiver,
+        UnboundedSender, WriteHalf,
     };
     use crate::util::config::H2Config;
-
-    impl<S> ConnDispatcher<S> {
-        pub(crate) fn http2(config: H2Config, io: S) -> Self {
-            Self::Http2(Http2Dispatcher::new(config, io))
-        }
-    }
-
-    // The data type of the first Frame sent to the `StreamController`.
-    type Send2Ctrl = (Option<(u32, UnboundedSender<Frame>)>, Frame);
+    use crate::util::dispatcher::{ConnDispatcher, Dispatcher};
+    use crate::util::h2::{ConnManager, FlowControl, RecvData, RequestWrapper, SendData, Streams};
+    use crate::{ErrorKind, HttpClientError};
 
     const DEFAULT_MAX_STREAM_ID: u32 = u32::MAX >> 1;
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
     const DEFAULT_MAX_HEADER_LIST_SIZE: usize = 16 << 20;
+    const DEFAULT_WINDOW_SIZE: u32 = 65535;
+
+    pub(crate) enum RespMessage {
+        Output(Frame),
+        OutputExit(DispatchErrorKind),
+    }
+
+    pub(crate) enum OutputMessage {
+        Output(Frame),
+        OutputExit(DispatchErrorKind),
+    }
+
+    pub(crate) struct ReqMessage {
+        pub(crate) id: u32,
+        pub(crate) sender: UnboundedSender<RespMessage>,
+        pub(crate) request: RequestWrapper,
+    }
+
+    #[derive(Debug, Eq, PartialEq, Clone)]
+    pub(crate) enum DispatchErrorKind {
+        H2(H2Error),
+        Io(std::io::ErrorKind),
+        ChannelClosed,
+        Disconnect,
+    }
 
     // HTTP2-based connection manager, which can dispatch connections to other
     // threads according to HTTP2 syntax.
     pub(crate) struct Http2Dispatcher<S> {
-        pub(crate) controller: Arc<StreamController<S>>,
-        pub(crate) next_stream_id: Arc<StreamId>,
-        pub(crate) sender: UnboundedSender<Send2Ctrl>,
+        pub(crate) next_stream_id: StreamId,
+        pub(crate) sender: UnboundedSender<ReqMessage>,
+        pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) _mark: PhantomData<S>,
     }
 
     pub(crate) struct Http2Conn<S> {
         // Handle id
         pub(crate) id: u32,
         // Sends frame to StreamController
-        pub(crate) sender: UnboundedSender<Send2Ctrl>,
-        pub(crate) stream_info: StreamInfo<S>,
+        pub(crate) sender: UnboundedSender<ReqMessage>,
+        pub(crate) receiver: RespReceiver,
+        pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) _mark: PhantomData<S>,
     }
 
-    pub(crate) struct StreamInfo<S> {
-        // Stream id
-        pub(crate) id: u32,
-        pub(crate) next_stream_id: Arc<StreamId>,
-        // Receive the Response frame transmitted from the StreamController
-        pub(crate) receiver: FrameReceiver,
-        // Used to handle TCP Stream
-        pub(crate) controller: Arc<StreamController<S>>,
-    }
-
-    pub(crate) struct StreamController<S> {
-        // I/O unavailability flag, which prevents the upper layer from using this I/O to create
-        // new streams.
-        pub(crate) io_shutdown: AtomicBool,
-        // Indicates that the dispatcher is occupied. At this time, a user coroutine is already
-        // acting as the dispatcher.
-        pub(crate) occupied: AtomicU32,
-        pub(crate) dispatcher_invalid: AtomicBool,
-        pub(crate) manager: AsyncMutex<IoManager<S>>,
-        pub(crate) stream_waker: Mutex<StreamWaker>,
-    }
-
-    pub(crate) struct StreamWaker {
-        waker: HashMap<u32, Waker>,
-    }
-
-    pub(crate) struct IoManager<S> {
-        inner: Inner<S>,
-        senders: HashMap<u32, UnboundedSender<Frame>>,
-        frame_receiver: UnboundedReceiver<Send2Ctrl>,
-        streams: Streams,
-        frame_iter: FrameIter,
-        connection_frame: ConnectionFrames,
+    pub(crate) struct StreamController {
+        // The connection close flag organizes new stream commits to the current connection when
+        // closed.
+        pub(crate) io_shutdown: Arc<AtomicBool>,
+        // The senders of all connected stream channels of response.
+        pub(crate) senders: HashMap<u32, UnboundedSender<RespMessage>>,
+        // Stream information on the connection.
+        pub(crate) streams: Streams,
+        // Received GO_AWAY frame.
+        pub(crate) go_away: Option<u32>,
+        // The last GO_AWAY frame sent by the client.
+        pub(crate) go_away_sync: GoAwaySync,
     }
 
     #[derive(Default)]
-    pub(crate) struct FrameIter {
-        iter: Option<FramesIntoIter>,
+    pub(crate) struct GoAwaySync {
+        pub(crate) going_away: Option<Goaway>,
     }
 
-    pub(crate) struct Streams {
-        stream_to_send: VecDeque<u32>,
-        buffer: HashMap<u32, StreamBuffer>,
+    #[derive(Default)]
+    pub(crate) struct SettingsSync {
+        pub(crate) settings: SettingsState,
     }
 
-    pub(crate) struct StreamBuffer {
-        state: StreamState,
-        frames: VecDeque<Frame>,
-    }
-
-    pub(crate) struct Inner<S> {
-        pub(crate) io: S,
-        pub(crate) encoder: FrameEncoder,
-        pub(crate) decoder: FrameDecoder,
-    }
-
-    pub(crate) enum ReadState {
-        EmptyIo,
-        CurrentStream,
-    }
-
-    enum DispatchState {
-        Partial,
-        Finish,
-    }
-
-    #[derive(Clone)]
-    pub(crate) enum ResetReason {
-        Local,
-        Remote,
-        Goaway(u32),
-    }
-
-    #[derive(Clone)]
-    pub(crate) enum SettingsSync {
-        Send(h2::Settings),
-        Acknowledging(h2::Settings),
+    #[derive(Default, Clone)]
+    pub(crate) enum SettingsState {
+        Acknowledging(Settings),
+        #[default]
         Synced,
     }
 
     pub(crate) struct StreamId {
         // TODO Determine the maximum value of id.
-        next_id: AtomicU32,
-    }
-
-    // TODO Add "open", "half-closed", "reserved" state
-    #[derive(Clone)]
-    pub(crate) enum StreamState {
-        Idle,
-        Closed(ResetReason),
+        id: AtomicU32,
     }
 
     #[derive(Default)]
-    pub(crate) struct FrameReceiver {
-        receiver: Option<UnboundedReceiver<Frame>>,
+    pub(crate) struct RespReceiver {
+        receiver: Option<UnboundedReceiver<RespMessage>>,
     }
 
-    impl<S> StreamController<S> {
-        pub(crate) fn new(
-            inner: Inner<S>,
-            frame_receiver: UnboundedReceiver<Send2Ctrl>,
-            connection_frame: ConnectionFrames,
-        ) -> Self {
-            let manager = IoManager::new(inner, frame_receiver, connection_frame);
-            Self {
-                io_shutdown: AtomicBool::new(false),
-                // 0 means io is not occupied
-                occupied: AtomicU32::new(0),
-                dispatcher_invalid: AtomicBool::new(false),
-                manager: AsyncMutex::new(manager),
-                stream_waker: Mutex::new(StreamWaker::new()),
-            }
-        }
-
-        pub(crate) fn shutdown(&self) {
-            self.io_shutdown.store(true, Ordering::Release);
-        }
-
-        pub(crate) fn invalid(&self) {
-            self.dispatcher_invalid.store(true, Ordering::Release);
+    impl<S> ConnDispatcher<S>
+    where
+        S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    {
+        pub(crate) fn http2(config: H2Config, io: S) -> Self {
+            Self::Http2(Http2Dispatcher::new(config, io))
         }
     }
 
-    impl Streams {
-        pub(crate) fn new() -> Self {
-            Self {
-                stream_to_send: VecDeque::new(),
-                buffer: HashMap::new(),
-            }
-        }
-
-        pub(crate) fn size(&self) -> usize {
-            self.stream_to_send.len()
-        }
-
-        pub(crate) fn insert(&mut self, frame: Frame) {
-            let id = frame.stream_id() as u32;
-            self.stream_to_send.push_back(id);
-            match self.buffer.get_mut(&id) {
-                Some(sender) => {
-                    sender.push_back(frame);
-                }
-                None => {
-                    let mut sender = StreamBuffer::new();
-                    sender.push_back(frame);
-                    self.buffer.insert(id, sender);
-                }
-            }
-        }
-
-        pub(crate) fn get_goaway_streams(
-            &mut self,
-            last_stream_id: u32,
-        ) -> Result<Vec<u32>, H2Error> {
-            let mut ids = vec![];
-            for (id, sender) in self.buffer.iter_mut() {
-                if *id >= last_stream_id {
-                    ids.push(*id);
-                    sender.go_away(*id)?;
-                }
-            }
-            Ok(ids)
-        }
-
-        pub(crate) fn recv_local_reset(&mut self, id: u32) -> Result<(), H2Error> {
-            match self.buffer.get_mut(&id) {
-                None => Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                Some(sender) => {
-                    match sender.state {
-                        Closed(ResetReason::Remote | ResetReason::Local) => {}
-                        _ => {
-                            sender.state = Closed(ResetReason::Local);
-                        }
-                    }
-                    Ok(())
-                }
-            }
-        }
-
-        pub(crate) fn recv_remote_reset(&mut self, id: u32) -> Result<(), H2Error> {
-            match self.buffer.get_mut(&id) {
-                None => Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                Some(sender) => {
-                    match sender.state {
-                        Closed(ResetReason::Remote) => {}
-                        _ => {
-                            sender.state = Closed(ResetReason::Remote);
-                        }
-                    }
-                    Ok(())
-                }
-            }
-        }
-
-        // TODO At present, only the state is changed to closed, and other states are
-        // not involved, and it needs to be added later
-        pub(crate) fn recv_headers(&mut self, id: u32) -> Result<StreamState, H2Error> {
-            match self.buffer.get_mut(&id) {
-                None => Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                Some(sender) => match sender.state {
-                    Closed(ResetReason::Goaway(last_id)) => {
-                        if id > last_id {
-                            return Err(H2Error::ConnectionError(ErrorCode::StreamClosed));
-                        }
-                        Ok(sender.state.clone())
-                    }
-                    Closed(ResetReason::Remote) => {
-                        Err(H2Error::ConnectionError(ErrorCode::StreamClosed))
-                    }
-                    _ => Ok(sender.state.clone()),
-                },
-            }
-        }
-
-        pub(crate) fn recv_data(&mut self, id: u32) -> Result<StreamState, H2Error> {
-            self.recv_headers(id)
-        }
-
-        pub(crate) fn pop_front(&mut self) -> Result<Option<Frame>, H2Error> {
-            match self.stream_to_send.pop_front() {
-                None => Ok(None),
-                Some(id) => {
-                    // TODO Subsequent consideration is to delete the corresponding elements in the
-                    // map after the status becomes Closed
-                    match self.buffer.get_mut(&id) {
-                        None => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
-                        Some(sender) => {
-                            // TODO For the time being, match state is used here, and the complete
-                            // logic should be judged based on the frame type and state
-                            match sender.state {
-                                Closed(ResetReason::Remote | ResetReason::Local) => Ok(None),
-                                _ => Ok(sender.pop_front()),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    impl StreamBuffer {
-        pub(crate) fn push_back(&mut self, frame: Frame) {
-            self.frames.push_back(frame);
-        }
-
-        pub(crate) fn pop_front(&mut self) -> Option<Frame> {
-            self.frames.pop_front()
-        }
-
-        pub(crate) fn new() -> Self {
-            Self {
-                state: StreamState::Idle,
-                frames: VecDeque::new(),
-            }
-        }
-
-        pub(crate) fn go_away(&mut self, last_stream_id: u32) -> Result<(), H2Error> {
-            match self.state {
-                Closed(ResetReason::Local | ResetReason::Remote) => {}
-                Closed(ResetReason::Goaway(id)) => {
-                    if last_stream_id > id {
-                        return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
-                    }
-                    self.state = Closed(ResetReason::Goaway(last_stream_id));
-                }
-                _ => {
-                    self.state = Closed(ResetReason::Goaway(last_stream_id));
-                }
-            }
-            Ok(())
-        }
-    }
-
-    impl SettingsSync {
-        pub(crate) fn ack_settings() -> Frame {
-            Frame::new(0, FrameFlags::new(0x1), Settings(h2::Settings::new(vec![])))
-        }
-    }
-
-    pub(crate) struct ConnectionFrames {
-        preface: bool,
-        settings: SettingsSync,
-    }
-
-    impl ConnectionFrames {
-        pub(crate) fn new(settings: h2::Settings) -> Self {
-            Self {
-                preface: true,
-                settings: SettingsSync::Send(settings),
-            }
-        }
-    }
-
-    impl StreamWaker {
-        pub(crate) fn new() -> Self {
-            Self {
-                waker: HashMap::new(),
-            }
-        }
-    }
-
-    impl<S> IoManager<S> {
-        pub(crate) fn new(
-            inner: Inner<S>,
-            frame_receiver: UnboundedReceiver<Send2Ctrl>,
-            connection_frame: ConnectionFrames,
-        ) -> Self {
-            Self {
-                inner,
-                senders: HashMap::new(),
-                frame_receiver,
-                streams: Streams::new(),
-                frame_iter: FrameIter::default(),
-                connection_frame,
-            }
-        }
-
-        fn close_frame_receiver(&mut self) {
-            self.frame_receiver.close()
-        }
-    }
-
-    impl FrameIter {
-        pub(crate) fn is_empty(&self) -> bool {
-            self.iter.is_none()
-        }
-    }
-
-    impl StreamId {
-        fn stream_id_generate(&self) -> u32 {
-            self.next_id.fetch_add(2, Ordering::Relaxed)
-        }
-
-        fn get_next_id(&self) -> u32 {
-            self.next_id.load(Ordering::Relaxed)
-        }
-    }
-
-    impl<S> Http2Dispatcher<S> {
+    impl<S> Http2Dispatcher<S>
+    where
+        S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    {
         pub(crate) fn new(config: H2Config, io: S) -> Self {
-            // send_preface(&mut io).await?;
+            let settings = create_initial_settings(&config);
 
-            let connection_frames = build_connection_frames(config);
-            let inner = Inner {
-                io,
-                encoder: FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE),
-                decoder: FrameDecoder::new(),
-            };
+            let mut flow = FlowControl::new(DEFAULT_WINDOW_SIZE, DEFAULT_WINDOW_SIZE);
+            flow.setup_recv_window(config.conn_window_size());
 
-            // For each stream to send the frame to the controller
-            let (tx, rx) = unbounded_channel::<Send2Ctrl>();
+            let streams = Streams::new(config.stream_window_size(), DEFAULT_WINDOW_SIZE, flow);
 
-            let stream_controller = Arc::new(StreamController::new(inner, rx, connection_frames));
+            let encoder = FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE);
+            let decoder = FrameDecoder::new();
+
+            let (read, write) = crate::runtime::split(io);
+
+            let shutdown_flag = Arc::new(AtomicBool::new(false));
+            let settings_sync = Arc::new(Mutex::new(SettingsSync::default()));
+
+            let controller = StreamController::new(streams, shutdown_flag.clone());
 
             // The id of the client stream, starting from 1
             let next_stream_id = StreamId {
-                next_id: AtomicU32::new(1),
+                id: AtomicU32::new(1),
             };
+
+            let (input_tx, input_rx) = unbounded_channel();
+            let (resp_tx, resp_rx) = unbounded_channel();
+            let (req_tx, req_rx) = unbounded_channel();
+
+            match input_tx.send(settings) {
+                Ok(_) => {
+                    let send_settings_sync = settings_sync.clone();
+                    let _send = crate::runtime::spawn(async move {
+                        let mut writer = write;
+                        match async_send_preface(&mut writer).await {
+                            Ok(_) => {
+                                let mut send =
+                                    SendData::new(encoder, send_settings_sync, writer, input_rx);
+                                match Pin::new(&mut send).await {
+                                    Ok(_) => {}
+                                    Err(_e) => {}
+                                }
+                            }
+                            Err(_e) => {}
+                        }
+                    });
+
+                    let recv_settings_sync = settings_sync.clone();
+                    let _recv = crate::runtime::spawn(async move {
+                        let mut recv = RecvData::new(decoder, recv_settings_sync, read, resp_tx);
+                        match Pin::new(&mut recv).await {
+                            Ok(_) => {}
+                            Err(_e) => {}
+                        }
+                    });
+
+                    let _manager = crate::runtime::spawn(async move {
+                        let mut conn_manager =
+                            ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
+                        match Pin::new(&mut conn_manager).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                conn_manager.exit_with_error(e);
+                            }
+                        }
+                    });
+                }
+                Err(_e) => {
+                    // Error is not possible, so it is not handled for the time
+                    // being.
+                }
+            }
+
             Self {
-                controller: stream_controller,
-                sender: tx,
-                next_stream_id: Arc::new(next_stream_id),
+                next_stream_id,
+                sender: req_tx,
+                io_shutdown: shutdown_flag,
+                _mark: PhantomData,
             }
         }
     }
@@ -570,886 +353,209 @@ pub(crate) mod http2 {
     impl<S> Dispatcher for Http2Dispatcher<S> {
         type Handle = Http2Conn<S>;
 
-        // Call this method to get a stream
         fn dispatch(&self) -> Option<Self::Handle> {
-            let id = self.next_stream_id.stream_id_generate();
-            // TODO Consider how to create a new connection and transfer state
+            let id = self.next_stream_id.generate_id();
             if id > DEFAULT_MAX_STREAM_ID {
                 return None;
             }
-            let controller = self.controller.clone();
             let sender = self.sender.clone();
-            let handle = Http2Conn::new(id, self.next_stream_id.clone(), sender, controller);
+            let handle = Http2Conn::new(id, self.io_shutdown.clone(), sender);
             Some(handle)
         }
 
-        // TODO When the stream id reaches the maximum value, shutdown the current
-        // connection
         fn is_shutdown(&self) -> bool {
-            self.controller.io_shutdown.load(Ordering::Relaxed)
+            self.io_shutdown.load(Ordering::Relaxed)
         }
     }
 
     impl<S> Http2Conn<S> {
         pub(crate) fn new(
             id: u32,
-            next_stream_id: Arc<StreamId>,
-            sender: UnboundedSender<Send2Ctrl>,
-            controller: Arc<StreamController<S>>,
+            io_shutdown: Arc<AtomicBool>,
+            sender: UnboundedSender<ReqMessage>,
         ) -> Self {
-            let stream_info = StreamInfo {
-                id,
-                next_stream_id,
-                receiver: FrameReceiver::default(),
-                controller,
-            };
             Self {
                 id,
                 sender,
-                stream_info,
+                receiver: RespReceiver::default(),
+                io_shutdown,
+                _mark: PhantomData,
             }
         }
 
         pub(crate) fn send_frame_to_controller(
             &mut self,
-            frame: Frame,
+            request: RequestWrapper,
         ) -> Result<(), HttpClientError> {
-            if self.stream_info.receiver.is_none() {
-                let (tx, rx) = unbounded_channel::<Frame>();
-                self.stream_info.receiver.set_receiver(rx);
-                self.sender.send((Some((self.id, tx)), frame)).map_err(|_| {
-                    HttpClientError::from_error(ErrorKind::Request, String::from("resend"))
+            let (tx, rx) = unbounded_channel::<RespMessage>();
+            self.receiver.set_receiver(rx);
+            self.sender
+                .send(ReqMessage {
+                    id: self.id,
+                    sender: tx,
+                    request,
                 })
-            } else {
-                self.sender.send((None, frame)).map_err(|_| {
-                    HttpClientError::from_error(ErrorKind::Request, String::from("resend"))
+                .map_err(|_| {
+                    HttpClientError::from_str(ErrorKind::Request, "Request Sender Closed !")
                 })
-            }
         }
     }
 
-    impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> Future for StreamInfo<S> {
-        type Output = Result<Frame, HttpError>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let stream_info = self.get_mut();
-
-            // First, check whether the frame of the current stream is in the Channel.
-            // The error cannot occur. Therefore, the error is thrown directly without
-            // connection-level processing.
-            if let Some(frame) = stream_info.receiver.recv_frame(stream_info.id)? {
-                {
-                    let mut stream_waker = stream_info
-                        .controller
-                        .stream_waker
-                        .lock()
-                        .expect("Blocking get waker lock failed! ");
-                    //
-                    wakeup_next_stream(&mut stream_waker.waker);
-                }
-                return Poll::Ready(Ok(frame));
-            }
-
-            // If the dispatcher sends a goaway frame, all streams on the current connection
-            // are unavailable.
-            if stream_info
-                .controller
-                .dispatcher_invalid
-                .load(Ordering::Relaxed)
-            {
-                return Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::ConnectError).into()));
-            }
-
-            // The error cannot occur. Therefore, the error is thrown directly without
-            // connection-level processing.
-            if is_io_available(&stream_info.controller.occupied, stream_info.id)? {
-                {
-                    // Second, try to get io and read the frame of the current stream from io.
-                    if let Ok(mut io_manager) = stream_info.controller.manager.try_lock() {
-                        if stream_info
-                            .poll_match_result(cx, &mut io_manager)?
-                            .is_pending()
-                        {
-                            return Poll::Pending;
-                        }
-                    }
-                }
-                {
-                    let mut stream_waker = stream_info
-                        .controller
-                        .stream_waker
-                        .lock()
-                        .expect("Blocking get waker lock failed! ");
-                    wakeup_next_stream(&mut stream_waker.waker);
-                }
-                // The error cannot occur. Therefore, the error is thrown directly without
-                // connection-level processing.
-                let frame_opt = get_frame(stream_info.receiver.recv_frame(stream_info.id)?);
-                return Poll::Ready(frame_opt);
-            }
-
-            {
-                let mut io_manager = {
-                    // Third, wait to acquire the lock of waker, which is used to insert the current
-                    // waker, and wait to be awakened by the io stream.
-                    let mut stream_waker = stream_info
-                        .controller
-                        .stream_waker
-                        .lock()
-                        .expect("Blocking get waker lock failed! ");
-
-                    // Fourth, after obtaining the waker lock,
-                    // you need to check the Receiver again to prevent the Receiver from receiving a
-                    // frame while waiting for the waker. The error cannot
-                    // occur. Therefore, the error is thrown directly without connection-level
-                    // processing.
-                    if let Some(frame) = stream_info.receiver.recv_frame(stream_info.id)? {
-                        wakeup_next_stream(&mut stream_waker.waker);
-                        return Poll::Ready(Ok(frame));
-                    }
-
-                    // The error cannot occur. Therefore, the error is thrown directly without
-                    // connection-level processing.
-                    if is_io_available(&stream_info.controller.occupied, stream_info.id)? {
-                        // Fifth, get io again to prevent no other streams from controlling io while
-                        // waiting for the waker, leaving only the current
-                        // stream.
-                        match stream_info.controller.manager.try_lock() {
-                            Ok(guard) => guard,
-                            _ => {
-                                stream_waker
-                                    .waker
-                                    .insert(stream_info.id, cx.waker().clone());
-                                return Poll::Pending;
-                            }
-                        }
-                    } else {
-                        stream_waker
-                            .waker
-                            .insert(stream_info.id, cx.waker().clone());
-                        return Poll::Pending;
-                    }
-                };
-                if stream_info
-                    .poll_match_result(cx, &mut io_manager)?
-                    .is_pending()
-                {
-                    return Poll::Pending;
-                }
-            }
-            {
-                {
-                    let mut stream_waker = stream_info
-                        .controller
-                        .stream_waker
-                        .lock()
-                        .expect("Blocking get waker lock failed! ");
-                    wakeup_next_stream(&mut stream_waker.waker);
-                }
-                // The error cannot occur. Therefore, the error is thrown directly without
-                // connection-level processing.
-                let frame_opt = get_frame(stream_info.receiver.recv_frame(stream_info.id)?);
-                Poll::Ready(frame_opt)
-            }
+    impl StreamId {
+        fn generate_id(&self) -> u32 {
+            self.id.fetch_add(2, Ordering::Relaxed)
         }
     }
 
-    impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> StreamInfo<S> {
-        fn poll_match_result(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), HttpError>> {
-            loop {
-                match self.poll_io(cx, io_manager) {
-                    Poll::Ready(Ok(_)) => {
-                        return Poll::Ready(Ok(()));
-                    }
-                    Poll::Ready(Err(h2_error)) => {
-                        match h2_error {
-                            H2Error::StreamError(id, code) => {
-                                let rest_payload = RstStream::new(code.clone().into_code());
-                                let frame = Frame::new(
-                                    id as usize,
-                                    FrameFlags::empty(),
-                                    Payload::RstStream(rest_payload),
-                                );
-                                io_manager.streams.recv_local_reset(id)?;
-                                if self
-                                    .poll_send_reset(cx, frame.clone(), io_manager)?
-                                    .is_pending()
-                                {
-                                    compare_exchange_occupation(
-                                        &self.controller.occupied,
-                                        0,
-                                        self.id,
-                                    )?;
-                                    return Poll::Pending;
-                                }
-                                if self.id == id {
-                                    return Poll::Ready(Err(H2Error::StreamError(id, code).into()));
-                                } else {
-                                    self.controller_send_frame_to_stream(id, frame, io_manager);
-                                    {
-                                        let mut stream_waker = self
-                                            .controller
-                                            .stream_waker
-                                            .lock()
-                                            .expect("Blocking get waker lock failed! ");
-                                        // TODO Is there a situation where the result has been
-                                        // returned, but the waker has not been inserted into the
-                                        // map? how to deal with.
-                                        if let Some(waker) = stream_waker.waker.remove(&id) {
-                                            waker.wake();
-                                        }
-                                    }
-                                }
-                            }
-                            H2Error::ConnectionError(code) => {
-                                io_manager.close_frame_receiver();
-                                self.controller.shutdown();
-                                // Since ConnectError may be caused by an io error, so when the
-                                // client actively sends a goaway
-                                // frame, all streams are shut down and no streams are allowed to
-                                // complete. TODO Then consider
-                                // separating io errors from frame errors to allow streams whose
-                                // stream id is less than last_stream_id to continue
-                                self.controller.invalid();
-                                // last_stream_id is set to 0 to ensure that all streams are
-                                // shutdown.
-                                let goaway_payload =
-                                    Goaway::new(code.clone().into_code(), 0, vec![]);
-                                let frame = Frame::new(
-                                    0,
-                                    FrameFlags::empty(),
-                                    Payload::Goaway(goaway_payload),
-                                );
-                                // io_manager.connection_frame.going_away(frame);
-                                if self
-                                    .poll_send_go_away(cx, frame.clone(), io_manager)?
-                                    .is_pending()
-                                {
-                                    compare_exchange_occupation(
-                                        &self.controller.occupied,
-                                        0,
-                                        self.id,
-                                    )?;
-                                    return Poll::Pending;
-                                }
-
-                                self.goaway_unsent_stream(io_manager, 0, frame)?;
-                                self.goaway_and_shutdown();
-                                return Poll::Ready(Err(H2Error::ConnectionError(code).into()));
-                            }
-                        }
-                    }
-                    Poll::Pending => {
-                        compare_exchange_occupation(&self.controller.occupied, 0, self.id)?;
-                        return Poll::Pending;
-                    }
-                }
+    impl StreamController {
+        pub(crate) fn new(streams: Streams, shutdown: Arc<AtomicBool>) -> Self {
+            Self {
+                io_shutdown: shutdown,
+                senders: HashMap::new(),
+                streams,
+                go_away: None,
+                go_away_sync: GoAwaySync::default(),
             }
         }
 
-        fn poll_io(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            if self.poll_send_preface(cx, io_manager)?.is_pending() {
-                return Poll::Pending;
-            }
-            if self.poll_send_settings(cx, io_manager)?.is_pending() {
-                return Poll::Pending;
-            }
-            match self.poll_dispatch_frame(cx, io_manager)? {
-                Poll::Ready(state) => {
-                    if let DispatchState::Partial = state {
-                        return Poll::Ready(Ok(()));
-                    }
-                }
-                Poll::Pending => {
-                    return Poll::Pending;
-                }
-            }
-            // Write and read frames to io in a loop until the frame of the current stream
-            // is read and exit the loop.
-            loop {
-                if self.poll_write_frame(cx, io_manager)?.is_pending() {
-                    return Poll::Pending;
-                }
-                match self.poll_read_frame(cx, io_manager)? {
-                    Poll::Ready(ReadState::EmptyIo) => {}
-                    Poll::Ready(ReadState::CurrentStream) => {
-                        return Poll::Ready(Ok(()));
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                }
-            }
+        pub(crate) fn shutdown(&self) {
+            self.io_shutdown.store(true, Ordering::Release);
         }
 
-        fn poll_dispatch_frame(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<DispatchState, H2Error>> {
-            if io_manager.frame_iter.is_empty() {
-                return Poll::Ready(Ok(DispatchState::Finish));
-            }
-            let iter_option = take(&mut io_manager.frame_iter.iter);
-            match iter_option {
-                None => Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::IntervalError))),
-                Some(iter) => self.dispatch_read_frames(cx, io_manager, iter),
-            }
-        }
-
-        fn poll_send_preface(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            const PREFACE_MSG: &str = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
-            if io_manager.connection_frame.preface {
-                let mut buf = [0u8; PREFACE_MSG.len()];
-                buf.copy_from_slice(PREFACE_MSG.as_bytes());
-
-                let mut start_index = 0;
-                loop {
-                    if start_index == PREFACE_MSG.len() {
-                        io_manager.connection_frame.preface = false;
-                        break;
-                    }
-                    match Pin::new(&mut io_manager.inner.io)
-                        .poll_write(cx, &buf[start_index..])
-                        .map_err(|_| H2Error::ConnectionError(ErrorCode::IntervalError))?
-                    {
-                        Poll::Ready(written) => {
-                            start_index += written;
-                        }
-                        Poll::Pending => {
-                            return Poll::Pending;
-                        }
-                    }
-                }
-                return poll_flush_io(cx, &mut io_manager.inner);
-            }
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_send_go_away(
-            &self,
-            cx: &mut Context<'_>,
-            goaway: Frame,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            let mut buf = [0u8; 1024];
-            if write_frame_to_io(cx, &mut buf, goaway, &mut io_manager.inner)?.is_pending() {
-                Poll::Pending
-            } else {
-                poll_flush_io(cx, &mut io_manager.inner)
-            }
-        }
-
-        fn poll_send_reset(
-            &self,
-            cx: &mut Context<'_>,
-            reset: Frame,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            let mut buf = [0u8; 1024];
-            if write_frame_to_io(cx, &mut buf, reset, &mut io_manager.inner)?.is_pending() {
-                Poll::Pending
-            } else {
-                poll_flush_io(cx, &mut io_manager.inner)
-            }
-        }
-
-        fn poll_send_settings(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            if let SettingsSync::Send(settings) = io_manager.connection_frame.settings.clone() {
-                let mut buf = [0u8; 1024];
-                let frame = Frame::new(0, FrameFlags::empty(), Settings(settings.clone()));
-                if write_frame_to_io(cx, &mut buf, frame, &mut io_manager.inner)?.is_pending() {
-                    Poll::Pending
-                } else {
-                    io_manager.connection_frame.settings = SettingsSync::Acknowledging(settings);
-                    poll_flush_io(cx, &mut io_manager.inner)
-                }
-            } else {
-                Poll::Ready(Ok(()))
-            }
-        }
-
-        fn poll_write_frame(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<(), H2Error>> {
-            const FRAME_WRITE_NUM: usize = 10;
-
-            // Send 10 frames each time, if there is not enough in the queue, read enough
-            // from mpsc::Receiver
-            while io_manager.streams.size() < FRAME_WRITE_NUM {
-                match io_manager.frame_receiver.try_recv() {
-                    // The Frame sent by the Handle for the first time will carry a Sender at the
-                    // same time, which is used to send the Response Frame back
-                    // to the Handle
-                    Ok((Some((id, sender)), frame)) => {
-                        if io_manager.senders.insert(id, sender).is_some() {
-                            return Poll::Ready(Err(H2Error::ConnectionError(
-                                ErrorCode::IntervalError,
-                            )));
-                        }
-                        io_manager.streams.insert(frame);
-                    }
-                    Ok((None, frame)) => {
-                        io_manager.streams.insert(frame);
-                    }
-                    Err(TryRecvError::Empty) => {
-                        break;
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        return Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::ConnectError)))
-                    }
-                }
-            }
-            let mut buf = [0u8; 1024];
-            for _i in 0..FRAME_WRITE_NUM {
-                match io_manager.streams.pop_front()? {
-                    Some(frame) => {
-                        if write_frame_to_io(cx, &mut buf, frame, &mut io_manager.inner)?
-                            .is_pending()
-                        {
-                            return Poll::Pending;
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
-            poll_flush_io(cx, &mut io_manager.inner)
-        }
-
-        fn poll_read_frame(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-        ) -> Poll<Result<ReadState, H2Error>> {
-            // Read all the frames in io until the frame of the current stream is read and
-            // stop.
-            let mut buf = [0u8; 1024];
-            loop {
-                let mut read_buf = ReadBuf::new(&mut buf);
-                match Pin::new(&mut io_manager.inner.io).poll_read(cx, &mut read_buf) {
-                    Poll::Ready(Err(_)) => {
-                        return Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::ConnectError)))
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                    _ => {}
-                }
-                let read = read_buf.filled().len();
-                if read == 0 {
-                    break;
-                }
-                let frames = io_manager.inner.decoder.decode(&buf[..read])?;
-                let frame_iterator = frames.into_iter();
-
-                match self.dispatch_read_frames(cx, io_manager, frame_iterator)? {
-                    Poll::Ready(state) => {
-                        if let DispatchState::Partial = state {
-                            return Poll::Ready(Ok(ReadState::CurrentStream));
-                        }
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                }
-            }
-            Poll::Ready(Ok(ReadState::EmptyIo))
-        }
-
-        fn dispatch_read_frames(
-            &self,
-            cx: &mut Context<'_>,
-            io_manager: &mut MutexGuard<IoManager<S>>,
-            mut frame_iterator: FramesIntoIter,
-        ) -> Poll<Result<DispatchState, H2Error>> {
-            let mut meet_this = false;
-            loop {
-                match frame_iterator.next() {
-                    None => break,
-                    Some(frame_kind) => {
-                        if let FrameKind::Complete(frame) = frame_kind {
-                            match frame.payload() {
-                                Settings(settings) => {
-                                    if self
-                                        .recv_settings_frame(
-                                            cx,
-                                            io_manager,
-                                            frame.flags().is_ack(),
-                                            settings,
-                                        )?
-                                        .is_pending()
-                                    {
-                                        return Poll::Pending;
-                                    }
-                                    continue;
-                                }
-                                Payload::Ping(ping) => {
-                                    if self
-                                        .recv_ping_frame(
-                                            cx,
-                                            io_manager,
-                                            frame.flags().is_ack(),
-                                            ping,
-                                        )?
-                                        .is_pending()
-                                    {
-                                        return Poll::Pending;
-                                    }
-                                    continue;
-                                }
-                                Payload::PushPromise(_) => {
-                                    // TODO The current settings_enable_push is fixed to false
-                                    return Poll::Ready(Err(H2Error::ConnectionError(
-                                        ErrorCode::ProtocolError,
-                                    )));
-                                }
-                                Payload::Goaway(goaway) => {
-                                    // shutdown io,prevent the creation of new stream
-                                    self.controller.shutdown();
-                                    io_manager.close_frame_receiver();
-                                    let last_stream_id = goaway.get_last_stream_id();
-                                    if self.next_stream_id.get_next_id() as usize <= last_stream_id
-                                    {
-                                        return Poll::Ready(Err(H2Error::ConnectionError(
-                                            ErrorCode::ProtocolError,
-                                        )));
-                                    }
-                                    self.goaway_unsent_stream(
-                                        io_manager,
-                                        last_stream_id as u32,
-                                        frame.clone(),
-                                    )?;
-                                    continue;
-                                }
-                                Payload::RstStream(_reset) => {
-                                    io_manager
-                                        .streams
-                                        .recv_remote_reset(frame.stream_id() as u32)?;
-                                }
-                                Payload::Headers(_headers) => {
-                                    if let Closed(ResetReason::Local) =
-                                        io_manager.streams.recv_headers(frame.stream_id() as u32)?
-                                    {
-                                        continue;
-                                    }
-                                }
-                                Payload::Data(_data) => {
-                                    if let Closed(ResetReason::Local) =
-                                        io_manager.streams.recv_data(frame.stream_id() as u32)?
-                                    {
-                                        continue;
-                                    }
-                                }
-                                // TODO Windows that processes streams and connections separately.
-                                Payload::WindowUpdate(_windows) => {
-                                    continue;
-                                }
-                                Payload::Priority(_priority) => continue,
-                            }
-
-                            let stream_id = frame.stream_id() as u32;
-                            if stream_id == self.id {
-                                meet_this = true;
-                                self.controller_send_frame_to_stream(stream_id, frame, io_manager);
-                                break;
-                            } else {
-                                self.controller_send_frame_to_stream(stream_id, frame, io_manager);
-                                // TODO After adding frames such as Reset/Priority, there may be
-                                // problems with the following logic, because the lack of waker
-                                // cannot wake up
-                                let mut stream_waker = self
-                                    .controller
-                                    .stream_waker
-                                    .lock()
-                                    .expect("Blocking get waker lock failed! ");
-                                // TODO Is there a situation where the result has been returned, but
-                                // the waker has not been inserted into the map? how to deal with.
-                                if let Some(waker) = stream_waker.waker.remove(&stream_id) {
-                                    waker.wake();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if meet_this {
-                io_manager.frame_iter.iter = Some(frame_iterator);
-                Poll::Ready(Ok(DispatchState::Partial))
-            } else {
-                Poll::Ready(Ok(DispatchState::Finish))
-            }
-        }
-
-        fn goaway_unsent_stream(
-            &self,
-            io_manager: &mut MutexGuard<IoManager<S>>,
+        pub(crate) fn go_away_unsent_stream(
+            &mut self,
             last_stream_id: u32,
-            goaway: Frame,
-        ) -> Result<(), H2Error> {
-            let goaway_streams = io_manager.streams.get_goaway_streams(last_stream_id)?;
-            {
-                let mut stream_waker = self
-                    .controller
-                    .stream_waker
-                    .lock()
-                    .expect("Blocking get waker lock failed! ");
-                for goaway_stream in goaway_streams {
-                    self.controller_send_frame_to_stream(goaway_stream, goaway.clone(), io_manager);
-                    if let Some(waker) = stream_waker.waker.remove(&goaway_stream) {
-                        waker.wake();
-                    }
-                }
+        ) -> Result<Vec<u32>, H2Error> {
+            // The last-stream-id in the subsequent GO_AWAY frame
+            // cannot be greater than the last-stream-id in the previous GO_AWAY frame.
+            if self.streams.max_send_id < last_stream_id {
+                return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
             }
-            Ok(())
+            self.streams.max_send_id = last_stream_id;
+            Ok(self.streams.get_go_away_streams(last_stream_id))
         }
 
-        fn goaway_and_shutdown(&self) {
-            {
-                let mut waker_guard = self
-                    .controller
-                    .stream_waker
-                    .lock()
-                    .expect("Blocking get waker lock failed! ");
-                let waker_map = take(&mut waker_guard.waker);
-                for (_id, waker) in waker_map.into_iter() {
-                    waker.wake()
-                }
-            }
-        }
-
-        fn recv_settings_frame(
-            &self,
-            cx: &mut Context<'_>,
-            guard: &mut MutexGuard<IoManager<S>>,
-            is_ack: bool,
-            settings: &h2::Settings,
-        ) -> Poll<Result<(), H2Error>> {
-            if is_ack {
-                match guard.connection_frame.settings.clone() {
-                    SettingsSync::Acknowledging(local_settings) => {
-                        for setting in local_settings.get_settings() {
-                            if let Setting::MaxHeaderListSize(size) = setting {
-                                guard.inner.decoder.set_max_header_list_size(*size as usize);
-                            }
-                            if let Setting::MaxFrameSize(size) = setting {
-                                guard.inner.decoder.set_max_frame_size(*size)?;
-                            }
-                        }
-                        guard.connection_frame.settings = SettingsSync::Synced;
-                        Poll::Ready(Ok(()))
-                    }
-                    _ => Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::ProtocolError))),
-                }
-            } else {
-                for setting in settings.get_settings() {
-                    if let Setting::HeaderTableSize(size) = setting {
-                        guard.inner.encoder.update_header_table_size(*size as usize);
-                    }
-                    if let Setting::MaxFrameSize(size) = setting {
-                        guard.inner.encoder.update_max_frame_size(*size as usize);
-                    }
-                }
-                // reply ack Settings
-                let mut buf = [0u8; 1024];
-                if write_frame_to_io(cx, &mut buf, SettingsSync::ack_settings(), &mut guard.inner)?
-                    .is_pending()
-                {
-                    Poll::Pending
-                } else {
-                    poll_flush_io(cx, &mut guard.inner)
-                }
-            }
-        }
-
-        fn recv_ping_frame(
-            &self,
-            cx: &mut Context<'_>,
-            guard: &mut MutexGuard<IoManager<S>>,
-            is_ack: bool,
-            ping: &h2::Ping,
-        ) -> Poll<Result<(), H2Error>> {
-            if is_ack {
-                // TODO The sending logic of ping has not been implemented yet, so there is no
-                // processing for ack
-                Poll::Ready(Ok(()))
-            } else {
-                // reply ack Settings
-                let ack = Frame::new(0, FrameFlags::new(0x1), Payload::Ping(ping.clone()));
-                let mut buf = [0u8; 1024];
-                if write_frame_to_io(cx, &mut buf, ack, &mut guard.inner)?.is_pending() {
-                    Poll::Pending
-                } else {
-                    poll_flush_io(cx, &mut guard.inner)
-                }
-            }
-        }
-
-        fn controller_send_frame_to_stream(
-            &self,
-            stream_id: u32,
-            frame: Frame,
-            guard: &mut MutexGuard<IoManager<S>>,
-        ) {
-            // TODO Need to consider when to delete useless Sender after support reset
-            // stream
-            if let Some(sender) = guard.senders.get(&stream_id) {
+        pub(crate) fn send_message_to_stream(&mut self, stream_id: u32, message: RespMessage) {
+            if let Some(sender) = self.senders.get(&stream_id) {
                 // If the client coroutine has exited, this frame is skipped.
-                let _ = sender.send(frame);
+                match sender.send(message) {
+                    Ok(_) => {}
+                    Err(_e) => {
+                        self.senders.remove(&stream_id);
+                    }
+                }
             }
         }
     }
 
-    impl FrameReceiver {
-        fn set_receiver(&mut self, receiver: UnboundedReceiver<Frame>) {
+    impl RespReceiver {
+        pub(crate) fn set_receiver(&mut self, receiver: UnboundedReceiver<RespMessage>) {
             self.receiver = Some(receiver);
         }
 
-        fn recv_frame(&mut self, id: u32) -> Result<Option<Frame>, HttpError> {
-            if let Some(ref mut receiver) = self.receiver {
-                match receiver.try_recv() {
-                    Ok(frame) => Ok(Some(frame)),
-                    Err(TryRecvError::Disconnected) => {
-                        Err(H2Error::StreamError(id, ErrorCode::StreamClosed).into())
+        pub(crate) async fn recv(&mut self) -> Result<Frame, HttpClientError> {
+            match self.receiver {
+                Some(ref mut receiver) => {
+                    #[cfg(feature = "tokio_base")]
+                    match receiver.recv().await {
+                        None => err_from_msg!(Request, "Response Receiver Closed !"),
+                        Some(message) => match message {
+                            RespMessage::Output(frame) => Ok(frame),
+                            RespMessage::OutputExit(_e) => {
+                                err_from_msg!(Request, "Response Recv Failed !")
+                            }
+                        },
                     }
-                    Err(TryRecvError::Empty) => Ok(None),
+
+                    #[cfg(feature = "ylong_base")]
+                    match receiver.recv().await {
+                        Err(err) => Err(HttpClientError::from_error(ErrorKind::Request, err)),
+                        Ok(message) => match message {
+                            RespMessage::Output(frame) => Ok(frame),
+                            RespMessage::OutputExit(_e) => {
+                                err_from_msg!(Request, "Response Recv Failed !")
+                            }
+                        },
+                    }
                 }
-            } else {
-                Err(H2Error::StreamError(id, ErrorCode::IntervalError).into())
+                None => Err(HttpClientError::from_str(
+                    ErrorKind::Request,
+                    "Invalid Frame Receiver !",
+                )),
             }
         }
 
-        fn is_none(&self) -> bool {
-            self.receiver.is_none()
+        pub(crate) fn poll_recv(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Frame, HttpClientError>> {
+            if let Some(ref mut receiver) = self.receiver {
+                #[cfg(feature = "tokio_base")]
+                match receiver.poll_recv(cx) {
+                    Poll::Ready(None) => {
+                        Poll::Ready(err_from_msg!(Request, "Error receive response !"))
+                    }
+                    Poll::Ready(Some(message)) => match message {
+                        RespMessage::Output(frame) => Poll::Ready(Ok(frame)),
+                        RespMessage::OutputExit(_e) => {
+                            Poll::Ready(err_from_msg!(Request, "H2 io manager occurs error !"))
+                        }
+                    },
+                    Poll::Pending => Poll::Pending,
+                }
+
+                #[cfg(feature = "ylong_base")]
+                match receiver.poll_recv(cx) {
+                    Poll::Ready(Err(e)) => {
+                        Poll::Ready(Err(HttpClientError::from_error(ErrorKind::Request, e)))
+                    }
+                    Poll::Ready(Ok(message)) => match message {
+                        RespMessage::Output(frame) => Poll::Ready(Ok(frame)),
+                        RespMessage::OutputExit(_e) => {
+                            Poll::Ready(err_from_msg!(Request, "H2 io manager occurs error !"))
+                        }
+                    },
+                    Poll::Pending => Poll::Pending,
+                }
+            } else {
+                Poll::Ready(err_from_msg!(Request, "Invalid Frame Receiver !"))
+            }
         }
     }
 
-    // TODO Temporarily only deal with the Settings frame
-    pub(crate) fn build_connection_frames(config: H2Config) -> ConnectionFrames {
-        const DEFAULT_ENABLE_PUSH: bool = false;
+    async fn async_send_preface<S>(writer: &mut WriteHalf<S>) -> Result<(), DispatchErrorKind>
+    where
+        S: AsyncWrite + Unpin,
+    {
+        const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+        writer
+            .write_all(PREFACE)
+            .await
+            .map_err(|e| DispatchErrorKind::Io(e.kind()))
+    }
+
+    pub(crate) fn create_initial_settings(config: &H2Config) -> Frame {
         let settings = SettingsBuilder::new()
             .max_header_list_size(config.max_header_list_size())
             .max_frame_size(config.max_frame_size())
             .header_table_size(config.header_table_size())
-            .enable_push(DEFAULT_ENABLE_PUSH)
+            .enable_push(config.enable_push())
+            .initial_window_size(config.stream_window_size())
             .build();
 
-        ConnectionFrames::new(settings)
+        Frame::new(0, FrameFlags::new(0), Payload::Settings(settings))
     }
 
-    // io write interface
-    fn write_frame_to_io<S>(
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-        frame: Frame,
-        inner: &mut Inner<S>,
-    ) -> Poll<Result<(), H2Error>>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static,
-    {
-        let mut remain_size = 0;
-        inner.encoder.set_frame(frame);
-        loop {
-            let size = inner
-                .encoder
-                .encode(&mut buf[remain_size..])
-                .map_err(|_| H2Error::ConnectionError(ErrorCode::IntervalError))?;
-
-            let total = size + remain_size;
-
-            // All the bytes of the frame are written
-            if total == 0 {
-                break;
-            }
-            match Pin::new(&mut inner.io)
-                .poll_write(cx, &buf[..total])
-                .map_err(|_| H2Error::ConnectionError(ErrorCode::IntervalError))?
-            {
-                Poll::Ready(written) => {
-                    remain_size = total - written;
-                    // written is not necessarily equal to total
-                    if remain_size > 0 {
-                        for i in 0..remain_size {
-                            buf[i] = buf[written + i];
-                        }
-                    }
-                }
-                Poll::Pending => {
-                    return Poll::Pending;
-                }
-            }
-        }
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_flush_io<S>(cx: &mut Context<'_>, inner: &mut Inner<S>) -> Poll<Result<(), H2Error>>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static,
-    {
-        Pin::new(&mut inner.io)
-            .poll_flush(cx)
-            .map_err(|_| H2Error::ConnectionError(ErrorCode::ConnectError))
-    }
-
-    fn get_frame(frame: Option<Frame>) -> Result<Frame, HttpError> {
-        frame.ok_or(H2Error::ConnectionError(ErrorCode::IntervalError).into())
-    }
-
-    fn wakeup_next_stream(waker_map: &mut HashMap<u32, Waker>) {
-        {
-            if !waker_map.is_empty() {
-                let mut id = 0;
-                if let Some((index, _)) = waker_map.iter().next() {
-                    id = *index;
-                }
-                if let Some(waker) = waker_map.remove(&id) {
-                    waker.wake();
-                }
-            }
+    impl From<std::io::Error> for DispatchErrorKind {
+        fn from(value: std::io::Error) -> Self {
+            DispatchErrorKind::Io(value.kind())
         }
     }
 
-    fn is_io_available(occupied: &AtomicU32, id: u32) -> Result<bool, HttpError> {
-        let is_occupied = occupied.load(Ordering::Relaxed);
-        if is_occupied == 0 {
-            return Ok(true);
+    impl From<H2Error> for DispatchErrorKind {
+        fn from(err: H2Error) -> Self {
+            DispatchErrorKind::H2(err)
         }
-        if is_occupied == id {
-            compare_exchange_occupation(occupied, id, 0)?;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn compare_exchange_occupation(
-        occupied: &AtomicU32,
-        current: u32,
-        new: u32,
-    ) -> Result<(), HttpError> {
-        occupied
-            .compare_exchange(current, new, Ordering::Acquire, Ordering::Relaxed)
-            .map_err(|_| H2Error::ConnectionError(ErrorCode::IntervalError))?;
-        Ok(())
     }
 }
 

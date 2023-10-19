@@ -94,27 +94,6 @@ impl HttpBody {
         Ok(Self { kind, sleep: None })
     }
 
-    #[cfg(feature = "http2")]
-    pub(crate) fn empty() -> Self {
-        Self {
-            kind: Kind::Empty,
-            sleep: None,
-        }
-    }
-
-    #[cfg(feature = "http2")]
-    pub(crate) fn text(
-        len: usize,
-        pre: &[u8],
-        io: BoxStreamData,
-        interceptors: Arc<Interceptors>,
-    ) -> Self {
-        Self {
-            kind: Kind::Text(Text::new(len, pre, io, interceptors)),
-            sleep: None,
-        }
-    }
-
     pub(crate) fn set_sleep(&mut self, sleep: Option<Pin<Box<Sleep>>>) {
         self.sleep = sleep;
     }

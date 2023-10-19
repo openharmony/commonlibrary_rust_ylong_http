@@ -318,7 +318,7 @@ impl FrameDecoder {
 
     /// Updates the SETTINGS_MAX_FRAME_SIZE.
     pub fn set_max_frame_size(&mut self, size: u32) -> Result<(), H2Error> {
-        if size < DEFAULT_MAX_FRAME_SIZE && size > MAX_ALLOWED_MAX_FRAME_SIZE {
+        if !(DEFAULT_MAX_FRAME_SIZE..=MAX_ALLOWED_MAX_FRAME_SIZE).contains(&size) {
             return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
         }
         self.max_frame_size = size;
@@ -509,7 +509,7 @@ impl FrameDecoder {
         if self.header.payload_length != 4 || buf.len() != 4 {
             return Err(H2Error::ConnectionError(ErrorCode::FrameSizeError));
         }
-        let increment_size = (((0x7f | buf[0]) as u32) << 24)
+        let increment_size = (((0x7f & buf[0]) as u32) << 24)
             | ((buf[1] as u32) << 16)
             | ((buf[2] as u32) << 8)
             | (buf[3] as u32);

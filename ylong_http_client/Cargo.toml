@@ -14,7 +14,7 @@ tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thre
 ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
 
 [dev-dependencies]
-hyper = { version = "0.14.23", features = ["http1", "tcp", "server"] }
+hyper = { version = "0.14.23", features = ["http1", "http2", "tcp", "server"] }
 openssl = { version = "0.10.29" }
 tokio-openssl = { version = "0.6.3" }
 

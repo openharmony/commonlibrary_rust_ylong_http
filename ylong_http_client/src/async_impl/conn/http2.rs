@@ -12,95 +12,74 @@
 // limitations under the License.
 
 use std::cmp::min;
-use std::future::Future;
+use std::ops::Deref;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::task::{Context, Poll};
 
-use ylong_http::body::async_impl::Body;
 use ylong_http::error::HttpError;
 use ylong_http::h2;
 use ylong_http::h2::{ErrorCode, Frame, FrameFlags, H2Error, Payload, PseudoHeaders};
 use ylong_http::headers::Headers;
 use ylong_http::request::uri::Scheme;
-use ylong_http::request::{Request, RequestPart};
+use ylong_http::request::RequestPart;
 use ylong_http::response::status::StatusCode;
-use ylong_http::response::{Response, ResponsePart};
+use ylong_http::response::ResponsePart;
 
-use crate::async_impl::client::Retryable;
-use crate::async_impl::conn::HttpBody;
+use crate::async_impl::conn::StreamData;
 use crate::async_impl::request::Message;
-use crate::async_impl::StreamData;
+use crate::async_impl::{HttpBody, Response};
 use crate::error::{ErrorKind, HttpClientError};
-use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
+use crate::runtime::{AsyncRead, ReadBuf};
 use crate::util::dispatcher::http2::Http2Conn;
+use crate::util::h2::{BodyDataRef, RequestWrapper};
+use crate::util::normalizer::BodyLengthParser;
 
 const UNUSED_FLAG: u8 = 0x0;
 
-pub(crate) async fn request<S, T>(
+pub(crate) async fn request<S>(
     mut conn: Http2Conn<S>,
-    message: Message<T>,
-    retryable: &mut Retryable,
-) -> Result<Response<HttpBody>, HttpClientError>
+    mut message: Message,
+) -> Result<Response, HttpClientError>
 where
-    T: Body,
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    S: Sync + Send + Unpin + 'static,
 {
-    let part = message.request.part().clone();
-    let body = message.request.body_mut();
+    message
+        .interceptor
+        .intercept_request(message.request.ref_mut())?;
+    let part = message.request.ref_mut().part().clone();
 
-    // TODO Due to the reason of the Body structure, the use of the trailer is not
-    // implemented here for the time being, and it needs to be completed after the
-    // Body trait is provided to obtain the trailer interface
-    match build_data_frame(conn.id as usize, body).await? {
-        None => {
-            let headers = build_headers_frame(conn.id, part, true)
-                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
-            conn.send_frame_to_controller(headers).map_err(|e| {
-                retryable.set_retry(true);
-                HttpClientError::from_error(ErrorKind::Request, Some(e))
-            })?;
-        }
-        Some(data) => {
-            let headers = build_headers_frame(conn.id, part, false)
-                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
-            conn.send_frame_to_controller(headers).map_err(|e| {
-                retryable.set_retry(true);
-                HttpClientError::from_error(ErrorKind::Request, Some(e))
-            })?;
-            conn.send_frame_to_controller(data).map_err(|e| {
-                retryable.set_retry(true);
-                HttpClientError::from_error(ErrorKind::Request, Some(e))
-            })?;
-        }
-    }
-    let frame = Pin::new(&mut conn.stream_info)
-        .await
-        .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
-    frame_2_response(conn, frame, retryable)
+    // TODO Implement trailer.
+    let headers = build_headers_frame(conn.id, part, false)
+        .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
+    let data = BodyDataRef::new(message.request.clone());
+    let stream = RequestWrapper {
+        header: headers,
+        data,
+    };
+    conn.send_frame_to_controller(stream)?;
+    let frame = conn.receiver.recv().await?;
+    frame_2_response(conn, frame, message)
 }
 
-fn frame_2_response<S, T>(
+fn frame_2_response<S>(
     conn: Http2Conn<S>,
     headers_frame: Frame,
-    retryable: &mut Retryable,
-    message: Message<T>,
-) -> Result<Response<HttpBody>, HttpClientError>
+    mut message: Message,
+) -> Result<Response, HttpClientError>
 where
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    S: Sync + Send + Unpin + 'static,
 {
     let part = match headers_frame.payload() {
         Payload::Headers(headers) => {
             let (pseudo, fields) = headers.parts();
             let status_code = match pseudo.status() {
                 Some(status) => StatusCode::from_bytes(status.as_bytes())
-                    .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?,
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?,
                 None => {
                     return Err(HttpClientError::from_error(
                         ErrorKind::Request,
-                        Some(HttpError::from(H2Error::StreamError(
-                            conn.id,
-                            ErrorCode::ProtocolError,
-                        ))),
+                        HttpError::from(H2Error::StreamError(conn.id, ErrorCode::ProtocolError)),
                     ));
                 }
             };
@@ -110,82 +89,28 @@ where
                 headers: fields.clone(),
             }
         }
-        Payload::RstStream(reset) => {
-            return Err(HttpClientError::from_error(
-                ErrorKind::Request,
-                Some(HttpError::from(reset.error(conn.id).map_err(|e| {
-                    HttpClientError::from_error(ErrorKind::Request, Some(e))
-                })?)),
-            ));
-        }
-        Payload::Goaway(_) => {
-            // return Err(HttpClientError::from(ErrorKind::Resend));
-            retryable.set_retry(true);
-            return Err(HttpClientError::from_str(ErrorKind::Request, "GoAway"));
-        }
         _ => {
             return Err(HttpClientError::from_error(
                 ErrorKind::Request,
-                Some(HttpError::from(H2Error::StreamError(
-                    conn.id,
-                    ErrorCode::ProtocolError,
-                ))),
+                HttpError::from(H2Error::StreamError(conn.id, ErrorCode::ProtocolError)),
             ));
         }
     };
 
-    let body = {
-        if headers_frame.flags().is_end_stream() {
-            HttpBody::empty()
-        } else {
-            // TODO Can Content-Length in h2 be null?
-            let content_length = part
-                .headers
-                .get("Content-Length")
-                .map(|v| v.to_string().unwrap_or(String::new()))
-                .and_then(|s| s.parse::<usize>().ok());
-            match content_length {
-                None => HttpBody::empty(),
-                Some(0) => HttpBody::empty(),
-                Some(size) => {
-                    let text_io = TextIo::new(conn);
-                    HttpBody::text(size, &[0u8; 0], Box::new(text_io), message.interceptor)
-                }
-            }
+    let text_io = TextIo::new(conn);
+    // TODO Whether HTTP2 can have no Content_Length, only whether the END_STREAM
+    // flag has a Body
+    let length = match BodyLengthParser::new(message.request.ref_mut().method(), &part).parse() {
+        Ok(length) => length,
+        Err(e) => {
+            return Err(e);
         }
     };
-    Ok(Response::from_raw_parts(part, body))
-}
+    let body = HttpBody::new(message.interceptor, length, Box::new(text_io), &[0u8; 0])?;
 
-pub(crate) async fn build_data_frame<T: Body>(
-    id: usize,
-    body: &mut T,
-) -> Result<Option<Frame>, HttpClientError> {
-    let mut data_vec = vec![];
-    let mut buf = [0u8; 1024];
-    loop {
-        let size = body
-            .data(&mut buf)
-            .await
-            .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
-        if size == 0 {
-            break;
-        }
-        data_vec.extend_from_slice(&buf[..size]);
-    }
-    if data_vec.is_empty() {
-        Ok(None)
-    } else {
-        // TODO When the Body trait supports trailer, END_STREAM_FLAG needs to be
-        // modified
-        let mut flag = FrameFlags::new(UNUSED_FLAG);
-        flag.set_end_stream(true);
-        Ok(Some(Frame::new(
-            id,
-            flag,
-            Payload::Data(h2::Data::new(data_vec)),
-        )))
-    }
+    Ok(Response::new(
+        ylong_http::response::Response::from_raw_parts(part, body),
+    ))
 }
 
 pub(crate) fn build_headers_frame(
@@ -229,8 +154,10 @@ fn check_connection_specific_headers(id: u32, headers: &Headers) -> Result<(), H
             return Err(H2Error::StreamError(id, ErrorCode::ProtocolError).into());
         }
     }
-    if let Some(te_value) = headers.get("te") {
-        if te_value.to_string()? != "trailers" {
+
+    if let Some(te_ref) = headers.get("te") {
+        let te = te_ref.to_string()?;
+        if te.as_str() != "trailers" {
             return Err(H2Error::StreamError(id, ErrorCode::ProtocolError).into());
         }
     }
@@ -252,8 +179,6 @@ fn build_pseudo_headers(request_part: &RequestPart) -> PseudoHeaders {
             .path_and_query()
             .or_else(|| Some(String::from("/"))),
     );
-    // TODO Validity verification is required, for example: `Authority` must be
-    // consistent with the `Host` header
     pseudo.set_authority(request_part.uri.authority().map(|auth| auth.to_string()));
     pseudo
 }
@@ -265,7 +190,32 @@ struct TextIo<S> {
     pub(crate) is_closed: bool,
 }
 
-impl<S> TextIo<S> {
+struct HttpReadBuf<'a, 'b> {
+    buf: &'a mut ReadBuf<'b>,
+}
+
+impl<'a, 'b> HttpReadBuf<'a, 'b> {
+    pub(crate) fn append_slice(&mut self, buf: &[u8]) {
+        #[cfg(feature = "ylong_base")]
+        self.buf.append(buf);
+
+        #[cfg(feature = "tokio_base")]
+        self.buf.put_slice(buf);
+    }
+}
+
+impl<'a, 'b> Deref for HttpReadBuf<'a, 'b> {
+    type Target = ReadBuf<'b>;
+
+    fn deref(&self) -> &Self::Target {
+        self.buf
+    }
+}
+
+impl<S> TextIo<S>
+where
+    S: Sync + Send + Unpin + 'static,
+{
     pub(crate) fn new(handle: Http2Conn<S>) -> Self {
         Self {
             handle,
@@ -276,19 +226,20 @@ impl<S> TextIo<S> {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> StreamData for TextIo<S> {
+impl<S: Sync + Send + Unpin + 'static> StreamData for TextIo<S> {
     fn shutdown(&self) {
-        todo!()
+        self.handle.io_shutdown.store(true, Ordering::Release);
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> AsyncRead for TextIo<S> {
+impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         let text_io = self.get_mut();
+        let mut buf = HttpReadBuf { buf };
 
         if buf.remaining() == 0 || text_io.is_closed {
             return Poll::Ready(Ok(()));
@@ -305,12 +256,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> AsyncRead for Te
                         let data_len = data.len() - text_io.offset;
                         let fill_len = min(unfilled_len, data_len);
                         if unfilled_len < data_len {
-                            buf.put_slice(&data[text_io.offset..text_io.offset + fill_len]);
+                            buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
                             text_io.offset += fill_len;
                             break;
                         } else {
-                            buf.put_slice(&data[text_io.offset..text_io.offset + fill_len]);
-                            text_io.offset += fill_len;
+                            buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
+                            text_io.offset = 0;
                             if frame.flags().is_end_stream() {
                                 text_io.is_closed = true;
                                 break;
@@ -326,11 +277,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> AsyncRead for Te
                 }
             }
 
-            let poll_result = Pin::new(&mut text_io.handle.stream_info)
-                .poll(cx)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let poll_result = text_io
+                .handle
+                .receiver
+                .poll_recv(cx)
+                .map_err(|_e| std::io::Error::from(std::io::ErrorKind::Other))?;
 
-            // TODO Added the frame type.
             match poll_result {
                 Poll::Ready(frame) => match frame.payload() {
                     Payload::Headers(_) => {
@@ -344,23 +296,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static> AsyncRead for Te
                         let data_len = data.len();
                         let fill_len = min(data_len, unfilled_len);
                         if unfilled_len < data_len {
-                            buf.put_slice(&data[..fill_len]);
+                            buf.append_slice(&data[..fill_len]);
                             text_io.offset += fill_len;
                             text_io.remain = Some(frame);
                             break;
                         } else {
-                            buf.put_slice(&data[..fill_len]);
+                            buf.append_slice(&data[..fill_len]);
                             if frame.flags().is_end_stream() {
                                 text_io.is_closed = true;
                                 break;
                             }
                         }
                     }
-                    Payload::RstStream(_) => {
-                        return Poll::Ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                        )))
+                    Payload::RstStream(error) => {
+                        if error.is_no_error() {
+                            text_io.is_closed = true;
+                            break;
+                        } else {
+                            return Poll::Ready(Err(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
+                            )));
+                        }
                     }
                     _ => {
                         return Poll::Ready(Err(std::io::Error::new(

@@ -29,7 +29,7 @@ impl HttpConfig {
             version: HttpVersion::Http1,
 
             #[cfg(feature = "http2")]
-            http2_config: http2::H2Config::default(),
+            http2_config: http2::H2Config::new(),
         }
     }
 }
@@ -56,19 +56,52 @@ pub(crate) mod http2 {
     const DEFAULT_MAX_FRAME_SIZE: u32 = 2 << 13;
     const DEFAULT_HEADER_TABLE_SIZE: u32 = 4096;
     const DEFAULT_MAX_HEADER_LIST_SIZE: u32 = 16 << 20;
+    // window size at the client connection level
+    // The initial value specified in rfc9113 is 64kb,
+    // but the default value is 1mb for performance purposes and is synchronized
+    // using WINDOW_UPDATE after sending SETTINGS.
+    const DEFAULT_CONN_WINDOW_SIZE: u32 = 1024 * 1024;
+    // TODO Raise the default value size here.
+    const DEFAULT_STREAM_WINDOW_SIZE: u32 = 64 * 1024;
 
     /// Settings which can be used to configure a http2 connection.
     #[derive(Clone)]
     pub(crate) struct H2Config {
-        pub(crate) max_frame_size: u32,
-        pub(crate) max_header_list_size: u32,
-        pub(crate) header_table_size: u32,
+        max_frame_size: u32,
+        max_header_list_size: u32,
+        header_table_size: u32,
+        init_conn_window_size: u32,
+        init_stream_window_size: u32,
+        enable_push: bool,
     }
 
     impl H2Config {
         /// `H2Config` constructor.
         pub(crate) fn new() -> Self {
             Self::default()
+        }
+
+        /// Sets the SETTINGS_MAX_FRAME_SIZE.
+        pub(crate) fn set_max_frame_size(&mut self, size: u32) {
+            self.max_frame_size = size;
+        }
+
+        /// Sets the SETTINGS_MAX_HEADER_LIST_SIZE.
+        pub(crate) fn set_max_header_list_size(&mut self, size: u32) {
+            self.max_header_list_size = size;
+        }
+
+        /// Sets the SETTINGS_HEADER_TABLE_SIZE.
+        pub(crate) fn set_header_table_size(&mut self, size: u32) {
+            self.header_table_size = size;
+        }
+
+        pub(crate) fn set_conn_window_size(&mut self, size: u32) {
+            self.init_conn_window_size = size;
+        }
+
+        pub(crate) fn set_stream_window_size(&mut self, size: u32) {
+            self.init_stream_window_size = size;
         }
 
         /// Gets the SETTINGS_MAX_FRAME_SIZE.
@@ -85,6 +118,18 @@ pub(crate) mod http2 {
         pub(crate) fn header_table_size(&self) -> u32 {
             self.header_table_size
         }
+
+        pub(crate) fn enable_push(&self) -> bool {
+            self.enable_push
+        }
+
+        pub(crate) fn conn_window_size(&self) -> u32 {
+            self.init_conn_window_size
+        }
+
+        pub(crate) fn stream_window_size(&self) -> u32 {
+            self.init_stream_window_size
+        }
     }
 
     impl Default for H2Config {
@@ -93,6 +138,9 @@ pub(crate) mod http2 {
                 max_frame_size: DEFAULT_MAX_FRAME_SIZE,
                 max_header_list_size: DEFAULT_MAX_HEADER_LIST_SIZE,
                 header_table_size: DEFAULT_HEADER_TABLE_SIZE,
+                init_conn_window_size: DEFAULT_CONN_WINDOW_SIZE,
+                init_stream_window_size: DEFAULT_STREAM_WINDOW_SIZE,
+                enable_push: false,
             }
         }
     }

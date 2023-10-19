@@ -26,6 +26,7 @@ use ylong_http::request::{Request as Req, RequestBuilder as ReqBuilder};
 use crate::async_impl::interceptor::Interceptors;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf};
+use crate::util::request::RequestArc;
 
 /// A structure that represents an HTTP `Request`. It contains a request line,
 /// some HTTP headers and a HTTP body.
@@ -396,8 +397,8 @@ impl PercentEncoder {
     }
 }
 
-pub(crate) struct Message<'a> {
-    pub(crate) request: &'a mut Request,
+pub(crate) struct Message {
+    pub(crate) request: RequestArc,
     pub(crate) interceptor: Arc<Interceptors>,
 }
 
