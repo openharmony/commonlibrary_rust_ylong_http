@@ -41,6 +41,7 @@ pub struct TlsConfigBuilder {
     inner: Result<SslContextBuilder, ErrorStack>,
     use_sni: bool,
     verify_hostname: bool,
+    certs_list: Vec<Cert>,
 }
 
 impl TlsConfigBuilder {
@@ -58,6 +59,7 @@ impl TlsConfigBuilder {
             inner: SslContext::builder(SslMethod::tls_client()),
             use_sni: true,
             verify_hostname: true,
+            certs_list: vec![],
         }
     }
 
@@ -214,13 +216,28 @@ impl TlsConfigBuilder {
     }
 
     /// Adds custom root certificate.
-    pub fn add_root_certificates(mut self, certs: Certificate) -> Self {
-        for cert in certs.inner {
-            self.inner = self.inner.and_then(|mut builder| {
-                { Ok(builder.cert_store_mut()).map(|store| store.add_cert(cert.0)) }
-                    .map(|_| builder)
-            });
-        }
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///     use ylong_http_client::async_impl::Client;
+    ///     use ylong_http_client::{Certificate, TlsVersion};
+    ///
+    ///     let cert1 = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem"))?;
+    ///     let cert2 = Certificate::from_pem(include_bytes!("../../../tests/file/cert.pem"))?;
+    ///
+    ///     // Creates a `Client`
+    ///     let client = Client::builder()
+    ///         .tls_built_in_root_certs(false)
+    ///         .danger_accept_invalid_certs(false)
+    ///         .max_tls_version(TlsVersion::TLS_1_2)
+    ///         .min_tls_version(TlsVersion::TLS_1_2)
+    ///         .add_root_certificate(cert1)
+    ///         .add_root_certificate(cert2)
+    ///         .build()?;
+    /// ```
+    pub fn add_root_certificates(mut self, mut certs: Certificate) -> Self {
+        self.certs_list.append(&mut certs.inner);
         self
     }
 
@@ -363,7 +380,14 @@ impl TlsConfigBuilder {
     ///     .cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
     ///     .build();
     /// ```
-    pub fn build(self) -> Result<TlsConfig, HttpClientError> {
+    pub fn build(mut self) -> Result<TlsConfig, HttpClientError> {
+        for cert in self.certs_list {
+            self.inner = self.inner.and_then(|mut builder| {
+                { Ok(builder.cert_store_mut()).map(|store| store.add_cert(cert.0)) }
+                    .map(|_| builder)
+            });
+        }
+
         let ctx = self
             .inner
             .map(|builder| builder.build())
