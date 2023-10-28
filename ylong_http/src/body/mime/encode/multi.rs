@@ -542,7 +542,7 @@ mod ut_mime_multi_encoder {
     /// 4. Builds a `MimeMultiEncoder` by `from_multi` and encodes
     ///    asynchronously.
     /// 5. Checks whether the result is correct.
-
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mime_multi_encoder_data_many_parts_nesting_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -551,6 +551,7 @@ mod ut_mime_multi_encoder {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mime_multi_encoder_data_many_parts_nesting_then_async_data() {
         let multi1 = MimeMulti::builder()
             .set_content_type(b"multipart/mixed", b"abc".to_vec())

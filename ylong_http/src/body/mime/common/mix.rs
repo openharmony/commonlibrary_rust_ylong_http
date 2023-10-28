@@ -420,6 +420,7 @@ mod ut_mix {
     ///    `MixFrom::set_async_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mix_set_async_reader() {
         let handle = ylong_runtime::spawn(async move {
@@ -428,6 +429,7 @@ mod ut_mix {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mix_set_async_reader() {
         mix_encode_compare!(
             MixFrom: {
@@ -445,6 +447,7 @@ mod ut_mix {
     ///    `MixFrom::set_reader`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mix_set_reader_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -453,6 +456,7 @@ mod ut_mix {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mix_set_reader_then_async_data() {
         mix_encode_compare!(
             MixFrom: {
@@ -470,6 +474,7 @@ mod ut_mix {
     ///    `MixFrom::set_bytes`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mix_set_bytes_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -478,6 +483,7 @@ mod ut_mix {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mix_set_bytes_then_async_data() {
         mix_encode_compare!(
             MixFrom: {
@@ -495,6 +501,7 @@ mod ut_mix {
     ///    `MixFrom::set_owned`.
     /// 2. Encodes by asynchronous encoding.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mix_set_owned_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -503,6 +510,7 @@ mod ut_mix {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mix_set_owned_then_async_data() {
         mix_encode_compare!(
             MixFrom: {

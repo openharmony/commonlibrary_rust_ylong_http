@@ -593,6 +593,7 @@ mod ut_mod {
     /// 2. Gets its mutable reference.
     /// 3. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_asyn_body_mut_asyn_body_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -601,6 +602,7 @@ mod ut_mod {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn asyn_body_mut_asyn_body_data() {
         use crate::body::async_impl::Body;
 
