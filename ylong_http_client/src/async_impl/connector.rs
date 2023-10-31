@@ -16,7 +16,6 @@
 use core::future::Future;
 use std::error::Error;
 use std::io;
-use std::net::ToSocketAddrs;
 
 use crate::util::ConnectorConfig;
 use crate::{AsyncRead, AsyncWrite, TcpStream, Uri};
@@ -51,23 +50,13 @@ impl HttpConnector {
     }
 }
 
-// TODO: Fix this function after `ylong_runtime::TcpStream` support set_nodelay.
 async fn tcp_stream(addr: &str) -> io::Result<TcpStream> {
-    // Here `addr` must contain a value if `to_socket_addrs` return `Ok`.
-    let addr = addr.to_socket_addrs()?.next().unwrap();
-
-    #[cfg(feature = "tokio_base")]
-    {
-        TcpStream::connect(addr)
-            .await
-            .and_then(|stream| match stream.set_nodelay(true) {
-                Ok(()) => Ok(stream),
-                Err(e) => Err(e),
-            })
-    }
-
-    #[cfg(feature = "ylong_base")]
-    TcpStream::connect(addr).await
+    TcpStream::connect(addr)
+        .await
+        .and_then(|stream| match stream.set_nodelay(true) {
+            Ok(()) => Ok(stream),
+            Err(e) => Err(e),
+        })
 }
 
 #[cfg(not(feature = "__tls"))]
