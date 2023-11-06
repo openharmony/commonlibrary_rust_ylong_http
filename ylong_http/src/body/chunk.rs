@@ -1674,6 +1674,7 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_bytes`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_asnyc_chunk_body_encode_0() {
         let handle = ylong_runtime::spawn(async move {
@@ -1682,6 +1683,7 @@ mod ut_chunk {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn asnyc_chunk_body_encode_0() {
         let content = data_message();
         let mut task = ChunkBody::from_bytes(content.as_slice());
@@ -1704,6 +1706,7 @@ mod ut_chunk {
     /// 1. Creates a `ChunkBody` by calling `ChunkBody::from_async_reader`.
     /// 2. Encodes chunk body by calling `async_impl::Body::data`
     /// 3. Checks if the test result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_asnyc_chunk_body_encode_1() {
         let handle = ylong_runtime::spawn(async move {
@@ -1712,6 +1715,7 @@ mod ut_chunk {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn asnyc_chunk_body_encode_1() {
         let content = data_message();
         let mut task = ChunkBody::from_async_reader(content.as_slice());

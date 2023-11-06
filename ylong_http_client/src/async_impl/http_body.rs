@@ -539,6 +539,7 @@ impl Chunk {
     }
 }
 
+#[cfg(feature = "ylong_base")]
 #[cfg(test)]
 mod ut_async_http_body {
     use ylong_http::body::async_impl;
@@ -619,7 +620,6 @@ mod ut_async_http_body {
     /// 1. Creates a chunk `HttpBody`.
     /// 2. Calls `data` method get boxstream.
     /// 3. Checks if data size is correct.
-    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_asnyc_http_body_chunk2() {
         let handle = ylong_runtime::spawn(async move {
@@ -703,7 +703,6 @@ mod ut_async_http_body {
     /// 1. Creates a text `HttpBody`.
     /// 2. Calls `HttpBody::new` to create text http body.
     /// 3. Checks if result is correct.
-    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_http_body_text() {
         let handle = ylong_runtime::spawn(async move {
@@ -712,7 +711,6 @@ mod ut_async_http_body {
         ylong_runtime::block_on(handle).unwrap();
     }
 
-    #[cfg(feature = "ylong_base")]
     async fn http_body_text() {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";
@@ -751,7 +749,6 @@ mod ut_async_http_body {
     /// 1. Creates a until_close `HttpBody`.
     /// 2. Calls `HttpBody::new` to create until_close http body.
     /// 3. Checks if result is correct.
-    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_http_body_until_close() {
         let handle = ylong_runtime::spawn(async move {
@@ -760,7 +757,6 @@ mod ut_async_http_body {
         ylong_runtime::block_on(handle).unwrap();
     }
 
-    #[cfg(feature = "ylong_base")]
     async fn http_body_until_close() {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";

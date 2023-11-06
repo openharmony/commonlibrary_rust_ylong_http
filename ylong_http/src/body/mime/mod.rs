@@ -688,6 +688,7 @@ mod ut_mime {
     /// 1. Creates a `MultiPart` and sets values.
     /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_multipart_poll_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -696,6 +697,7 @@ mod ut_mime {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn multipart_poll_data() {
         let mut mp = MultiPart::new().part(
             Part::new()
@@ -728,6 +730,7 @@ mod ut_mime {
     /// 1. Creates a `MultiPart` and sets values.
     /// 2. Encodes `MultiPart` by `async_impl::Body::data`.
     /// 3. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_multipart_poll_data_stream() {
         let handle = ylong_runtime::spawn(async move {
@@ -736,6 +739,7 @@ mod ut_mime {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn multipart_poll_data_stream() {
         let mut mp = MultiPart::new().part(
             Part::new()

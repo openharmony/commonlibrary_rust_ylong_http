@@ -10,6 +10,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+//! This is a simple asynchronous HTTPS client example.
+
 #[cfg(feature = "tokio_base")]
 use ylong_http_client::async_impl::{Client, Downloader};
 #[cfg(feature = "tokio_base")]

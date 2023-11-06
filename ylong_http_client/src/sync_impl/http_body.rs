@@ -14,7 +14,7 @@
 use std::io::{Cursor, Read};
 
 use ylong_http::body::{ChunkBodyDecoder, ChunkState, TextBodyDecoder};
-use ylong_http::headers::{HeaderName, HeaderValue, Headers};
+use ylong_http::headers::Headers;
 
 use super::Body;
 use crate::error::{ErrorKind, HttpClientError};
@@ -199,7 +199,6 @@ struct Chunk {
     decoder: ChunkBodyDecoder,
     pre: Option<Cursor<Vec<u8>>>,
     io: Option<BoxStreamData>,
-    trailer: Vec<u8>,
 }
 
 impl Chunk {
@@ -208,7 +207,6 @@ impl Chunk {
             decoder: ChunkBodyDecoder::new().contains_trailer(is_trailer),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
-            trailer: vec![],
         }
     }
 }

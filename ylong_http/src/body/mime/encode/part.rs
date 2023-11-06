@@ -381,6 +381,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_owned`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mime_part_encoder_body_from_owned_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -389,6 +390,7 @@ mod ut_mime_part_encoder {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mime_part_encoder_body_from_owned_then_async_data() {
         part_encode_compare! (
             MimePart: {
@@ -408,6 +410,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets body by `body_from_bytes`.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mime_part_encoder_body_from_bytes_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -416,6 +419,7 @@ mod ut_mime_part_encoder {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mime_part_encoder_body_from_bytes_then_async_data() {
         part_encode_compare! (
             MimePart: {
@@ -435,6 +439,7 @@ mod ut_mime_part_encoder {
     /// 2. Sets headers and sets body.
     /// 3. Builds a `MimePartEncoder` by `from_part` and encodes asynchronously.
     /// 4. Checks whether the result is correct.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_mime_part_encoder_common_then_async_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -443,6 +448,7 @@ mod ut_mime_part_encoder {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn mime_part_encoder_common_then_async_data() {
         part_encode_compare! (
             MimePart: {

@@ -546,6 +546,7 @@ mod ut_text {
     /// 1. Creates a `TextBody<FromBytes<'_>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_text_body_from_bytes_asyn_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -554,6 +555,7 @@ mod ut_text {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn text_body_from_bytes_asyn_data() {
         use crate::body::async_impl::Body;
 
@@ -607,6 +609,7 @@ mod ut_text {
     /// 1. Creates a `TextBody<FromAsyncReader<T>>`.
     /// 2. Calls its `async_impl::Body::data` method and then checks the
     ///    results.
+    #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_text_body_from_async_reader_asyn_data() {
         let handle = ylong_runtime::spawn(async move {
@@ -615,6 +618,7 @@ mod ut_text {
         ylong_runtime::block_on(handle).unwrap();
     }
 
+    #[cfg(feature = "ylong_base")]
     async fn text_body_from_async_reader_asyn_data() {
         use crate::body::async_impl::Body;
 

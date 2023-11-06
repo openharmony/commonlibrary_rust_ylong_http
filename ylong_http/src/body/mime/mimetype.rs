@@ -27,7 +27,7 @@ use crate::error::{ErrorKind, HttpError};
 /// between:
 ///
 /// ```type/subtype```
-///
+/// 
 /// It is case-insensitive but are traditionally written in lowercase, such as:
 /// ```application/octet-stream```.
 ///
