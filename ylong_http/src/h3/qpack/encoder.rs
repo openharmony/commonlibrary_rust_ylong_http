@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![rustfmt::skip]
+
 use crate::h3::parts::Parts;
 use crate::h3::qpack::error::ErrorCode::DecoderStreamError;
 use crate::h3::qpack::error::H3errorQpack;

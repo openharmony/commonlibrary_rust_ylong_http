@@ -10,6 +10,7 @@ keywords = ["ylong", "http"]
 [features]
 default = []
 full = [
+    "tokio_base",
     "http1_1",
     "http2",
     "http3",

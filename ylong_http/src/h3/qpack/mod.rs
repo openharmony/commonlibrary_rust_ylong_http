@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![rustfmt::skip]
+
 pub mod decoder;
 pub mod encoder;
 pub(crate) mod error;

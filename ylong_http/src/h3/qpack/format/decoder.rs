@@ -10,6 +10,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+#![rustfmt::skip]
+
 use crate::h3::qpack::error::ErrorCode::DecompressionFailed;
 use crate::h3::qpack::error::{ErrorCode, H3errorQpack};
 use crate::h3::qpack::format::decoder::DecResult::Error;

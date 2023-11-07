@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![rustfmt::skip]
+
 use crate::h3::qpack::table::Field;
 use crate::h3::pseudo::PseudoHeaders;
 use crate::headers::Headers;

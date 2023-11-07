@@ -334,9 +334,6 @@ impl Chunk {
 
 #[cfg(test)]
 mod ut_syn_http_body {
-    use ylong_http::body::ChunkBodyDecoder;
-
-    use crate::sync_impl::http_body::Chunk;
     use crate::sync_impl::{Body, HttpBody};
 
     /// UT test cases for `HttpBody::empty`.
