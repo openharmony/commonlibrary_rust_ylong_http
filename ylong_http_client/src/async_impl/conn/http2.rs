@@ -386,7 +386,7 @@ mod ut_http2 {
     use ylong_http::h2::{ErrorCode, H2Error, Payload};
     use ylong_http::request::RequestBuilder;
 
-    use crate::async_impl::conn::http2::{build_data_frame, build_headers_frame};
+    use crate::async_impl::conn::http2::build_headers_frame;
 
     macro_rules! build_request {
         (

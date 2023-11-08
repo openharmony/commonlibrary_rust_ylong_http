@@ -54,16 +54,6 @@ path = "examples/async_http_multi.rs"
 required-features = ["async", "http1_1", "ylong_base"]
 
 [[example]]
-name = "async_http2"
-path = "examples/async_http2.rs"
-required-features = ["async", "http2", "tokio_base"]
-
-[[example]]
-name = "async_http2_multi"
-path = "examples/async_http2_multi.rs"
-required-features = ["async", "http2", "tokio_base"]
-
-[[example]]
 name = "async_https_outside"
 path = "./examples/async_https_outside.rs"
 required-features = ["async", "http1_1", "__tls", "tokio_base"]

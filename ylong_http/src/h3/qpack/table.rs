@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![rustfmt::skip]
+
 use std::collections::{HashMap, VecDeque};
 
 /// The [`Dynamic Table`][dynamic_table] implementation of [QPACK].

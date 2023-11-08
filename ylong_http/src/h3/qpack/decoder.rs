@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![rustfmt::skip]
+
 use crate::h3::parts::Parts;
 use crate::h3::qpack::error::ErrorCode::{DecompressionFailed, EncoderStreamError};
 use crate::h3::qpack::error::H3errorQpack;
@@ -640,8 +642,8 @@ mod ut_qpack_decoder {
         macro_rules! get_parts {
             ($qpack: expr $(, $input: literal)*) => {{
                 $(
-                    let mut text = decode($input).unwrap().as_slice().to_vec();
-                    assert!($qpack.decode_repr(&mut text).is_ok());
+                    let text = decode($input).unwrap().as_slice().to_vec();
+                    assert!($qpack.decode_repr(&text).is_ok());
                 )*
                 let mut ack = [0u8; 20];
                 match $qpack.finish(1,&mut ack) {
@@ -713,12 +715,12 @@ mod ut_qpack_decoder {
                 let mut dynamic_table = DynamicTable::with_empty();
                 dynamic_table.update_size(4096);
                 let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-                let mut ins =
+                let ins =
                     decode("3fbd01c00f7777772e6578616d706c652e636f6dc10c2f73616d706c652f70617468")
                         .unwrap()
                         .as_slice()
                         .to_vec();
-                let _ = decoder.decode_ins(&mut ins);
+                let _ = decoder.decode_ins(&ins);
                 get_state(&decoder.repr_state);
                 qpack_test_case!(
                 decoder,
@@ -731,11 +733,11 @@ mod ut_qpack_decoder {
                 let mut dynamic_table = DynamicTable::with_empty();
                 dynamic_table.update_size(4096);
                 let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-                let mut ins = decode("4a637573746f6d2d6b65790c637573746f6d2d76616c7565")
+                let ins = decode("4a637573746f6d2d6b65790c637573746f6d2d76616c7565")
                     .unwrap()
                     .as_slice()
                     .to_vec();
-                let _ = decoder.decode_ins(&mut ins);
+                let _ = decoder.decode_ins(&ins);
                 qpack_test_case!(
                 decoder,
                     "028010",
@@ -754,8 +756,8 @@ mod ut_qpack_decoder {
                 );
                 dynamic_table.known_received_count = 3;
                 let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-                let mut ins = decode("02").unwrap().as_slice().to_vec();
-                let _ = decoder.decode_ins(&mut ins);
+                let ins = decode("02").unwrap().as_slice().to_vec();
+                let _ = decoder.decode_ins(&ins);
                 qpack_test_case!(
                 decoder,
                     "058010c180",
@@ -776,11 +778,11 @@ mod ut_qpack_decoder {
                 dynamic_table.update(Field::Authority, String::from("www.example.com"));
                 dynamic_table.known_received_count = 3;
                 let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-                let mut ins = decode("810d637573746f6d2d76616c756532")
+                let ins = decode("810d637573746f6d2d76616c756532")
                     .unwrap()
                     .as_slice()
                     .to_vec();
-                let _ = decoder.decode_ins(&mut ins);
+                let _ = decoder.decode_ins(&ins);
                 qpack_test_case!(
                 decoder,
                     "068111",
@@ -795,16 +797,16 @@ mod ut_qpack_decoder {
             let mut dynamic_table = DynamicTable::with_empty();
             dynamic_table.update_size(4096);
             let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-            let mut text = decode("00").unwrap().as_slice().to_vec(); //510b2f696e6465782e68746d6c
+            let text = decode("00").unwrap().as_slice().to_vec(); //510b2f696e6465782e68746d6c
             println!("text={:?}", text);
-            let _ = decoder.decode_repr(&mut text);
+            let _ = decoder.decode_repr(&text);
             get_state(&decoder.repr_state);
-            let mut text2 = decode("00510b2f696e6465782e68746d6c")
+            let text2 = decode("00510b2f696e6465782e68746d6c")
                 .unwrap()
                 .as_slice()
                 .to_vec();
             println!("text2={:?}", text2);
-            let _ = decoder.decode_repr(&mut text2);
+            let _ = decoder.decode_repr(&text2);
         }
 
         fn test_indexed_static() {
@@ -951,8 +953,8 @@ mod ut_qpack_decoder {
             let mut dynamic_table = DynamicTable::with_empty();
             dynamic_table.update_size(4096);
             let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-            let mut ins = decode("3fbd01").unwrap().as_slice().to_vec();
-            let _ = decoder.decode_ins(&mut ins);
+            let ins = decode("3fbd01").unwrap().as_slice().to_vec();
+            let _ = decoder.decode_ins(&ins);
             assert_eq!(decoder.table.capacity(), 220);
         }
 
@@ -960,11 +962,11 @@ mod ut_qpack_decoder {
             let mut dynamic_table = DynamicTable::with_empty();
             dynamic_table.update_size(4096);
             let mut decoder = QpackDecoder::new(MAX_HEADER_LIST_SIZE, &mut dynamic_table);
-            let mut repr = decode("ffffff01ffff01037fffff01")
+            let repr = decode("ffffff01ffff01037fffff01")
                 .unwrap()
                 .as_slice()
                 .to_vec();
-            let _ = decoder.decode_repr(&mut repr);
+            let _ = decoder.decode_repr(&repr);
             assert_eq!(decoder.base, 32382);
         }
     }
