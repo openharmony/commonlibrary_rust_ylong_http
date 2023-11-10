@@ -14,7 +14,7 @@
 // TODO: Remove this file later.
 
 use ylong_http::request::method::Method;
-use ylong_http::request::uri::Scheme;
+use ylong_http::request::uri::{Host, Scheme};
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::ResponsePart;
@@ -31,10 +31,11 @@ impl<'a, T> RequestFormatter<'a, T> {
     }
 
     pub(crate) fn normalize(&mut self) -> Result<(), HttpClientError> {
+        // TODO Formatting the uri in the request doesn't seem necessary.
         let uri_formatter = UriFormatter::new();
         uri_formatter.format(self.part.uri_mut())?;
 
-        let host_value = self.part.uri().authority().unwrap().to_str();
+        let host_value = format_host_value(self.part.uri())?;
 
         if self.part.headers_mut().get("Accept").is_none() {
             let _ = self.part.headers_mut().insert("Accept", "*/*");
@@ -183,6 +184,30 @@ pub(crate) enum BodyLength {
     UntilClose,
 }
 
+pub(crate) fn format_host_value(uri: &Uri) -> Result<String, HttpClientError> {
+    let host_value = match (uri.host(), uri.port()) {
+        (Some(host), Some(port)) => {
+            if port
+                .as_u16()
+                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?
+                == uri.scheme().unwrap_or(&Scheme::HTTP).default_port()
+            {
+                host.to_string()
+            } else {
+                uri.authority().unwrap().to_str()
+            }
+        }
+        (Some(host), None) => host.to_string(),
+        (None, _) => {
+            return Err(HttpClientError::new_with_message(
+                ErrorKind::Request,
+                "Request Uri lack host",
+            ));
+        }
+    };
+    Ok(host_value)
+}
+
 #[cfg(test)]
 mod ut_normalizer {
     use ylong_http::h1::ResponseDecoder;
@@ -192,7 +217,9 @@ mod ut_normalizer {
     use ylong_http::response::Response;
 
     use crate::normalizer::UriFormatter;
-    use crate::util::normalizer::{BodyLength, BodyLengthParser, RequestFormatter};
+    use crate::util::normalizer::{
+        format_host_value, BodyLength, BodyLengthParser, RequestFormatter,
+    };
 
     /// UT test cases for `UriFormatter::format`.
     ///
@@ -225,11 +252,11 @@ mod ut_normalizer {
         let mut request = Request::new("this is a body");
         let request_uri = request.uri_mut();
         *request_uri = Uri::from_bytes(b"http://example1.com").unwrap();
-        let mut formater = RequestFormatter::new(&mut request);
-        let _ = formater.normalize();
+        let mut formatter = RequestFormatter::new(&mut request);
+        let _ = formatter.normalize();
         let (part, _) = request.into_parts();
         let res = part.headers.get("Host").unwrap();
-        assert_eq!(res.to_str().unwrap().as_bytes(), b"example1.com:80");
+        assert_eq!(res.to_str().unwrap().as_bytes(), b"example1.com");
     }
 
     /// UT test cases for `BodyLengthParser::parse`.
@@ -263,5 +290,29 @@ mod ut_normalizer {
         let body_len_parser = BodyLengthParser::new(&method, &result.0);
         let res = body_len_parser.parse().unwrap();
         assert_eq!(res, BodyLength::Length(20));
+    }
+
+    /// UT test cases for function `format_host_value`.
+    ///
+    /// # Brief
+    /// 1. Creates a uri by calling `Uri::from_bytes`.
+    /// 2. Calls `format_host_value` to get the formatted `Host Header` value.
+    /// 3. Checks whether the `Host Header` value is correct.
+    #[test]
+    fn ut_format_host_value() {
+        let uri = Uri::from_bytes(b"https://www.example.com:80").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com:80");
+        let uri = Uri::from_bytes(b"https://www.example.com:443").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com");
+        let uri = Uri::from_bytes(b"http://www.example.com:80").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com");
+        let uri = Uri::from_bytes(b"http://www.example.com:443").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com:443");
+        let uri = Uri::from_bytes(b"www.example.com:443").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com:443");
+        let uri = Uri::from_bytes(b"www.example.com:80").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com");
+        let uri = Uri::from_bytes(b"www.example.com").expect("Uri parse failed");
+        assert_eq!(format_host_value(&uri).unwrap(), "www.example.com");
     }
 }

@@ -34,6 +34,7 @@ pub mod h3;
 #[cfg(feature = "huffman")]
 mod huffman;
 
+#[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
 pub mod body;
 pub mod error;
 pub mod headers;

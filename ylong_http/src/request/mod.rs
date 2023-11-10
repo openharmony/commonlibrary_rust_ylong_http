@@ -55,6 +55,7 @@ use core::convert::TryFrom;
 use method::Method;
 use uri::Uri;
 
+#[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
 use crate::body::MultiPart;
 use crate::error::{ErrorKind, HttpError};
 use crate::headers::{Header, HeaderName, HeaderValue, Headers};
@@ -647,6 +648,7 @@ impl RequestBuilder {
     /// let request = RequestBuilder::new().multipart(multipart).unwrap();
     /// # }
     /// ```
+    #[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
     pub fn multipart<T>(self, body: T) -> Result<Request<T>, HttpError>
     where
         T: AsRef<MultiPart>,
