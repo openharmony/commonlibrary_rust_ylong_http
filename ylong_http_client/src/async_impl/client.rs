@@ -16,7 +16,7 @@ use ylong_http::response::Response;
 
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
-use crate::util::normalizer::{RequestFormatter, UriFormatter};
+use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
 use crate::util::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Redirect};
@@ -196,7 +196,7 @@ impl<C: Connector> Client<C> {
                 UriFormatter::new().format(&mut dst_uri)?;
                 let _ = request
                     .headers_mut()
-                    .insert("Host", dst_uri.authority().unwrap().to_string().as_bytes());
+                    .insert("Host", format_host_value(&dst_uri)?.as_bytes());
                 match trigger {
                     TriggerKind::NextLink => {
                         response = self.send_request_with_uri(dst_uri.clone(), request).await?;

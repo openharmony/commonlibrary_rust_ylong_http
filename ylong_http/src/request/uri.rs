@@ -553,6 +553,23 @@ impl Scheme {
             Protocol::Https => "https",
         }
     }
+
+    /// Returns the default port of current uri `Scheme`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ylong_http::request::uri::Scheme;
+    ///
+    /// let scheme = Scheme::from_bytes(b"http").unwrap();
+    /// assert_eq!(scheme.default_port(), 80);
+    /// ```
+    pub fn default_port(&self) -> u16 {
+        match *self {
+            Scheme::HTTP => 80,
+            Scheme::HTTPS => 443,
+        }
+    }
 }
 
 impl From<Protocol> for Scheme {
@@ -1279,6 +1296,20 @@ mod ut_uri {
         assert_eq!(uri.path().unwrap().as_str(), "/foo");
         assert_eq!(uri.query().unwrap().as_str(), "a=1");
         assert_eq!(uri.to_string(), "http://hyper.rs:80/foo?a=1")
+    }
+
+    /// UT test cases for `Scheme::default_port`.
+    ///
+    /// # Brief
+    /// 1. Creates Scheme by calling `Scheme::from_bytes`.
+    /// 3. Gets u16 value of port by calling `Scheme::default_port`.
+    /// 5. Checks whether the default port is correct.
+    #[test]
+    fn ut_uri_scheme_default_port() {
+        let scheme = Scheme::from_bytes(b"http").unwrap();
+        assert_eq!(scheme.default_port(), 80);
+        let scheme = Scheme::from_bytes(b"https").unwrap();
+        assert_eq!(scheme.default_port(), 443);
     }
 
     /// UT test cases for `Uri::from_bytes`.
