@@ -44,6 +44,11 @@ extern "C" {
 
     /// Adds the respective object to the X509_STORE's local storage.
     pub(crate) fn X509_STORE_add_cert(store: *mut X509_STORE, x: *mut C_X509) -> c_int;
+
+
+    /// Adds the respective object of file paths to the X509_STORE's local storage.
+    #[cfg(feature = "c_openssl_3_0")]
+    pub(crate) fn X509_STORE_load_path(store: *mut X509_STORE, x: *const c_char) -> c_int;
 }
 
 pub(crate) enum X509_STORE_CTX {}
