@@ -29,6 +29,10 @@ use super::foreign::{Foreign, ForeignRef};
 use super::stack::Stackof;
 use super::{check_ptr, check_ret, ssl_init};
 use crate::util::c_openssl::ffi::x509::{X509_free, C_X509};
+#[cfg(feature = "c_openssl_3_0")]
+use super::ffi::x509::X509_STORE_load_path;
+#[cfg(feature = "c_openssl_3_0")]
+use std::ffi::CString;
 
 foreign_type!(
     type CStruct = C_X509;
@@ -140,6 +144,16 @@ impl X509Store {
 impl X509StoreRef {
     pub(crate) fn add_cert(&mut self, cert: X509) -> Result<(), ErrorStack> {
         check_ret(unsafe { X509_STORE_add_cert(self.as_ptr(), cert.as_ptr()) }).map(|_| ())
+    }
+
+    #[cfg(feature = "c_openssl_3_0")]
+    pub(crate) fn add_path(&mut self, path: String) -> Result<(), ErrorStack> {
+        let p_slice: &str = &path;
+        let path = match CString::new(p_slice) {
+            Ok(cstr) => cstr,
+            Err(_) => return Err(ErrorStack::get()),
+        };
+        check_ret(unsafe { X509_STORE_load_path(self.as_ptr(), path.as_ptr() as *const _) }).map(|_| ())
     }
 }
 

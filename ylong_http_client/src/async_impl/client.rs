@@ -14,6 +14,7 @@
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::response::Response;
 
+use crate::c_openssl::adapter::CertificateList;
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
 use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
@@ -537,7 +538,15 @@ impl ClientBuilder {
     /// # }
     /// ```
     pub fn add_root_certificate(mut self, certs: crate::util::Certificate) -> Self {
-        self.tls = self.tls.add_root_certificates(certs);
+        match certs.into_inner() {
+            CertificateList::CertList(c) => {
+                self.tls = self.tls.add_root_certificates(c);
+            }
+	    #[cfg(feature = "c_openssl_3_0")]
+            CertificateList::PathList(p) => {
+                self.tls = self.tls.add_path_certificates(p);
+            }
+        }
         self
     }
 
