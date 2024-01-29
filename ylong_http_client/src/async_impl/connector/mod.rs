@@ -13,9 +13,14 @@
 
 //! Asynchronous `Connector` trait and `HttpConnector` implementation.
 
+mod stream;
+
 use core::future::Future;
 use std::error::Error;
 use std::io;
+
+/// Information of an IO.
+pub use stream::ConnInfo;
 
 use crate::util::ConnectorConfig;
 use crate::{AsyncRead, AsyncWrite, TcpStream, Uri};
@@ -24,7 +29,7 @@ use crate::{AsyncRead, AsyncWrite, TcpStream, Uri};
 /// asynchronous connection establishment interfaces.
 pub trait Connector {
     /// Streams that this connector produces.
-    type Stream: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static;
+    type Stream: AsyncRead + AsyncWrite + ConnInfo + Unpin + Sync + Send + 'static;
     /// Possible errors that this connector may generate when attempting to
     /// connect.
     type Error: Into<Box<dyn Error + Sync + Send>>;
@@ -66,24 +71,28 @@ mod no_tls {
     use std::io::Error;
 
     use super::{tcp_stream, Connector, HttpConnector};
+    use crate::async_impl::connector::stream::HttpStream;
     use crate::{TcpStream, Uri};
 
     impl Connector for HttpConnector {
-        type Stream = TcpStream;
+        type Stream = HttpStream<TcpStream>;
         type Error = Error;
         type Future =
             Pin<Box<dyn Future<Output = Result<Self::Stream, Self::Error>> + Sync + Send>>;
 
         fn connect(&self, uri: &Uri) -> Self::Future {
             // Checks if this uri need be proxied.
-            let addr = self
-                .config
-                .proxies
-                .match_proxy(uri)
-                .map(|proxy| proxy.via_proxy(uri).authority().unwrap().to_string())
-                .unwrap_or(uri.authority().unwrap().to_string());
-
-            Box::pin(async move { tcp_stream(&addr).await })
+            let mut is_proxy = false;
+            let mut addr = uri.authority().unwrap().to_string();
+            if let Some(proxy) = self.config.proxies.match_proxy(uri) {
+                addr = proxy.via_proxy(uri).authority().unwrap().to_string();
+                is_proxy = true;
+            }
+            Box::pin(async move {
+                tcp_stream(&addr)
+                    .await
+                    .map(|stream| HttpStream::new(stream, is_proxy))
+            })
         }
     }
 }
@@ -95,12 +104,13 @@ mod tls {
     use std::io::{Error, ErrorKind, Write};
 
     use super::{tcp_stream, Connector, HttpConnector};
+    use crate::async_impl::connector::stream::HttpStream;
     use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
     use crate::error::CauseMessage;
     use crate::{AsyncReadExt, AsyncWriteExt, Scheme, TcpStream, Uri};
 
     impl Connector for HttpConnector {
-        type Stream = MixStream<TcpStream>;
+        type Stream = HttpStream<MixStream<TcpStream>>;
         type Error = Error;
         type Future =
             Pin<Box<dyn Future<Output = Result<Self::Stream, Self::Error>> + Sync + Send>>;
@@ -130,9 +140,12 @@ mod tls {
                 .unwrap_or_else(|| "no host in uri".to_string());
 
             match *uri.scheme().unwrap() {
-                Scheme::HTTP => {
-                    Box::pin(async move { Ok(MixStream::Http(tcp_stream(&addr).await?)) })
-                }
+                Scheme::HTTP => Box::pin(async move {
+                    Ok(HttpStream::new(
+                        MixStream::Http(tcp_stream(&addr).await?),
+                        is_proxy,
+                    ))
+                }),
                 Scheme::HTTPS => {
                     let config = self.config.tls.clone();
                     Box::pin(async move {
@@ -151,7 +164,7 @@ mod tls {
                             .connect()
                             .await
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-                        Ok(MixStream::Https(stream))
+                        Ok(HttpStream::new(MixStream::Https(stream), is_proxy))
                     })
                 }
             }
@@ -191,7 +204,7 @@ mod tls {
 
             pos += n;
             let resp = &buf[..pos];
-            if resp.starts_with(b"HTTP/1.1 200") {
+            if resp.starts_with(b"HTTP/1.1 200") || resp.starts_with(b"HTTP/1.0 200") {
                 if resp.ends_with(b"\r\n\r\n") {
                     return Ok(conn);
                 }

@@ -125,7 +125,7 @@ pub struct RequestEncoder {
     version_crlf_part: EncodeCrlf,
     headers_part: EncodeHeader,
     headers_crlf_part: EncodeCrlf,
-    is_proxy: bool,
+    is_absolute_uri: bool,
 }
 
 enum EncodeState {
@@ -190,7 +190,7 @@ impl RequestEncoder {
             version_crlf_part: EncodeCrlf::new(),
             headers_part: EncodeHeader::new(part.headers),
             headers_crlf_part: EncodeCrlf::new(),
-            is_proxy: false,
+            is_absolute_uri: false,
         }
     }
 
@@ -266,11 +266,10 @@ impl RequestEncoder {
         Ok(dst.len())
     }
 
-    /// Sets the `is_proxy` flag.
+    /// Sets the `is_absolute_uri` flag.
     ///
-    /// If you enable the flag, the uri part will be encoded as a relative path
-    /// in the headline. Otherwise the uri part will be fully encoded in the
-    /// headline.
+    /// If you enable the flag, the uri part will be encoded as absolute form
+    /// in the headline. Otherwise the uri part will be encoded as origin form.
     ///
     /// You should use this method before the uri part being encoded.
     ///
@@ -290,19 +289,19 @@ impl RequestEncoder {
     ///
     /// let (part, _) = request.into_parts();
     /// let mut encoder = RequestEncoder::new(part);
-    /// // After you create the request encoder, users can choose to set the proxy.
-    /// encoder.set_proxy(true);
+    /// // After you create the request encoder, users can choose to set the uri form.
+    /// encoder.absolute_uri(false);
     ///
     /// let mut buf = [0u8; 1024];
     /// let size = encoder.encode(&mut buf).unwrap();
-    /// // If you set the `is_proxy` flag, the uri will be encoded as a relative path.
+    /// // If you disable the `is_absolute_uri` flag, the uri will be encoded as a origin form.
     /// assert_eq!(
     ///     &buf[..size],
     ///     b"GET / HTTP/1.1\r\naccept:text/html\r\n\r\n".as_slice()
     /// );
     /// ```
-    pub fn set_proxy(&mut self, is_proxy: bool) {
-        self.is_proxy = is_proxy;
+    pub fn absolute_uri(&mut self, is_absolute: bool) {
+        self.is_absolute_uri = is_absolute;
     }
 
     fn method_encode(&mut self, dst: &mut [u8]) -> Result<usize, HttpError> {
@@ -321,7 +320,7 @@ impl RequestEncoder {
     fn method_sp_encode(&mut self, dst: &mut [u8]) -> Result<usize, HttpError> {
         match self.method_sp_part.encode(dst)? {
             TokenStatus::Complete(output_size) => {
-                self.uri_part.is_proxy = self.is_proxy;
+                self.uri_part.is_absolute = self.is_absolute_uri;
                 self.encode_status = EncodeState::Uri;
                 Ok(output_size)
             }
@@ -431,34 +430,34 @@ impl EncodeMethod {
 }
 
 struct EncodeUri {
-    inner: Vec<u8>,
-    inner_proxy: Vec<u8>,
+    absolute: Vec<u8>,
+    origin: Vec<u8>,
     src_idx: usize,
-    is_proxy: bool,
+    is_absolute: bool,
 }
 
 impl EncodeUri {
-    fn new(uri: Uri, is_proxy: bool) -> Self {
-        let mut init_proxy_uri = vec![];
+    fn new(uri: Uri, is_absolute: bool) -> Self {
+        let mut origin_form = vec![];
         let path = uri.path_and_query();
         if let Some(p) = path {
-            init_proxy_uri = p.as_bytes().to_vec();
+            origin_form = p.as_bytes().to_vec();
         } else {
-            init_proxy_uri.extend_from_slice(b"/");
+            origin_form.extend_from_slice(b"/");
         }
         let init_uri = uri.to_string().into_bytes();
         Self {
-            inner: init_uri,
-            inner_proxy: init_proxy_uri,
+            absolute: init_uri,
+            origin: origin_form,
             src_idx: 0,
-            is_proxy,
+            is_absolute,
         }
     }
 
     fn encode(&mut self, buf: &mut [u8]) -> TokenResult<usize> {
-        let mut uri = self.inner.as_slice();
-        if self.is_proxy {
-            uri = self.inner_proxy.as_slice();
+        let mut uri = self.origin.as_slice();
+        if self.is_absolute {
+            uri = self.absolute.as_slice();
         }
         WriteData::new(uri, &mut self.src_idx, buf).write()
     }
@@ -759,11 +758,11 @@ mod ut_request_encoder {
         }
     }
 
-    /// UT test cases for `RequestEncoder::set_proxy`.
+    /// UT test cases for `RequestEncoder::absolute_uri`.
     ///
     /// # Brief
     /// 1. Creates a `Request` by calling `RequestBuilder::build`.
-    /// 2. Calls set_proxy.
+    /// 2. Calls absolute_uri.
     /// 3. Checks if the test result is correct.
     #[test]
     fn ut_request_encoder_set_proxy() {
@@ -775,10 +774,11 @@ mod ut_request_encoder {
             .unwrap();
         let (part, _) = request.into_parts();
         let mut encoder = RequestEncoder::new(part);
-        assert!(!encoder.is_proxy);
+        assert!(!encoder.is_absolute_uri);
 
-        encoder.set_proxy(true);
-        assert!(encoder.is_proxy);
+        encoder.absolute_uri(true);
+        assert!(encoder.is_absolute_uri);
+        encoder.absolute_uri(false);
 
         let mut buf = [0u8; 100];
         let size = encoder.encode(&mut buf).unwrap();
