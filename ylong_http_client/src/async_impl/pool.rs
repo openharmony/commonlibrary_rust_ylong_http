@@ -111,7 +111,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
                 }
             }
             #[cfg(feature = "http1_1")]
-            HttpVersion::Http11 => {
+            HttpVersion::Http1 => {
                 if let Some(conn) = self.get_exist_conn() {
                     return Ok(conn);
                 }
@@ -122,7 +122,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
                 Ok(self.dispatch_conn(dispatcher))
             }
             #[cfg(not(feature = "http1_1"))]
-            HttpVersion::Http11 => Err(HttpClientError::new_with_message(
+            HttpVersion::Http1 => Err(HttpClientError::new_with_message(
                 ErrorKind::Connect,
                 "Invalid HTTP VERSION",
             )),

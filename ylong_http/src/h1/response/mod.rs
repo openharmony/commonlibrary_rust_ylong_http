@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `HTTP/1.1` response serialization and deserialization.
+//! `HTTP/1` response serialization and deserialization.
 
 // TODO: ResponseEncoder implementation.
 

@@ -17,6 +17,7 @@ use std::task::{Context, Poll};
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
 use ylong_http::request::uri::Scheme;
 use ylong_http::response::Response;
+use ylong_http::version::Version;
 
 use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::{Body, HttpBody, StreamData};
@@ -118,6 +119,32 @@ where
             }
         }
     };
+
+    match part.headers.get("Connection") {
+        None => {
+            if part.version == Version::HTTP1_0 {
+                // The shutdown function only sets the current connection to the closed state
+                // and does not release the connection immediately.
+                // Instead, the connection will be completely closed
+                // when the body has finished reading or when the body is released.
+                conn.shutdown()
+            }
+        }
+        Some(value) => {
+            if part.version == Version::HTTP1_0 {
+                if value
+                    .to_str()
+                    .ok()
+                    .and_then(|v| v.find("keep-alive"))
+                    .is_none()
+                {
+                    conn.shutdown()
+                }
+            } else if value.to_str().ok().and_then(|v| v.find("close")).is_none() {
+                conn.shutdown()
+            }
+        }
+    }
 
     let length = match BodyLengthParser::new(request.method(), &part).parse() {
         Ok(length) => length,

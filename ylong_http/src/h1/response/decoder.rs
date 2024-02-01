@@ -20,7 +20,7 @@ use crate::response::status::StatusCode;
 use crate::response::ResponsePart;
 use crate::version::Version;
 
-/// `HTTP/1.1` response decoder, which support decoding multi-segment byte
+/// `HTTP/1` response decoder, which support decoding multi-segment byte
 /// streams into `Response`.
 ///
 /// # Examples
@@ -232,13 +232,16 @@ impl ResponseDecoder {
             TokenStatus::Complete((version, unparsed)) => {
                 let version = self.take_value(version);
                 match version.as_slice() {
+                    b"HTTP/1.0" => {
+                        self.version = Some(Version::HTTP1_0);
+                    }
                     b"HTTP/1.1" => {
                         self.version = Some(Version::HTTP1_1);
-                        self.status_code_phase(unparsed)
                     }
                     // TODO: Support for other `HTTP` versions.
-                    _ => Err(ErrorKind::H1(H1Error::InvalidResponse).into()),
+                    _ => return Err(ErrorKind::H1(H1Error::InvalidResponse).into()),
                 }
+                self.status_code_phase(unparsed)
             }
             TokenStatus::Partial(rest) => {
                 self.rest.extend_from_slice(rest);
@@ -832,6 +835,14 @@ mod ut_decoder {
         test_unit_complete!(
             "HTTP/1.1 304 \r\nempty_header: \r\n\r\n".as_bytes(),
             "HTTP/1.1",
+            304_u16,
+            [("empty_header", "")],
+            r#""#.as_bytes()
+        );
+        // Decode a response with a header and an empty value.
+        test_unit_complete!(
+            "HTTP/1.0 304 \r\nempty_header: \r\n\r\n".as_bytes(),
+            "HTTP/1.0",
             304_u16,
             [("empty_header", "")],
             r#""#.as_bytes()

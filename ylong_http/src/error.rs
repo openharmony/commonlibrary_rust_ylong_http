@@ -77,7 +77,7 @@ pub(crate) enum ErrorKind {
     /// Errors related to URIs.
     Uri(InvalidUri),
 
-    /// Errors related to `HTTP/1.1`.
+    /// Errors related to `HTTP/1`.
     #[cfg(feature = "http1_1")]
     H1(H1Error),
 

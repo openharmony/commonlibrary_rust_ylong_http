@@ -26,7 +26,7 @@ impl HttpConfig {
     /// Creates a new, default `HttpConfig`.
     pub(crate) fn new() -> Self {
         Self {
-            version: HttpVersion::Http11,
+            version: HttpVersion::Http1,
 
             #[cfg(feature = "http2")]
             http2_config: http2::H2Config::default(),
@@ -43,8 +43,8 @@ impl Default for HttpConfig {
 /// `HTTP` version to use.
 #[derive(PartialEq, Eq, Clone)]
 pub(crate) enum HttpVersion {
-    /// Enforces `HTTP/1.1` requests.
-    Http11,
+    /// Enforces `HTTP/1.1` or `HTTP/1.0` requests.
+    Http1,
 
     #[cfg(feature = "http2")]
     /// Enforce `HTTP/2.0` requests without `HTTP/1.1` Upgrade.
