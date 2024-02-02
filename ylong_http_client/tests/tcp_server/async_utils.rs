@@ -43,6 +43,7 @@ macro_rules! async_client_test_on_tcp {
 
         start_tcp_server!(
             ASYNC;
+            Proxy: false,
             ServerNum: server_num,
             Handles: handles_vec,
             $(Request: {

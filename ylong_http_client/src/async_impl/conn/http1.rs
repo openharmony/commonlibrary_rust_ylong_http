@@ -15,8 +15,10 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
+use ylong_http::request::uri::Scheme;
 use ylong_http::response::Response;
 
+use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::{Body, HttpBody, StreamData};
 use crate::error::{ErrorKind, HttpClientError};
 use crate::util::dispatcher::http1::Http1Conn;
@@ -31,15 +33,17 @@ pub(crate) async fn request<S, T>(
 ) -> Result<Response<HttpBody>, HttpClientError>
 where
     T: Body,
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
 
     // Encodes and sends Request-line and Headers(non-body fields).
-    let mut non_body = RequestEncoder::new(request.part().clone());
-    non_body.set_proxy(true);
+    let mut part_encoder = RequestEncoder::new(request.part().clone());
+    if conn.raw_mut().is_proxy() && request.uri().scheme() == Some(&Scheme::HTTP) {
+        part_encoder.absolute_uri(true);
+    }
     loop {
-        match non_body.encode(&mut buf[..]) {
+        match part_encoder.encode(&mut buf[..]) {
             Ok(0) => break,
             Ok(written) => {
                 // RequestEncoder writes `buf` as much as possible.
