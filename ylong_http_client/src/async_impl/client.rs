@@ -14,9 +14,10 @@
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::response::Response;
 
-use crate::c_openssl::adapter::CertificateList;
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
+#[cfg(feature = "__tls")]
+use crate::c_openssl::adapter::CertificateList;
 use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
@@ -542,7 +543,7 @@ impl ClientBuilder {
             CertificateList::CertList(c) => {
                 self.tls = self.tls.add_root_certificates(c);
             }
-	    #[cfg(feature = "c_openssl_3_0")]
+            #[cfg(feature = "c_openssl_3_0")]
             CertificateList::PathList(p) => {
                 self.tls = self.tls.add_path_certificates(p);
             }

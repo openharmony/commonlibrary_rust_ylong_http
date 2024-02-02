@@ -95,8 +95,11 @@ impl UriFormatter {
         new_uri = new_uri.scheme(scheme);
         new_uri = new_uri.authority(format!("{}:{}", host.as_str(), port).as_bytes());
 
-        if let Some(path) = uri.path() {
-            new_uri = new_uri.path(path.clone());
+        match uri.path() {
+            None => new_uri = new_uri.path("/"),
+            Some(path) => {
+                new_uri = new_uri.path(path.clone());
+            }
         }
 
         if let Some(query) = uri.query() {
@@ -239,6 +242,11 @@ mod ut_normalizer {
         let uni = UriFormatter::new();
         let _ = uni.format(&mut uri);
         assert_eq!(uri.port().unwrap().as_str(), "80");
+
+        let mut uri = Uri::from_bytes(b"http://example.com").unwrap();
+        let uni = UriFormatter::new();
+        let _ = uni.format(&mut uri);
+        assert_eq!(uri.path().unwrap().as_str(), "/");
     }
 
     /// UT test cases for `RequestFormatter::normalize`.

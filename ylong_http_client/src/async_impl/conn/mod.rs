@@ -16,6 +16,7 @@ use ylong_http::request::Request;
 use ylong_http::response::Response;
 
 use crate::async_impl::client::Retryable;
+use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::HttpBody;
 use crate::error::HttpClientError;
 use crate::util::dispatcher::Conn;
@@ -38,7 +39,7 @@ pub(crate) async fn request<S, T>(
 ) -> Result<Response<HttpBody>, HttpClientError>
 where
     T: Body,
-    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {
     match conn {
         #[cfg(feature = "http1_1")]

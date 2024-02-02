@@ -34,6 +34,7 @@ pub fn format_header_str(key: &str, value: &str) -> String {
 macro_rules! start_tcp_server {
     (
         ASYNC;
+        Proxy: $proxy: expr,
         ServerNum: $server_num: expr,
         Handles: $handle_vec: expr,
         $(Request: {
@@ -83,7 +84,11 @@ macro_rules! start_tcp_server {
                     let crlf = "\r\n";
                     let request_str = String::from_utf8_lossy(&buf[..size]);
 
-                    let request_line = format!("{} {} {}{}", $method, $path, "HTTP/1.1", crlf);
+                    let request_line = if $proxy {
+                        format!("{} http://{}{} {}{}", $method, addr.to_string().as_str(), $path, "HTTP/1.1", crlf)
+                    } else {
+                        format!("{} {} {}{}", $method, $path, "HTTP/1.1", crlf)
+                    };
                     assert!(&buf[..size].starts_with(request_line.as_bytes()), "Incorrect Request-Line!");
                     length += request_line.len();
 
