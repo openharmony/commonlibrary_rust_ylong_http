@@ -18,6 +18,7 @@ use ylong_http::request::uri::{Host, Scheme};
 use ylong_http::request::Request;
 use ylong_http::response::status::StatusCode;
 use ylong_http::response::ResponsePart;
+use ylong_http::version::Version;
 
 use crate::{ErrorKind, HttpClientError, Uri};
 
@@ -143,6 +144,12 @@ impl<'a> BodyLengthParser<'a> {
             let transfer_encoding = self.part.headers.get("Transfer-Encoding");
 
             if transfer_encoding.is_some() {
+                if self.part.version == Version::HTTP1_0 {
+                    return Err(HttpClientError::new_with_message(
+                        ErrorKind::Request,
+                        "Illegal Transfer-Encoding in HTTP/1.0",
+                    ));
+                }
                 let transfer_encoding_contains_chunk = transfer_encoding
                     .and_then(|v| v.to_str().ok())
                     .and_then(|str| str.find("chunked"))
@@ -298,6 +305,22 @@ mod ut_normalizer {
         let body_len_parser = BodyLengthParser::new(&method, &result.0);
         let res = body_len_parser.parse().unwrap();
         assert_eq!(res, BodyLength::Length(20));
+
+        let response_str = "HTTP/1.0 202 \r\nTransfer-Encoding: \t chunked \t \t\r\nLocation: \t example3.com:80 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
+        let mut decoder = ResponseDecoder::new();
+        let result = decoder.decode(response_str).unwrap().unwrap();
+        let method = Method::GET;
+        let body_len_parser = BodyLengthParser::new(&method, &result.0);
+        let res = body_len_parser.parse();
+        assert!(res
+            .map_err(|e| {
+                assert_eq!(
+                    format!("{e}"),
+                    "Request Error: Illegal Transfer-Encoding in HTTP/1.0"
+                );
+                e
+            })
+            .is_err());
     }
 
     /// UT test cases for function `format_host_value`.

@@ -241,7 +241,7 @@ impl ClientBuilder {
     /// let builder = ClientBuilder::new().http1_only();
     /// ```
     pub fn http1_only(mut self) -> Self {
-        self.http.version = HttpVersion::Http11;
+        self.http.version = HttpVersion::Http1;
         self
     }
 

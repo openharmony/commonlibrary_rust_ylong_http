@@ -16,7 +16,7 @@
 //! The module provides [`Header`], [`HeaderName`], [`HeaderValue`], [`Headers`]
 //! and a number of types used for interacting with `Headers`.
 //!
-//! These types allow representing both `HTTP/1.1` and `HTTP/2` headers.
+//! These types allow representing both `HTTP/1` and `HTTP/2` headers.
 //!
 //! [header]: https://httpwg.org/specs/rfc9110.html#fields
 //! [`RFC9110`]: https://httpwg.org/specs/rfc9110.html

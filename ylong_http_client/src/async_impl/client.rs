@@ -12,12 +12,12 @@
 // limitations under the License.
 
 use ylong_http::body::{ChunkBody, TextBody};
+use ylong_http::request::method::Method;
 use ylong_http::response::Response;
+use ylong_http::version::Version;
 
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
-#[cfg(feature = "__tls")]
-use crate::c_openssl::adapter::CertificateList;
 use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
@@ -225,7 +225,13 @@ impl<C: Connector> Client<C> {
         match self.http_config.version {
             #[cfg(feature = "http2")]
             HttpVersion::Http2PriorKnowledge => self.http2_request(uri, request).await,
-            HttpVersion::Http11 => {
+            HttpVersion::Http1 => {
+                if Version::HTTP1_0 == *request.version() && Method::CONNECT == *request.method() {
+                    return Err(HttpClientError::new_with_message(
+                        ErrorKind::Request,
+                        "Unknown METHOD in HTTP/1.0",
+                    ));
+                }
                 let conn = if let Some(dur) = self.client_config.connect_timeout.inner() {
                     match timeout(dur, self.inner.connect_to(uri)).await {
                         Err(_elapsed) => {
@@ -346,7 +352,7 @@ impl ClientBuilder {
         }
     }
 
-    /// Only use HTTP/1.
+    /// Only use HTTP/1.x.
     ///
     /// # Examples
     ///
@@ -356,7 +362,7 @@ impl ClientBuilder {
     /// let builder = ClientBuilder::new().http1_only();
     /// ```
     pub fn http1_only(mut self) -> Self {
-        self.http.version = HttpVersion::Http11;
+        self.http.version = HttpVersion::Http1;
         self
     }
 
@@ -539,6 +545,8 @@ impl ClientBuilder {
     /// # }
     /// ```
     pub fn add_root_certificate(mut self, certs: crate::util::Certificate) -> Self {
+        use crate::c_openssl::adapter::CertificateList;
+
         match certs.into_inner() {
             CertificateList::CertList(c) => {
                 self.tls = self.tls.add_root_certificates(c);
@@ -773,5 +781,38 @@ mod ut_async_impl_client {
             .unwrap();
         let res = client.redirect_request(response, &mut request).await;
         assert!(res.is_ok())
+    }
+
+    /// UT test cases for `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Set version HTTP/1.0 for client and call `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    #[test]
+    fn ut_client_request_http1_0() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_version_1_0().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    async fn client_request_version_1_0() {
+        use ylong_http::request::Request;
+        let request = Request::connect("http://example1.com:80/foo?a=1")
+            .version("HTTP/1.0")
+            .body("")
+            .unwrap();
+
+        let client = Client::builder().http1_only().build().unwrap();
+        let res = client.request(request).await;
+        assert!(res
+            .map_err(|e| {
+                assert_eq!(format!("{e}"), "Request Error: Unknown METHOD in HTTP/1.0");
+                e
+            })
+            .is_err());
     }
 }

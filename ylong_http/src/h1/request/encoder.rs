@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! HTTP/1.1 request encoder implementation.
+//! HTTP/1 request encoder implementation.
 //!
 //! The encoder is used to serialize the request into the specified buf in
 //! a certain format.
@@ -68,7 +68,7 @@ use crate::request::uri::Uri;
 use crate::request::RequestPart;
 use crate::version::Version;
 
-/// A encoder that is used to encode request message in `HTTP/1.1` format.
+/// A encoder that is used to encode request message in `HTTP/1` format.
 ///
 /// This encoder supports you to use the encode method multiple times to output
 /// the result in multiple bytes slices.

@@ -11,12 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Errors that may occur when using `HTTP/1.1`.
+/// Errors that may occur when using `HTTP/1`.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum H1Error {
-    /// The incoming bytes does not conform to the `HTTP/1.1` request format.
+    /// The incoming bytes does not conform to the `HTTP/1` request format.
     InvalidRequest,
 
-    /// The incoming bytes does not conform to the `HTTP/1.1` response format.
+    /// The incoming bytes does not conform to the `HTTP/1` response format.
     InvalidResponse,
 }
