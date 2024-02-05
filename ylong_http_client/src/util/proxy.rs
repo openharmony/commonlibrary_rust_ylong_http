@@ -243,16 +243,25 @@ impl NoProxy {
 
     fn contains_domain(&self, domain: &str) -> bool {
         for block_domain in self.domains.iter() {
+            let mut block_domain = block_domain.clone();
+            // Changes *.example.com to .example.com
+            if (block_domain.starts_with('*')) && (block_domain.len() > 1) {
+                block_domain = block_domain.trim_matches('*').to_string();
+            }
+
             if block_domain == "*"
                 || block_domain.ends_with(domain)
                 || block_domain == domain
                 || block_domain.trim_matches('.') == domain
             {
                 return true;
-            } else if domain.ends_with(block_domain) {
+            } else if domain.ends_with(&block_domain) {
                 // .example.com and www.
                 if block_domain.starts_with('.')
-                    || domain.as_bytes().get(domain.len() - block_domain.len() - 1) == Some(&b'.')
+                    || domain
+                        .as_bytes()
+                        .get(domain.len() - block_domain.len() - 1)
+                        == Some(&b'.')
                 {
                     return true;
                 }
