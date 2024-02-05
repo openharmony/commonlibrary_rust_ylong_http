@@ -18,6 +18,7 @@ use crate::h1::H1Error;
 use crate::headers::Headers;
 use crate::response::status::StatusCode;
 use crate::response::ResponsePart;
+use crate::util::header_bytes::{HEADER_NAME_BYTES, HEADER_VALUE_BYTES};
 use crate::version::Version;
 
 /// `HTTP/1` response decoder, which support decoding multi-segment byte
@@ -635,83 +636,6 @@ fn is_valid_byte(byte: u8) -> bool {
 fn is_legal_reason_byte(byte: u8) -> bool {
     byte == 0x09 || byte == 0x20 || (0x21..=0x7E).contains(&byte) || (0x80..=0xFF).contains(&byte)
 }
-
-// token          = 1*tchar
-// tchar          = "!" / "#" / "$" / "%" / "&" / "'" / "*"
-//                  / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
-//                  / DIGIT / ALPHA
-//                  ; any VCHAR, except delimiters
-// delimitersd    = DQUOTE and "(),/:;<=>?@[\]{}"
-#[rustfmt::skip]
-pub(crate) static HEADER_NAME_BYTES: [bool; 256] = {
-    const __: bool = false;
-    const TT: bool = true;
-    [
-//      \0                                  HT  LF          CR
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-//      \w  !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
-        __, TT, __, TT, TT, TT, TT, TT, __, __, TT, TT, __, TT, TT, __,
-//      0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, __, __, __, __, __,
-//      @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
-        __, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//      P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, __, __, TT, TT,
-//      `   a   b   c   d   e   f   g   h   i   j   k   l   m   n   o
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//      p   q   r   s   t   u   v   w   x   y   z   {   |   }   ~   del
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, TT, __, TT, __,
-// Expand ascii
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-    ]
-};
-
-// field-value    = *( field-content / obs-fold )
-// field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
-// field-vchar    = VCHAR / obs-text
-//
-// obs-fold       = CRLF 1*( SP / HTAB )
-//                  ; obsolete line folding
-//                  ; see Section 3.2.4
-#[rustfmt::skip]
-pub(crate) static HEADER_VALUE_BYTES: [bool; 256] = {
-    const __: bool = false;
-    const TT: bool = true;
-    [
-//      \0                                  HT  LF          CR
-        __, __, __, __, __, __, __, __, __, TT, __, __, __, __, __, __,
-        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __,
-//      \w  !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//       0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//       @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//       P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//       `   a   b   c   d   e   f   g   h   i   j   k   l   m   n   o
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-//       p   q   r   s   t   u   v   w   x   y   z   {   |   }   ~   del
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __,
-// Expand ascii
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT,
-    ]
-};
 
 // TODO: Add more test cases.
 #[cfg(test)]

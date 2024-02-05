@@ -20,8 +20,8 @@ use crate::body::mime::common::{
 use crate::body::mime::{CR, LF};
 use crate::body::TokenStatus;
 use crate::error::{ErrorKind, HttpError};
-use crate::h1::response::decoder::{HEADER_NAME_BYTES, HEADER_VALUE_BYTES};
 use crate::headers::{HeaderName, HeaderValue, Headers};
+use crate::util::header_bytes::{HEADER_NAME_BYTES, HEADER_VALUE_BYTES};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum HeaderStatus {

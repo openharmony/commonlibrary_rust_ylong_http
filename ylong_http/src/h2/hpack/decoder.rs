@@ -208,7 +208,7 @@ fn header_line_length(key_size: usize, value_size: usize) -> usize {
 mod ut_hpack_decoder {
     use crate::h2::hpack::table::Header;
     use crate::h2::hpack::HpackDecoder;
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     const MAX_HEADER_LIST_SIZE: usize = 16 << 20;
 

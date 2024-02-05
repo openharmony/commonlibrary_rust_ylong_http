@@ -883,7 +883,7 @@ mod ut_frame_decoder {
     use crate::h2::decoder::{get_setting, FrameDecoder, FrameHeader, FrameKind};
     use crate::h2::frame::{Payload, Ping, Setting};
     use crate::h2::{ErrorCode, H2Error, PseudoHeaders};
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     macro_rules! check_complete_frame {
         (
