@@ -21,6 +21,10 @@
 
 // ylong_http crate re-export.
 pub use ylong_http::body::{EmptyBody, TextBody};
+pub use ylong_http::headers::{
+    Header, HeaderName, HeaderValue, HeaderValueIter, HeaderValueIterMut, Headers, HeadersIntoIter,
+    HeadersIter, HeadersIterMut,
+};
 pub use ylong_http::request::method::Method;
 pub use ylong_http::request::uri::{Scheme, Uri};
 pub use ylong_http::request::{Request, RequestPart};
