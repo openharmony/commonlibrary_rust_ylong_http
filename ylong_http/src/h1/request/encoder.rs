@@ -33,6 +33,7 @@
 //! // Gets `RequestPart`.
 //! let (part, _) = request.into_parts();
 //! let mut encoder = RequestEncoder::new(part);
+//! encoder.absolute_uri(true);
 //!
 //! // We use `message` to store all the body data.
 //! let mut message = Vec::new();
@@ -90,6 +91,7 @@ use crate::version::Version;
 /// // Gets `RequestPart`.
 /// let (part, _) = request.into_parts();
 /// let mut encoder = RequestEncoder::new(part);
+/// encoder.absolute_uri(true);
 ///
 /// // We use `message` to store all the body data.
 /// let mut message = Vec::new();
@@ -230,6 +232,7 @@ impl RequestEncoder {
     ///
     /// let (part, _) = request.into_parts();
     /// let mut encoder = RequestEncoder::new(part);
+    /// encoder.absolute_uri(true);
     ///
     /// let mut buf = [0_u8; 10];
     /// let mut message = Vec::new();
@@ -704,6 +707,7 @@ mod ut_request_encoder {
 
                 let (part, _) = request.into_parts();
                 let mut encoder = RequestEncoder::new(part);
+                encoder.absolute_uri(true);
                 let mut buf = [0u8; 5];
                 let mut res = Vec::new();
                 loop {

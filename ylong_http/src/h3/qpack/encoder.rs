@@ -304,7 +304,7 @@ mod ut_qpack_encoder {
     use crate::h3::qpack::encoder;
     use crate::h3::qpack::encoder::QpackEncoder;
     use crate::h3::qpack::table::{DynamicTable, Field};
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
     macro_rules! qpack_test_cases {
             ($enc: expr,$encoder_buf:expr,$encoder_cur:expr, $len: expr, $res: literal,$encoder_res: literal, $size: expr, { $($h: expr, $v: expr $(,)?)*} $(,)?) => {
                 let mut _encoder = $enc;

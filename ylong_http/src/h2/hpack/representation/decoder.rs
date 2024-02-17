@@ -568,7 +568,7 @@ impl<D, S> From<H2Error> for DecResult<D, S> {
 #[cfg(test)]
 mod ut_repr_decoder {
     use super::*;
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     /// UT test cases for `ReprDecoder`.
     ///

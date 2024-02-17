@@ -20,6 +20,7 @@
 // TODO: Need doc.
 
 // ylong_http crate re-export.
+#[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
 pub use ylong_http::body::{EmptyBody, TextBody};
 pub use ylong_http::headers::{
     Header, HeaderName, HeaderValue, HeaderValueIter, HeaderValueIterMut, Headers, HeadersIntoIter,

@@ -61,7 +61,7 @@ mod ut_hpack_encoder {
     use crate::h2::hpack::table::Header;
     use crate::h2::hpack::HpackEncoder;
     use crate::h2::Parts;
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     #[test]
     fn ut_hpack_encoder() {

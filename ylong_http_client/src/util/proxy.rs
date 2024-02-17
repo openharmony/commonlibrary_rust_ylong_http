@@ -258,10 +258,7 @@ impl NoProxy {
             } else if domain.ends_with(&block_domain) {
                 // .example.com and www.
                 if block_domain.starts_with('.')
-                    || domain
-                        .as_bytes()
-                        .get(domain.len() - block_domain.len() - 1)
-                        == Some(&b'.')
+                    || domain.as_bytes().get(domain.len() - block_domain.len() - 1) == Some(&b'.')
                 {
                     return true;
                 }

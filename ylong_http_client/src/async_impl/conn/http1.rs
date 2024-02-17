@@ -120,13 +120,13 @@ where
         }
     };
 
+    // The shutdown function only sets the current connection to the closed state
+    // and does not release the connection immediately.
+    // Instead, the connection will be completely closed
+    // when the body has finished reading or when the body is released.
     match part.headers.get("Connection") {
         None => {
             if part.version == Version::HTTP1_0 {
-                // The shutdown function only sets the current connection to the closed state
-                // and does not release the connection immediately.
-                // Instead, the connection will be completely closed
-                // when the body has finished reading or when the body is released.
                 conn.shutdown()
             }
         }

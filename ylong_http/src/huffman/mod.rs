@@ -246,7 +246,7 @@ pub(crate) enum HuffmanDecodeError {
 #[cfg(test)]
 mod ut_huffman {
     use super::{huffman_decode, huffman_encode, HuffmanDecoder};
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     /// UT test cases for `huffman_encode`.
     ///

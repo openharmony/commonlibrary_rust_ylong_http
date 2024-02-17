@@ -589,7 +589,7 @@ mod ut_qpack_decoder {
     use crate::h3::qpack::format::decoder::ReprDecodeState;
     use crate::h3::qpack::table::{DynamicTable, Field};
     use crate::h3::qpack::QpackDecoder;
-    use crate::test_util::decode;
+    use crate::util::test_util::decode;
 
     const MAX_HEADER_LIST_SIZE: usize = 16 << 20;
 
