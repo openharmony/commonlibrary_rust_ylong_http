@@ -14,6 +14,8 @@
 use core::{fmt, mem, ptr};
 use std::ffi::CString;
 use std::path::Path;
+use std::ptr::{null, null_mut};
+use std::sync::Weak;
 
 use libc::{c_int, c_long, c_uint, c_void};
 
@@ -27,12 +29,15 @@ use crate::c_openssl::x509::{X509Store, X509StoreRef};
 use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ffi::ssl::{
     SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
-    SSL_CTX_set_cert_store, SSL_CTX_set_cipher_list, SSL_CTX_set_ciphersuites, SSL_CTX_up_ref,
-    SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file, SSL_CTX,
+    SSL_CTX_set_cert_store, SSL_CTX_set_cert_verify_callback, SSL_CTX_set_cipher_list,
+    SSL_CTX_set_ciphersuites, SSL_CTX_up_ref, SSL_CTX_use_certificate_chain_file,
+    SSL_CTX_use_certificate_file, SSL_CTX,
 };
 use crate::util::c_openssl::foreign::{Foreign, ForeignRef};
 use crate::util::c_openssl::x509::{X509Ref, X509};
-use crate::util::c_openssl::{check_ptr, check_ret, ssl_init};
+use crate::util::c_openssl::{cert_verify, check_ptr, check_ret, ssl_init};
+use crate::util::config::tls::DefaultCertVerifier;
+use crate::{CertVerifier, ServerCerts};
 
 const SSL_CTRL_EXTRA_CHAIN_CERT: c_int = 14;
 
@@ -256,6 +261,13 @@ impl SslContextBuilder {
     pub(crate) fn set_verify(&mut self, mode: c_int) {
         let ptr = self.as_ptr_mut();
         unsafe { SSL_CTX_set_verify(ptr, mode, None) };
+    }
+
+    pub(crate) fn set_cert_verify_callback(&mut self, verifier: *const DefaultCertVerifier) {
+        let ptr = self.as_ptr_mut();
+        unsafe {
+            SSL_CTX_set_cert_verify_callback(ptr, cert_verify, verifier as *mut c_void);
+        }
     }
 
     pub(crate) fn set_cert_store(&mut self, cert_store: X509Store) {

@@ -44,6 +44,11 @@ c_openssl_1_1 = ["__c_openssl"]         # Uses TLS by FFI of C-openssl 1.1.
 c_openssl_3_0 = ["__c_openssl"]         # Uses TLS by FFI of C-openssl 3.0.
 
 [[example]]
+name = "async_certs_adapter"
+path = "examples/async_certs_adapter.rs"
+required-features = ["async", "http1_1", "ylong_base", "__c_openssl"]
+
+[[example]]
 name = "async_http"
 path = "examples/async_http.rs"
 required-features = ["async", "http1_1", "ylong_base"]

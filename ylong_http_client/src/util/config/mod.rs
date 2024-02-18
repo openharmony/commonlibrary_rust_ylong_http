@@ -22,10 +22,10 @@ pub(crate) use http::{HttpConfig, HttpVersion};
 pub use settings::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 
 #[cfg(feature = "__tls")]
-mod tls;
+pub(crate) mod tls;
 #[cfg(feature = "http2")]
 pub use http::http2::H2Config;
 #[cfg(feature = "__tls")]
-pub use tls::{AlpnProtocol, AlpnProtocolList};
+pub use tls::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
 #[cfg(feature = "tls_rust_ssl")]
 pub use tls::{Certificate, PrivateKey, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};

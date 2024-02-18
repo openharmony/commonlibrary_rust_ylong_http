@@ -12,6 +12,8 @@
 // limitations under the License.
 
 use core::{ffi, fmt, ptr, str};
+#[cfg(feature = "c_openssl_3_0")]
+use std::ffi::CString;
 use std::net::IpAddr;
 
 use libc::{c_int, c_long, c_uint};
@@ -20,19 +22,18 @@ use super::bio::BioSlice;
 use super::error::{error_get_lib, error_get_reason, ErrorStack};
 use super::ffi::err::{ERR_clear_error, ERR_peek_last_error};
 use super::ffi::pem::PEM_read_bio_X509;
+#[cfg(feature = "c_openssl_3_0")]
+use super::ffi::x509::X509_STORE_load_path;
 use super::ffi::x509::{
-    d2i_X509, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new, X509_VERIFY_PARAM_free,
-    X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip, X509_VERIFY_PARAM_set_hostflags,
-    X509_verify_cert_error_string, STACK_X509, X509_STORE, X509_VERIFY_PARAM,
+    d2i_X509, X509_STORE_CTX_free, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new,
+    X509_VERIFY_PARAM_free, X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
+    X509_VERIFY_PARAM_set_hostflags, X509_verify_cert_error_string, STACK_X509, X509_STORE,
+    X509_STORE_CTX, X509_VERIFY_PARAM,
 };
 use super::foreign::{Foreign, ForeignRef};
 use super::stack::Stackof;
 use super::{check_ptr, check_ret, ssl_init};
 use crate::util::c_openssl::ffi::x509::{X509_free, C_X509};
-#[cfg(feature = "c_openssl_3_0")]
-use super::ffi::x509::X509_STORE_load_path;
-#[cfg(feature = "c_openssl_3_0")]
-use std::ffi::CString;
 
 foreign_type!(
     type CStruct = C_X509;
@@ -153,7 +154,8 @@ impl X509StoreRef {
             Ok(cstr) => cstr,
             Err(_) => return Err(ErrorStack::get()),
         };
-        check_ret(unsafe { X509_STORE_load_path(self.as_ptr(), path.as_ptr() as *const _) }).map(|_| ())
+        check_ret(unsafe { X509_STORE_load_path(self.as_ptr(), path.as_ptr() as *const _) })
+            .map(|_| ())
     }
 }
 
@@ -197,4 +199,11 @@ impl X509VerifyParamRef {
         check_ret(unsafe { X509_VERIFY_PARAM_set1_ip(self.as_ptr(), v.as_ptr() as *const _, len) })
             .map(|_| ())
     }
+}
+
+foreign_type! {
+    type CStruct = X509_STORE_CTX;
+    fn drop = X509_STORE_CTX_free;
+    pub(crate) struct X509StoreContext;
+    pub(crate) struct X509StoreContextRef;
 }

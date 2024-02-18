@@ -113,6 +113,11 @@ extern "C" {
         verify_callback: Option<extern "C" fn(c_int, *mut X509_STORE_CTX) -> c_int>,
     );
 
+    pub(crate) fn SSL_CTX_set_cert_verify_callback(
+        ctx: *mut SSL_CTX,
+        callback: extern "C" fn(*mut X509_STORE_CTX, *mut c_void) -> c_int,
+        arg: *mut c_void,
+    );
 }
 
 /// This is the main SSL/TLS structure which is created by a server or client

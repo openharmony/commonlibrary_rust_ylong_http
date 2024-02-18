@@ -13,6 +13,7 @@
 
 use std::net::IpAddr;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::HttpClientError;
 use crate::util::c_openssl::error::ErrorStack;
@@ -20,8 +21,9 @@ use crate::util::c_openssl::ssl::{
     Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion,
 };
 use crate::util::c_openssl::x509::{X509Ref, X509Store, X509};
+use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::AlpnProtocolList;
-use crate::ErrorKind;
+use crate::{CertVerifier, ErrorKind, ServerCerts};
 
 /// `TlsContextBuilder` implementation based on `SSL_CTX`.
 ///
@@ -39,6 +41,7 @@ use crate::ErrorKind;
 /// ```
 pub struct TlsConfigBuilder {
     inner: Result<SslContextBuilder, ErrorStack>,
+    cert_verifier: Option<Arc<DefaultCertVerifier>>,
     use_sni: bool,
     verify_hostname: bool,
     certs_list: Vec<Cert>,
@@ -59,6 +62,7 @@ impl TlsConfigBuilder {
     pub fn new() -> Self {
         Self {
             inner: SslContext::builder(SslMethod::tls_client()),
+            cert_verifier: None,
             use_sni: true,
             verify_hostname: true,
             certs_list: vec![],
@@ -224,53 +228,53 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    ///     use ylong_http_client::async_impl::Client;
-    ///     use ylong_http_client::{Certificate, TlsVersion};
+    /// use ylong_http_client::async_impl::Client;
+    /// use ylong_http_client::{Certificate, TlsVersion};
     ///
-    ///     let cert1 = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem")).unwrap();
-    ///     let cert2 = Certificate::from_pem(include_bytes!("../../../tests/file/cert.pem")).unwrap();
+    /// let cert1 = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem")).unwrap();
+    /// let cert2 = Certificate::from_pem(include_bytes!("../../../tests/file/cert.pem")).unwrap();
     ///
-    ///     // Creates a `Client`
-    ///     let client = Client::builder()
-    ///         .tls_built_in_root_certs(false)
-    ///         .danger_accept_invalid_certs(false)
-    ///         .max_tls_version(TlsVersion::TLS_1_2)
-    ///         .min_tls_version(TlsVersion::TLS_1_2)
-    ///         .add_root_certificate(cert1)
-    ///         .add_root_certificate(cert2)
-    ///         .build().unwrap();
+    /// // Creates a `Client`
+    /// let client = Client::builder()
+    ///     .tls_built_in_root_certs(false)
+    ///     .danger_accept_invalid_certs(false)
+    ///     .max_tls_version(TlsVersion::TLS_1_2)
+    ///     .min_tls_version(TlsVersion::TLS_1_2)
+    ///     .add_root_certificate(cert1)
+    ///     .add_root_certificate(cert2)
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn add_root_certificates(mut self, mut certs: Vec<Cert>) -> Self {
         self.certs_list.append(&mut certs);
         self
     }
 
-
     /// Adds custom root certificate.
     ///
     /// # Examples
     ///
     /// ```
-    ///     use ylong_http_client::async_impl::Client;
-    ///     use ylong_http_client::{Certificate, TlsVersion};
+    /// use ylong_http_client::async_impl::Client;
+    /// use ylong_http_client::{Certificate, TlsVersion};
     ///
-    ///     let path_cert = Certificate::from_path("../../../cert/file").unwrap();
+    /// let path_cert = Certificate::from_path("../../../cert/file").unwrap();
     ///
-    ///     // Creates a `Client`
-    ///     let client = Client::builder()
-    ///         .tls_built_in_root_certs(false)
-    ///         .danger_accept_invalid_certs(false)
-    ///         .max_tls_version(TlsVersion::TLS_1_2)
-    ///         .min_tls_version(TlsVersion::TLS_1_2)
-    ///         .add_root_certificate(path_cert)
-    ///         .build().unwrap();
+    /// // Creates a `Client`
+    /// let client = Client::builder()
+    ///     .tls_built_in_root_certs(false)
+    ///     .danger_accept_invalid_certs(false)
+    ///     .max_tls_version(TlsVersion::TLS_1_2)
+    ///     .min_tls_version(TlsVersion::TLS_1_2)
+    ///     .add_root_certificate(path_cert)
+    ///     .build()
+    ///     .unwrap();
     /// ```
     #[cfg(feature = "c_openssl_3_0")]
     pub fn add_path_certificates(mut self, path: String) -> Self {
         self.paths_list.push(path);
         self
     }
-
 
     /// Sets the protocols to sent to the server for Application Layer Protocol
     /// Negotiation (ALPN).
@@ -380,6 +384,16 @@ impl TlsConfigBuilder {
         self
     }
 
+    pub(crate) fn cert_verifier(mut self, verifier: Arc<DefaultCertVerifier>) -> Self {
+        let inner = Arc::as_ptr(&verifier);
+        self.cert_verifier = Some(verifier);
+        self.inner = self.inner.map(|mut builder| {
+            builder.set_cert_verify_callback(inner);
+            builder
+        });
+        self
+    }
+
     /// Controls the use of TLS server name indication.
     ///
     /// Defaults to `true` -- sets sni.
@@ -422,8 +436,7 @@ impl TlsConfigBuilder {
         #[cfg(feature = "c_openssl_3_0")]
         for path in self.paths_list {
             self.inner = self.inner.and_then(|mut builder| {
-                { Ok(builder.cert_store_mut()).map(|store| store.add_path(path)) }
-                    .map(|_| builder)
+                { Ok(builder.cert_store_mut()).map(|store| store.add_path(path)) }.map(|_| builder)
             });
         }
 
@@ -434,6 +447,7 @@ impl TlsConfigBuilder {
 
         Ok(TlsConfig {
             ctx,
+            cert_verifier: self.cert_verifier,
             use_sni: self.use_sni,
             verify_hostname: self.verify_hostname,
         })
@@ -459,6 +473,7 @@ impl Default for TlsConfigBuilder {
 #[derive(Clone)]
 pub struct TlsConfig {
     ctx: SslContext,
+    cert_verifier: Option<Arc<DefaultCertVerifier>>,
     use_sni: bool,
     verify_hostname: bool,
 }
@@ -653,11 +668,11 @@ impl Cert {
 ///     let certs = Certificate::from_pem(pem);
 /// }
 /// ```
-pub struct Certificate  {
+pub struct Certificate {
     inner: CertificateList,
 }
 
-pub(crate) enum CertificateList  {
+pub(crate) enum CertificateList {
     CertList(Vec<Cert>),
     #[cfg(feature = "c_openssl_3_0")]
     PathList(String),
@@ -671,13 +686,17 @@ impl Certificate {
             .into_iter()
             .map(Cert)
             .collect();
-        Ok(Certificate { inner: CertificateList::CertList(cert_list) })
+        Ok(Certificate {
+            inner: CertificateList::CertList(cert_list),
+        })
     }
 
     /// Deserializes a list of PEM-formatted certificates.
     #[cfg(feature = "c_openssl_3_0")]
     pub fn from_path(path: &str) -> Result<Self, HttpClientError> {
-        Ok(Certificate { inner: CertificateList::PathList(path.to_string()) })
+        Ok(Certificate {
+            inner: CertificateList::PathList(path.to_string()),
+        })
     }
 
     pub(crate) fn into_inner(self) -> CertificateList {
@@ -690,9 +709,9 @@ mod ut_openssl_adapter {
     use std::io::{Read, Write};
     use std::net::TcpStream;
 
+    use crate::util::c_openssl::adapter::CertificateList;
     use crate::util::{Cert, TlsConfigBuilder, TlsFileType, TlsVersion};
     use crate::{AlpnProtocol, AlpnProtocolList, Certificate};
-    use crate::util::c_openssl::adapter::CertificateList;
 
     /// UT test cases for `TlsConfigBuilder::new`.
     ///
@@ -808,9 +827,7 @@ mod ut_openssl_adapter {
             CertificateList::PathList(_) => vec![],
         };
 
-        let builder = TlsConfigBuilder::new()
-            .add_root_certificates(certs)
-            .build();
+        let builder = TlsConfigBuilder::new().add_root_certificates(certs).build();
         assert!(builder.is_ok());
     }
 

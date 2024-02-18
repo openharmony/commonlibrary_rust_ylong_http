@@ -15,6 +15,7 @@
 #![allow(non_camel_case_types)]
 
 pub(crate) mod bio;
+pub(crate) mod callback;
 pub(crate) mod err;
 pub(crate) mod pem;
 pub(crate) mod ssl;

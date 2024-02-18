@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::request::method::Method;
 use ylong_http::response::Response;
@@ -18,10 +20,13 @@ use ylong_http::version::Version;
 
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
+use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
 use crate::util::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Redirect};
+#[cfg(feature = "__tls")]
+use crate::CertVerifier;
 #[cfg(feature = "http2")]
 use crate::H2Config;
 use crate::{sleep, timeout, ErrorKind, HttpClientError, Proxy, Request, Timeout, Uri};
@@ -683,6 +688,44 @@ impl ClientBuilder {
     /// ```
     pub fn tls_sni(mut self, is_set_sni: bool) -> Self {
         self.tls = self.tls.sni(is_set_sni);
+        self
+    }
+
+    /// Controls the use of TLS certs verifier.
+    ///
+    /// Defaults to `None` -- sets cert_verifier.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    /// use ylong_http_client::{CertVerifier, ServerCerts};
+    ///
+    /// pub struct CallbackTest {
+    ///     inner: String,
+    /// }
+    ///
+    /// impl CallbackTest {
+    ///     pub(crate) fn new() -> Self {
+    ///         Self {
+    ///             inner: "Test".to_string(),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl CertVerifier for CallbackTest {
+    ///     fn verify(&self, certs: &ServerCerts) -> bool {
+    ///         true
+    ///     }
+    /// }
+    ///
+    /// let verifier = CallbackTest::new();
+    /// let builder = ClientBuilder::new().cert_verifier(verifier);
+    /// ```
+    pub fn cert_verifier<T: CertVerifier + Send + Sync + 'static>(mut self, verifier: T) -> Self {
+        self.tls = self
+            .tls
+            .cert_verifier(Arc::new(DefaultCertVerifier::new(verifier)));
         self
     }
 }

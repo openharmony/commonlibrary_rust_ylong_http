@@ -22,9 +22,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-mod config;
+pub(crate) mod config;
 #[cfg(feature = "__tls")]
-pub use config::{AlpnProtocol, AlpnProtocolList};
+pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
 pub(crate) use config::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion};
 pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 
