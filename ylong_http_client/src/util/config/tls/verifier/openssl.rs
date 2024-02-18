@@ -11,9 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod alpn;
-pub use alpn::{AlpnProtocol, AlpnProtocolList};
+use crate::util::c_openssl::x509::X509StoreContextRef;
 
-mod verifier;
-pub(crate) use verifier::DefaultCertVerifier;
-pub use verifier::{CertVerifier, ServerCerts};
+/// ServerCerts is provided to fetch info from X509
+pub struct ServerCerts<'a> {
+    inner: &'a X509StoreContextRef,
+}
+
+impl<'a> ServerCerts<'a> {
+    pub(crate) fn new(inner: &'a X509StoreContextRef) -> Self {
+        Self { inner }
+    }
+}
+
+impl AsRef<X509StoreContextRef> for ServerCerts<'_> {
+    fn as_ref(&self) -> &X509StoreContextRef {
+        self.inner
+    }
+}

@@ -26,6 +26,7 @@ pub(crate) mod stack;
 pub(crate) mod x509;
 
 pub mod adapter;
+
 use core::ptr;
 use std::sync::Once;
 
@@ -33,6 +34,7 @@ pub use adapter::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, T
 use error::ErrorStack;
 use libc::c_int;
 
+pub(crate) use crate::util::c_openssl::ffi::callback::*;
 use crate::util::c_openssl::ffi::OPENSSL_init_ssl;
 
 /// Automatic loading of the libssl error strings. This option is a default
