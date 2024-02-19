@@ -14,7 +14,7 @@
 #[cfg(feature = "__c_openssl")]
 mod openssl;
 #[cfg(feature = "__c_openssl")]
-pub use openssl::ServerCerts;
+pub use self::openssl::ServerCerts;
 
 /// used to custom verify certs
 pub trait CertVerifier {
