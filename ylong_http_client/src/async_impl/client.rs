@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::request::method::Method;
 use ylong_http::response::Response;
@@ -20,7 +18,6 @@ use ylong_http::version::Version;
 
 use super::{conn, Body, ConnPool, Connector, HttpBody, HttpConnector};
 use crate::async_impl::timeout::TimeoutFuture;
-use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::normalizer::{format_host_value, RequestFormatter, UriFormatter};
 use crate::util::proxy::Proxies;
 use crate::util::redirect::TriggerKind;
@@ -723,6 +720,10 @@ impl ClientBuilder {
     /// let builder = ClientBuilder::new().cert_verifier(verifier);
     /// ```
     pub fn cert_verifier<T: CertVerifier + Send + Sync + 'static>(mut self, verifier: T) -> Self {
+        use std::sync::Arc;
+
+        use crate::util::config::tls::DefaultCertVerifier;
+
         self.tls = self
             .tls
             .cert_verifier(Arc::new(DefaultCertVerifier::new(verifier)));
