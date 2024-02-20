@@ -102,6 +102,7 @@ pub struct ResponsePart {
 }
 
 #[cfg(test)]
+#[cfg(feature = "http1_1")]
 mod ut_response {
     use crate::h1::ResponseDecoder;
     use crate::headers::Headers;

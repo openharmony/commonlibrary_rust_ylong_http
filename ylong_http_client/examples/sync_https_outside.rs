@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This is a simple synchronous HTTPS client example.
+
 use ylong_http_client::sync_impl::Client;
 use ylong_http_client::util::Redirect;
 use ylong_http_client::{Certificate, HttpClientError, Request, TlsVersion};

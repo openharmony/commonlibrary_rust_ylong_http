@@ -304,7 +304,6 @@ macro_rules! set_server_fn {
         $server_fn_name: ident,
         $(Request: {
             Method: $method: expr,
-            Host: $host: expr,
             $(
                 Header: $req_n: expr, $req_v: expr,
             )*
@@ -325,11 +324,10 @@ macro_rules! set_server_fn {
                 $(
                     $method => {
                         assert_eq!($method, request.method().as_str(), "Assert request method failed");
-
                         assert_eq!(
-                            $host,
-                            format!("{}://{}", request.uri().scheme().expect("assert uri scheme failed !").as_str(), request.uri().host().expect("assert uri host failed !")),
-                            "Assert request host failed",
+                            "/",
+                            request.uri().to_string(),
+                            "Assert request uri failed",
                         );
                         assert_eq!(
                             $version,
