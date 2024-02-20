@@ -228,22 +228,10 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::async_impl::Client;
-    /// use ylong_http_client::{Certificate, TlsVersion};
-    ///
-    /// let cert1 = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem")).unwrap();
-    /// let cert2 = Certificate::from_pem(include_bytes!("../../../tests/file/cert.pem")).unwrap();
-    ///
-    /// // Creates a `Client`
-    /// let client = Client::builder()
-    ///     .tls_built_in_root_certs(false)
-    ///     .danger_accept_invalid_certs(false)
-    ///     .max_tls_version(TlsVersion::TLS_1_2)
-    ///     .min_tls_version(TlsVersion::TLS_1_2)
-    ///     .add_root_certificate(cert1)
-    ///     .add_root_certificate(cert2)
-    ///     .build()
-    ///     .unwrap();
+    /// use ylong_http_client::{Cert, TlsConfigBuilder};
+    /// # fn example(certs: Vec<Cert>) {
+    /// let builder = TlsConfigBuilder::new().add_root_certificates(certs);
+    /// # }
     /// ```
     pub fn add_root_certificates(mut self, mut certs: Vec<Cert>) -> Self {
         self.certs_list.append(&mut certs);
@@ -255,20 +243,10 @@ impl TlsConfigBuilder {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::async_impl::Client;
-    /// use ylong_http_client::{Certificate, TlsVersion};
-    ///
-    /// let path_cert = Certificate::from_path("../../../cert/file").unwrap();
-    ///
-    /// // Creates a `Client`
-    /// let client = Client::builder()
-    ///     .tls_built_in_root_certs(false)
-    ///     .danger_accept_invalid_certs(false)
-    ///     .max_tls_version(TlsVersion::TLS_1_2)
-    ///     .min_tls_version(TlsVersion::TLS_1_2)
-    ///     .add_root_certificate(path_cert)
-    ///     .build()
-    ///     .unwrap();
+    /// use ylong_http_client::TlsConfigBuilder;
+    /// # fn example(path: String) {
+    /// let builder = TlsConfigBuilder::new().add_path_certificates(path);
+    /// # }
     /// ```
     #[cfg(feature = "c_openssl_3_0")]
     pub fn add_path_certificates(mut self, path: String) -> Self {
@@ -821,9 +799,11 @@ mod ut_openssl_adapter {
     fn ut_add_root_certificates() {
         let certificate = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem"))
             .expect("Sets certs error.");
+        #[cfg(feature = "c_openssl_1_1")]
+        let CertificateList::CertList(certs) = certificate.inner;
+        #[cfg(feature = "c_openssl_3_0")]
         let certs = match certificate.inner {
             CertificateList::CertList(c) => c,
-            #[cfg(feature = "c_openssl_3_0")]
             CertificateList::PathList(_) => vec![],
         };
 

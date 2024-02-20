@@ -41,7 +41,6 @@ macro_rules! sync_client_test_case {
             ylong_server_fn,
             $(Request: {
                 Method: $method,
-                Host: $host,
                 $(
                     Header: $req_n, $req_v,
                 )*
@@ -130,7 +129,6 @@ macro_rules! sync_client_test_case {
             ylong_server_fn,
             $(Request: {
                 Method: $method,
-                Host: $host,
                 $(
                     Header: $req_n, $req_v,
                 )*

@@ -184,7 +184,7 @@ macro_rules! start_tcp_server {
                     let mut length = 0;
                     let crlf = "\r\n";
                     let request_str = String::from_utf8_lossy(&buf[..size]);
-                    let request_line = format!("{} http://{}{} {}{}", $method, addr.to_string().as_str(), $path, "HTTP/1.1", crlf);
+                    let request_line = format!("{} {} {}{}", $method, $path, "HTTP/1.1", crlf);
                     assert!(&buf[..size].starts_with(request_line.as_bytes()), "Incorrect Request-Line!");
 
                     length += request_line.len();
