@@ -16,7 +16,7 @@ use core::{ffi, fmt, ptr, str};
 use std::ffi::CString;
 use std::net::IpAddr;
 
-use libc::{c_int, c_long, c_uint};
+use libc::{c_char, c_int, c_long, c_uint};
 
 use super::bio::BioSlice;
 use super::error::{error_get_lib, error_get_reason, ErrorStack};
@@ -25,10 +25,12 @@ use super::ffi::pem::PEM_read_bio_X509;
 #[cfg(feature = "c_openssl_3_0")]
 use super::ffi::x509::X509_STORE_load_path;
 use super::ffi::x509::{
-    d2i_X509, X509_STORE_CTX_free, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new,
+    d2i_X509, EVP_PKEY_free, X509_NAME_free, X509_NAME_oneline, X509_STORE_CTX_free,
+    X509_STORE_CTX_get0_cert, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new,
     X509_VERIFY_PARAM_free, X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
-    X509_VERIFY_PARAM_set_hostflags, X509_verify_cert_error_string, STACK_X509, X509_STORE,
-    X509_STORE_CTX, X509_VERIFY_PARAM,
+    X509_VERIFY_PARAM_set_hostflags, X509_get_issuer_name, X509_get_pubkey, X509_get_subject_name,
+    X509_get_version, X509_verify, X509_verify_cert_error_string, EVP_PKEY, STACK_X509, X509_NAME,
+    X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM,
 };
 use super::foreign::{Foreign, ForeignRef};
 use super::stack::Stackof;
@@ -41,6 +43,20 @@ foreign_type!(
     pub(crate) struct X509;
     pub(crate) struct X509Ref;
 );
+
+foreign_type!(
+    type CStruct = X509_NAME;
+    fn drop = X509_NAME_free;
+    pub(crate) struct X509Name;
+    pub(crate) struct X509NameRef;
+);
+
+foreign_type! {
+    type CStruct = EVP_PKEY;
+    fn drop = EVP_PKEY_free;
+    pub(crate) struct EvpPkey;
+    pub(crate) struct EvpPkeyRef;
+}
 
 const ERR_LIB_PEM: c_int = 9;
 const PEM_R_NO_START_LINE: c_int = 108;
@@ -91,6 +107,43 @@ impl X509 {
     }
 }
 
+impl X509Ref {
+    pub(crate) fn get_cert_version(&self) -> c_long {
+        unsafe { X509_get_version(self.as_ptr() as *const _) }
+    }
+
+    pub(crate) fn get_cert_name(&self) -> Result<X509Name, ErrorStack> {
+        Ok(X509Name(check_ptr(unsafe {
+            X509_get_subject_name(self.as_ptr() as *const _)
+        })?))
+    }
+
+    pub(crate) fn get_issuer_name(&self) -> Result<X509Name, ErrorStack> {
+        Ok(X509Name(check_ptr(unsafe {
+            X509_get_issuer_name(self.as_ptr() as *const _)
+        })?))
+    }
+
+    pub(crate) fn get_cert(&self) -> Result<EvpPkey, ErrorStack> {
+        Ok(EvpPkey(check_ptr(unsafe {
+            X509_get_pubkey(self.as_ptr() as *mut _)
+        })?))
+    }
+
+    pub(crate) fn cmp_certs(&self, pkey: EvpPkey) -> c_int {
+        unsafe { X509_verify(self.as_ptr() as *mut _, pkey.as_ptr()) }
+    }
+}
+
+impl X509Name {
+    pub(crate) fn get_x509_name_info(&self, buf: &mut [u8], size: c_int) -> String {
+        unsafe {
+            let _ = X509_NAME_oneline(self.as_ptr() as *mut _, buf.as_mut_ptr() as *mut _, size);
+            let res = str::from_utf8(buf).unwrap_or("").to_string();
+            res
+        }
+    }
+}
 impl Stackof for X509 {
     type StackType = STACK_X509;
 }
@@ -206,4 +259,14 @@ foreign_type! {
     fn drop = X509_STORE_CTX_free;
     pub(crate) struct X509StoreContext;
     pub(crate) struct X509StoreContextRef;
+}
+
+impl X509StoreContextRef {
+    pub(crate) fn get_current_cert(&self) -> Result<&X509Ref, ErrorStack> {
+        unsafe {
+            Ok(X509Ref::from_ptr(check_ptr(X509_STORE_CTX_get0_cert(
+                self.as_ptr() as *const _,
+            ))?))
+        }
+    }
 }

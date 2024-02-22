@@ -13,6 +13,7 @@
 
 //! This is a simple asynchronous HTTPS client example.
 
+use std::io::Read;
 use std::sync::Arc;
 
 use ylong_http_client::async_impl::{Client, ClientBuilder, Downloader};
@@ -21,8 +22,19 @@ use ylong_http_client::{CertVerifier, HttpClientError, Request, ServerCerts};
 struct Verifier;
 
 impl CertVerifier for Verifier {
-    fn verify(&self, _certs: &ServerCerts) -> bool {
-        println!("Custom verified");
+    fn verify(&self, certs: &ServerCerts) -> bool {
+        // get version
+        let _ = certs.version().unwrap();
+        // get issuer
+        let _ = certs.issuer().unwrap();
+        // get name
+        let _ = certs.cert_name().unwrap();
+        // cmp cert file
+        let mut file = std::fs::File::open("./tests/file/cert.pem").unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        let _ = certs.cmp_pem_cert(contents.as_bytes()).unwrap();
+        println!("Custom Verified");
         false
     }
 }
