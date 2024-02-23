@@ -13,6 +13,12 @@
 
 use libc::{c_char, c_int, c_long, c_uchar, c_uint, size_t};
 
+pub(crate) enum EVP_PKEY {}
+
+extern "C" {
+    pub(crate) fn EVP_PKEY_free(ctx: *mut EVP_PKEY);
+}
+
 pub(crate) enum C_X509 {}
 
 // for `C_X509`
@@ -30,8 +36,28 @@ extern "C" {
         pp: *mut *const c_uchar,
         length: c_long,
     ) -> *mut C_X509;
-}
 
+    pub(crate) fn X509_get_version(a: *const C_X509) -> c_long;
+
+    pub(crate) fn X509_get_subject_name(a: *const C_X509) -> *mut X509_NAME;
+
+    pub(crate) fn X509_get_issuer_name(a: *const C_X509) -> *mut X509_NAME;
+
+    pub(crate) fn X509_NAME_oneline(
+        a: *mut X509_NAME,
+        buf: *mut c_char,
+        size: c_int,
+    ) -> *mut c_char;
+
+    pub(crate) fn X509_get_pubkey(a: *mut C_X509) -> *mut EVP_PKEY;
+
+    pub(crate) fn X509_verify(a: *mut C_X509, pkey: *mut EVP_PKEY) -> c_int;
+}
+pub(crate) enum X509_NAME {}
+
+extern "C" {
+    pub(crate) fn X509_NAME_free(name: *mut X509_NAME);
+}
 pub(crate) enum X509_STORE {}
 
 // for `X509_STORE`
@@ -55,6 +81,8 @@ pub(crate) enum X509_STORE_CTX {}
 
 extern "C" {
     pub(crate) fn X509_STORE_CTX_free(ctx: *mut X509_STORE_CTX);
+
+    pub(crate) fn X509_STORE_CTX_get0_cert(ctx: *const X509_STORE_CTX) -> *mut C_X509;
 }
 
 pub(crate) enum X509_VERIFY_PARAM {}
