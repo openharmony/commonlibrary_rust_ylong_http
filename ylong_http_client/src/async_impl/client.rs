@@ -740,7 +740,7 @@ impl Default for ClientBuilder {
 #[cfg(test)]
 mod ut_async_impl_client {
     use crate::async_impl::Client;
-    use crate::Proxy;
+    use crate::{CertVerifier, Proxy, ServerCerts};
 
     /// UT test cases for `Client::builder`.
     ///
@@ -858,5 +858,34 @@ mod ut_async_impl_client {
                 e
             })
             .is_err());
+    }
+
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    #[test]
+    fn ut_client_request_verify() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_verify().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    struct Verifier;
+
+    impl CertVerifier for Verifier {
+        fn verify(&self, _certs: &ServerCerts) -> bool {
+            false
+        }
+    }
+
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    async fn client_request_verify() {
+        use ylong_http::request::Request;
+        // Creates a `async_impl::Client`
+        let client = Client::builder().cert_verifier(Verifier).build().unwrap();
+        // Creates a `Request`.
+        let request = Request::get("https://www.example.com").body("").unwrap();
+        // Sends request and receives a `Response`.
+        let response = client.request(request).await;
+        assert!(response.is_err())
     }
 }
