@@ -14,12 +14,10 @@
 //! This is a simple asynchronous HTTP client example using the
 //! ylong_http_client crate. It demonstrates creating a client, making a
 //! request, and reading the response asynchronously.
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::async_impl::{ClientBuilder, Downloader};
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::{EmptyBody, HttpClientError, Proxy, Request};
 
-#[cfg(feature = "tokio_base")]
+use ylong_http_client::async_impl::{Body, ClientBuilder, Downloader, Request};
+use ylong_http_client::{HttpClientError, Proxy};
+
 #[tokio::main]
 async fn main() -> Result<(), HttpClientError> {
     // Creates a `async_impl::Client`
@@ -27,9 +25,10 @@ async fn main() -> Result<(), HttpClientError> {
         .proxy(Proxy::all("http://proxy.example.com").build()?)
         .build()?;
     // Creates a `Request`.
-    let request = Request::get("http://127.0.0.1:3000")
-        .body(EmptyBody)
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+    let request = Request::builder()
+        .url("http://127.0.0.1:3000")
+        .body(Body::empty())?;
+
     // Sends request and receives a `Response`.
     let response = client.request(request).await?;
     // Reads the body of `Response` by using `BodyReader`.

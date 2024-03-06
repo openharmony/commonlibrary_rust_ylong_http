@@ -97,7 +97,7 @@ fn sdv_async_client_send_request() {
                         "Get response header \"{}\" failed",
                         "Content-Length"
                     ))
-                    .to_str()
+                    .to_string()
                     .unwrap_or_else(|_| panic!(
                         "Convert response header \"{}\"into string failed",
                         "Content-Length"

@@ -16,8 +16,6 @@
 #[macro_use]
 mod common;
 
-use ylong_http::body::async_impl::Body as AsyncBody;
-
 use crate::common::init_test_work_runtime;
 
 /// SDV test cases for `async::Client`.

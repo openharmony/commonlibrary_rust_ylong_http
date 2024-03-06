@@ -12,20 +12,17 @@
 // limitations under the License.
 
 use ylong_http::request::uri::Uri;
-// TODO: Adapter, remove this later.
-use ylong_http::response::Response;
 
-use super::{Body, Connector, HttpBody, HttpConnector};
+use super::{Body, Connector, HttpBody, HttpConnector, Request, Response};
 use crate::error::HttpClientError;
 use crate::sync_impl::conn;
 use crate::sync_impl::pool::ConnPool;
-use crate::util::normalizer::RequestFormatter;
-use crate::util::proxy::Proxies;
-use crate::util::redirect::TriggerKind;
-use crate::util::{
+use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
 };
-use crate::Request;
+use crate::util::normalizer::RequestFormatter;
+use crate::util::proxy::Proxies;
+use crate::util::redirect::{RedirectInfo, Trigger};
 
 /// HTTP synchronous client implementation. Users can use `Client` to
 /// send `Request` synchronously. `Client` depends on a `Connector` that
@@ -34,8 +31,7 @@ use crate::Request;
 /// # Examples
 ///
 /// ```no_run
-/// use ylong_http_client::sync_impl::Client;
-/// use ylong_http_client::{EmptyBody, Request};
+/// use ylong_http_client::sync_impl::{Client, EmptyBody, Request};
 ///
 /// // Creates a new `Client`.
 /// let client = Client::new();
@@ -51,7 +47,7 @@ use crate::Request;
 /// ```
 pub struct Client<C: Connector> {
     inner: ConnPool<C, C::Stream>,
-    client_config: ClientConfig,
+    config: ClientConfig,
 }
 
 impl Client<HttpConnector> {
@@ -92,7 +88,7 @@ impl<C: Connector> Client<C> {
     pub fn with_connector(connector: C) -> Self {
         Self {
             inner: ConnPool::new(connector),
-            client_config: ClientConfig::new(),
+            config: ClientConfig::new(),
         }
     }
 
@@ -102,8 +98,7 @@ impl<C: Connector> Client<C> {
     /// # Examples
     ///
     /// ```no_run
-    /// use ylong_http_client::sync_impl::Client;
-    /// use ylong_http_client::{EmptyBody, Request};
+    /// use ylong_http_client::sync_impl::{Client, EmptyBody, Request};
     ///
     /// let client = Client::new();
     /// let response = client.request(Request::new(EmptyBody));
@@ -112,7 +107,7 @@ impl<C: Connector> Client<C> {
         &self,
         mut request: Request<T>,
     ) -> Result<Response<HttpBody>, HttpClientError> {
-        RequestFormatter::new(&mut request).normalize()?;
+        RequestFormatter::new(&mut request).format()?;
         self.retry_send_request(request)
     }
 
@@ -120,7 +115,7 @@ impl<C: Connector> Client<C> {
         &self,
         mut request: Request<T>,
     ) -> Result<Response<HttpBody>, HttpClientError> {
-        let mut retries = self.client_config.retry.times().unwrap_or(0);
+        let mut retries = self.config.retry.times().unwrap_or(0);
         loop {
             let response = self.send_request_retryable(&mut request);
             if response.is_ok() || retries == 0 {
@@ -140,33 +135,23 @@ impl<C: Connector> Client<C> {
 
     fn redirect_request<T: Body>(
         &self,
-        mut response: Response<HttpBody>,
+        response: Response<HttpBody>,
         request: &mut Request<T>,
     ) -> Result<Response<HttpBody>, HttpClientError> {
-        let mut redirected_list = vec![];
-        let mut dst_uri = Uri::default();
+        let mut response = response;
+        let mut info = RedirectInfo::new();
         loop {
-            if Redirect::is_redirect(response.status().clone(), request) {
-                redirected_list.push(request.uri().clone());
-                let trigger = Redirect::get_redirect(
-                    &mut dst_uri,
-                    &self.client_config.redirect,
-                    &redirected_list,
-                    &response,
-                    request,
-                )?;
-
-                match trigger {
-                    TriggerKind::NextLink => {
-                        response = conn::request(self.inner.connect_to(dst_uri.clone())?, request)?;
-                        continue;
-                    }
-                    TriggerKind::Stop => {
-                        return Ok(response);
-                    }
+            match self
+                .config
+                .redirect
+                .inner()
+                .redirect(request, &mut response, &mut info)?
+            {
+                Trigger::NextLink => {
+                    RequestFormatter::new(request).format()?;
+                    response = self.send_request_with_uri(request.uri().clone(), request)?;
                 }
-            } else {
-                return Ok(response);
+                Trigger::Stop => return Ok(response),
             }
         }
     }
@@ -334,7 +319,7 @@ impl ClientBuilder {
 
         Ok(Client {
             inner: ConnPool::new(connector),
-            client_config: self.client,
+            config: self.client,
         })
     }
 }

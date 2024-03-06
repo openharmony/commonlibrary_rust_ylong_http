@@ -13,7 +13,7 @@
 
 use super::{Console, UploadConfig, UploadOperator, Uploader};
 use crate::async_impl::MultiPart;
-use crate::AsyncRead;
+use crate::runtime::AsyncRead;
 
 /// A builder that can create a `Uploader`.
 ///
@@ -111,8 +111,8 @@ impl<R: AsyncRead> UploaderBuilder<WantsOperator<R>> {
     /// ```
     /// # use std::pin::Pin;
     /// # use std::task::{Context, Poll};
-    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader, UploadOperator};
-    /// # use ylong_http_client::{HttpClientError, Response};
+    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader, UploadOperator, Response};
+    /// # use ylong_http_client::HttpClientError;
     ///
     /// struct MyOperator;
     ///
@@ -149,8 +149,7 @@ impl<R: AsyncRead> UploaderBuilder<WantsOperator<R>> {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader};
-    /// # use ylong_http_client::Response;
+    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader, Response};
     ///
     /// let builder = UploaderBuilder::new()
     ///     .reader("HelloWorld".as_bytes())
@@ -200,8 +199,7 @@ impl<R, T> UploaderBuilder<WantsConfig<R, T>> {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader};
-    /// # use ylong_http_client::Response;
+    /// # use ylong_http_client::async_impl::{UploaderBuilder, Uploader, Response};
     ///
     /// let uploader = UploaderBuilder::new()
     ///     .reader("HelloWorld".as_bytes())

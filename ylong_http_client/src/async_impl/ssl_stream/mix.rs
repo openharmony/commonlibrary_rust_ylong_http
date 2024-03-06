@@ -15,7 +15,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use crate::async_impl::ssl_stream::AsyncSslStream;
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// A stream which may be wrapped with TLS.
 pub enum MixStream<T> {

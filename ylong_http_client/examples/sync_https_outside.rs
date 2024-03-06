@@ -14,8 +14,7 @@
 //! This is a simple synchronous HTTPS client example.
 
 use ylong_http_client::sync_impl::Client;
-use ylong_http_client::util::Redirect;
-use ylong_http_client::{Certificate, HttpClientError, Request, TlsVersion};
+use ylong_http_client::{Certificate, HttpClientError, Redirect, Request, TlsVersion};
 
 fn main() {
     let mut v = vec![];
@@ -46,7 +45,7 @@ fn req() -> Result<(), HttpClientError> {
     // Creates a `Request`.
     let request = Request::get("https://www.baidu.com")
         .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+        .map_err(HttpClientError::other)?;
 
     // Sends request and receives a `Response`.
     let response = client.request(request)?;

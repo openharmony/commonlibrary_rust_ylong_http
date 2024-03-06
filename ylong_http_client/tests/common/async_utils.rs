@@ -59,7 +59,7 @@ macro_rules! async_client_test_case {
 
         let runtime = init_test_work_runtime($thread_num);
         // The number of servers may be variable based on the number of servers set by the user.
-        // However, cliipy checks that the variable does not need to be variable.
+        // However, clippy checks that the variable does not need to be variable.
         #[allow(unused_mut, unused_assignments)]
         let mut server_num = 1;
         $(server_num = $client_num;)?
@@ -148,7 +148,7 @@ macro_rules! async_client_test_case {
 
         let runtime = init_test_work_runtime($thread_num);
         // The number of servers may be variable based on the number of servers set by the user.
-        // However, cliipy checks that the variable does not need to be variable.
+        // However, clippy checks that the variable does not need to be variable.
         #[allow(unused_mut, unused_assignments)]
         let mut server_num = 1;
         $(server_num = $client_num;)?
@@ -328,23 +328,18 @@ macro_rules! async_client_assertions {
             Status: $status: expr,
             Version: $version: expr,
             $(
-            Header: $resp_n: expr, $resp_v: expr,
+                Header: $resp_n: expr, $resp_v: expr,
             )*
             Body: $resp_body: expr,
         },)*
     ) => {
         $(
-            let request = ylong_request!(
-                Request: {
-                    Method: $method,
-                    Host: $host,
-                    Port: $handle.port,
-                    $(
-                        Header: $req_n, $req_v,
-                    )*
-                    Body: $req_body,
-                },
-            );
+            let request = ylong_http_client::async_impl::Request::builder()
+                .method($method)
+                .url(format!("{}:{}", $host, $handle.port).as_str())
+                $(.header($req_n, $req_v))*
+                .body(ylong_http_client::async_impl::Body::slice($req_body))
+                .expect("Request build failed");
 
             let mut response = $client
                 .request(request)
@@ -358,7 +353,7 @@ macro_rules! async_client_assertions {
                     .headers()
                     .get($resp_n)
                     .expect(format!("Get response header \"{}\" failed", $resp_n).as_str())
-                    .to_str()
+                    .to_string()
                     .expect(format!("Convert response header \"{}\"into string failed", $resp_n).as_str()),
                 $resp_v,
                 "Assert response header \"{}\" failed", $resp_n,
@@ -367,7 +362,6 @@ macro_rules! async_client_assertions {
             let mut size = 0;
             loop {
                 let read = response
-                    .body_mut()
                     .data(&mut buf[size..]).await
                     .expect("Response body read failed");
                 if read == 0 {

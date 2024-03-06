@@ -14,14 +14,8 @@
 use core::cmp;
 use core::time::Duration;
 
-use ylong_http::request::uri::Uri;
-use ylong_http::request::Request;
-use ylong_http::response::status::StatusCode;
-use ylong_http::response::Response;
-
-use crate::error::{ErrorKind, HttpClientError};
-use crate::util::redirect::{RedirectStrategy, TriggerKind};
-use crate::util::{proxy, redirect as redirect_util};
+use crate::error::HttpClientError;
+use crate::util::{proxy, redirect};
 
 /// Redirects settings of requests.
 ///
@@ -33,43 +27,27 @@ use crate::util::{proxy, redirect as redirect_util};
 /// // The default maximum number of redirects is 10.
 /// let redirect = Redirect::default();
 ///
-/// // No redirect
+/// // No redirect.
 /// let no_redirect = Redirect::none();
 ///
 /// // Custom the number of redirects.
 /// let max = Redirect::limited(10);
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Redirect(Option<RedirectStrategy>);
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct Redirect(redirect::Redirect);
 
 impl Redirect {
-    /// Gets the strategy of redirects.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use ylong_http_client::util::Redirect;
-    ///
-    /// # let redirect = Redirect::limited(10);
-    /// let strategy = redirect.redirect_strategy();
-    ///
-    /// # assert!(strategy.is_some());
-    /// ```
-    pub fn redirect_strategy(&self) -> Option<&redirect_util::RedirectStrategy> {
-        self.0.as_ref()
-    }
-
     /// Sets max number of redirects.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::util::Redirect;
+    /// # use ylong_http_client::Redirect;
     ///
     /// let redirect = Redirect::limited(10);
     /// ```
     pub fn limited(max: usize) -> Self {
-        Self(Some(RedirectStrategy::limited(max)))
+        Self(redirect::Redirect::limited(max))
     }
 
     /// Sets unlimited number of redirects.
@@ -77,12 +55,12 @@ impl Redirect {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::util::Redirect;
+    /// # use ylong_http_client::Redirect;
     ///
     /// let redirect = Redirect::no_limit();
     /// ```
     pub fn no_limit() -> Self {
-        Self(Some(RedirectStrategy::limited(usize::MAX)))
+        Self(redirect::Redirect::limited(usize::MAX))
     }
 
     /// Stops redirects.
@@ -95,34 +73,11 @@ impl Redirect {
     /// let redirect = Redirect::none();
     /// ```
     pub fn none() -> Self {
-        Self(Some(RedirectStrategy::none()))
+        Self(redirect::Redirect::none())
     }
 
-    pub(crate) fn get_redirect<T, K>(
-        dst_uri: &mut Uri,
-        redirect: &Redirect,
-        redirect_list: &[Uri],
-        response: &Response<K>,
-        request: &mut Request<T>,
-    ) -> Result<TriggerKind, HttpClientError> {
-        redirect_util::Redirect::get_trigger_kind(
-            dst_uri,
-            redirect,
-            redirect_list,
-            response,
-            request,
-        )
-    }
-
-    pub(crate) fn is_redirect<T>(status_code: StatusCode, request: &mut Request<T>) -> bool {
-        redirect_util::Redirect::check_redirect(status_code, request)
-    }
-}
-
-impl Default for Redirect {
-    // redirect default limit 10 times
-    fn default() -> Self {
-        Self(Some(RedirectStrategy::default()))
+    pub(crate) fn inner(&self) -> &redirect::Redirect {
+        &self.0
     }
 }
 
@@ -154,17 +109,14 @@ impl Retry {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::Retry;
+    /// use ylong_http_client::Retry;
     ///
     /// assert!(Retry::new(1).is_ok());
     /// assert!(Retry::new(10).is_err());
     /// ```
     pub fn new(times: usize) -> Result<Self, HttpClientError> {
         if times >= Self::MAX_RETRIES {
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::Build,
-                "Invalid Retry Times",
-            ));
+            return err_from_msg!(Build, "Invalid params");
         }
         Ok(Self(Some(times)))
     }
@@ -202,7 +154,7 @@ impl Retry {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::util::Retry;
+    /// use ylong_http_client::Retry;
     ///
     /// assert!(Retry::default().times().is_none());
     /// ```
@@ -512,118 +464,7 @@ impl ProxyBuilder {
 
 #[cfg(test)]
 mod ut_settings {
-    use ylong_http::h1::ResponseDecoder;
-    use ylong_http::request::uri::Uri;
-    use ylong_http::request::Request;
-    use ylong_http::response::status::StatusCode;
-    use ylong_http::response::Response;
-
-    use crate::error::HttpClientError;
-    use crate::util::redirect as redirect_util;
-    use crate::util::redirect::TriggerKind;
-    use crate::{Redirect, Retry};
-
-    fn create_trigger(
-        redirect: &Redirect,
-        previous: &[Uri],
-    ) -> Result<redirect_util::TriggerKind, HttpClientError> {
-        let redirect_status = redirect_util::RedirectStatus::new(previous);
-        redirect.0.as_ref().unwrap().get_trigger(redirect_status)
-    }
-    /// UT test cases for `Redirect::is_redirect`.
-    ///
-    /// # Brief
-    /// 1. Creates a `request` by calling `request::new`.
-    /// 2. Uses `redirect::is_redirect` to check whether is redirected.
-    /// 3. Checks if the result is true.
-    #[test]
-    fn ut_setting_is_redirect() {
-        let mut request = Request::new("this is a body");
-        let code = StatusCode::MOVED_PERMANENTLY;
-        let res = Redirect::is_redirect(code, &mut request);
-        assert!(res);
-    }
-    /// UT test cases for `Redirect::get_redirect` error branch.
-    ///
-    /// # Brief
-    /// 1. Creates a `redirect` by calling `Redirect::default`.
-    /// 2. Uses `Redirect::get_redirect` to get redirected trigger kind.
-    /// 3. Checks if the results are error.
-    #[test]
-    fn ut_setting_get_redirect_kind_err() {
-        let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
-        let mut decoder = ResponseDecoder::new();
-        let result = decoder.decode(response_str).unwrap().unwrap();
-        let response = Response::from_raw_parts(result.0, result.1);
-        let mut request = Request::new("this is a body");
-        let mut uri = Uri::default();
-        let redirect = Redirect::default();
-        let redirect_list: Vec<Uri> = vec![];
-        let res =
-            Redirect::get_redirect(&mut uri, &redirect, &redirect_list, &response, &mut request);
-        assert!(res.is_err());
-    }
-
-    /// UT test cases for `Redirect::default`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Redirect` by calling `Redirect::default`.
-    /// 2. Uses `Redirect::create_trigger` to get redirected uri.
-    /// 3. Checks if the results are correct.
-    #[test]
-    fn ut_setting_redirect_default() {
-        let redirect = Redirect::default();
-        let next = Uri::from_bytes(b"http://example.com").unwrap();
-        let previous = (0..9)
-            .map(|i| Uri::from_bytes(format!("http://example{i}.com").as_bytes()).unwrap())
-            .collect::<Vec<_>>();
-
-        let redirect_uri = match create_trigger(&redirect, &previous).unwrap() {
-            TriggerKind::NextLink => next.to_string(),
-            TriggerKind::Stop => previous.get(9).unwrap().to_string(),
-        };
-        assert_eq!(redirect_uri, "http://example.com".to_string());
-    }
-
-    /// UT test cases for `Redirect::max_limit`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Redirect` by calling `Redirect::max_limit`.
-    /// 2. Sets redirect times which is over max limitation times.
-    /// 2. Uses `Redirect::create_trigger` to get redirected uri.
-    /// 3. Checks if the results are err.
-    #[test]
-    fn ut_setting_redirect_over_redirect_max() {
-        let redirect = Redirect::limited(10);
-        let previous = (0..10)
-            .map(|i| Uri::from_bytes(format!("http://example{i}.com").as_bytes()).unwrap())
-            .collect::<Vec<_>>();
-
-        if let Ok(other) = create_trigger(&redirect, &previous) {
-            panic!("unexpected {:?}", other);
-        };
-    }
-
-    /// UT test cases for `Redirect::no_redirect`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Redirect` by calling `Redirect::no_redirect`.
-    /// 2. Uses `Redirect::create_trigger` but get origin uri.
-    /// 3. Checks if the results are correct.
-    #[test]
-    fn ut_setting_no_redirect() {
-        let redirect = Redirect::none();
-        let next = Uri::from_bytes(b"http://example.com").unwrap();
-        let previous = (0..1)
-            .map(|i| Uri::from_bytes(format!("http://example{i}.com").as_bytes()).unwrap())
-            .collect::<Vec<_>>();
-
-        let redirect_uri = match create_trigger(&redirect, &previous).unwrap() {
-            TriggerKind::NextLink => next.to_string(),
-            TriggerKind::Stop => previous.get(0).unwrap().to_string(),
-        };
-        assert_eq!(redirect_uri, "http://example0.com".to_string());
-    }
+    use crate::Retry;
 
     /// UT test cases for `Retry::new`.
     ///

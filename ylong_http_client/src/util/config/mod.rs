@@ -24,7 +24,7 @@ pub use settings::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 #[cfg(feature = "__tls")]
 pub(crate) mod tls;
 #[cfg(feature = "http2")]
-pub use http::http2::H2Config;
+pub(crate) use http::http2::H2Config;
 #[cfg(feature = "__tls")]
 pub use tls::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
 #[cfg(feature = "tls_rust_ssl")]

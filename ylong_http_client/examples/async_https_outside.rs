@@ -13,13 +13,9 @@
 
 //! This is a simple asynchronous HTTPS client example.
 
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::async_impl::{Client, Downloader};
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::util::Redirect;
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::{Certificate, HttpClientError, Request, TlsVersion};
-#[cfg(feature = "tokio_base")]
+use ylong_http_client::async_impl::{Body, Client, Downloader, Request};
+use ylong_http_client::{Certificate, HttpClientError, Redirect, TlsVersion};
+
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -53,9 +49,9 @@ async fn req() -> Result<(), HttpClientError> {
         .build()?;
 
     // Creates a `Request`.
-    let request = Request::get("https://www.baidu.com")
-        .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+    let request = Request::builder()
+        .url("https://www.baidu.com")
+        .body(Body::empty())?;
 
     // Sends request and receives a `Response`.
     let response = client.request(request).await?;

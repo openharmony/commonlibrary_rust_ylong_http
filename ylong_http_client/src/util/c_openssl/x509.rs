@@ -16,7 +16,7 @@ use core::{ffi, fmt, ptr, str};
 use std::ffi::CString;
 use std::net::IpAddr;
 
-use libc::{c_char, c_int, c_long, c_uint};
+use libc::{c_int, c_long, c_uint};
 
 use super::bio::BioSlice;
 use super::error::{error_get_lib, error_get_reason, ErrorStack};

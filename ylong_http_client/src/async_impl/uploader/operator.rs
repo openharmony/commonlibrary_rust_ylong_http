@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::HttpClientError;
+use crate::error::HttpClientError;
 
 /// A `UploadOperator` represents structures that can read local data to socket.
 ///

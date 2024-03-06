@@ -58,119 +58,31 @@ pub(crate) mod http2 {
     const DEFAULT_MAX_HEADER_LIST_SIZE: u32 = 16 << 20;
 
     /// Settings which can be used to configure a http2 connection.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::util::H2Config;
-    ///
-    /// let config = H2Config::new()
-    ///     .set_header_table_size(4096)
-    ///     .set_max_header_list_size(16 << 20)
-    ///     .set_max_frame_size(2 << 13);
-    /// ```
     #[derive(Clone)]
-    pub struct H2Config {
-        max_frame_size: u32,
-        max_header_list_size: u32,
-        header_table_size: u32,
+    pub(crate) struct H2Config {
+        pub(crate) max_frame_size: u32,
+        pub(crate) max_header_list_size: u32,
+        pub(crate) header_table_size: u32,
     }
 
     impl H2Config {
         /// `H2Config` constructor.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new();
-        /// ```
-        pub fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self::default()
         }
 
-        /// Sets the SETTINGS_MAX_FRAME_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_max_frame_size(2 << 13);
-        /// ```
-        pub fn set_max_frame_size(mut self, size: u32) -> Self {
-            self.max_frame_size = size;
-            self
-        }
-
-        /// Sets the SETTINGS_MAX_HEADER_LIST_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_max_header_list_size(16 << 20);
-        /// ```
-        pub fn set_max_header_list_size(mut self, size: u32) -> Self {
-            self.max_header_list_size = size;
-            self
-        }
-
-        /// Sets the SETTINGS_HEADER_TABLE_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_max_header_list_size(4096);
-        /// ```
-        pub fn set_header_table_size(mut self, size: u32) -> Self {
-            self.header_table_size = size;
-            self
-        }
-
         /// Gets the SETTINGS_MAX_FRAME_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_max_frame_size(2 << 13);
-        /// assert_eq!(config.max_frame_size(), 2 << 13);
-        /// ```
-        pub fn max_frame_size(&self) -> u32 {
+        pub(crate) fn max_frame_size(&self) -> u32 {
             self.max_frame_size
         }
 
         /// Gets the SETTINGS_MAX_HEADER_LIST_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_max_header_list_size(16 << 20);
-        /// assert_eq!(config.max_header_list_size(), 16 << 20);
-        /// ```
-        pub fn max_header_list_size(&self) -> u32 {
+        pub(crate) fn max_header_list_size(&self) -> u32 {
             self.max_header_list_size
         }
 
         /// Gets the SETTINGS_MAX_FRAME_SIZE.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use ylong_http_client::util::H2Config;
-        ///
-        /// let config = H2Config::new().set_header_table_size(4096);
-        /// assert_eq!(config.header_table_size(), 4096);
-        /// ```
-        pub fn header_table_size(&self) -> u32 {
+        pub(crate) fn header_table_size(&self) -> u32 {
             self.header_table_size
         }
     }

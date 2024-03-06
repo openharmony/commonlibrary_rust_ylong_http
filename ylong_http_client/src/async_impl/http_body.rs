@@ -16,15 +16,16 @@ use core::task::{Context, Poll};
 use std::future::Future;
 use std::io::{Cursor, Read};
 
+use ylong_http::body::async_impl::Body;
 use ylong_http::body::TextBodyDecoder;
 #[cfg(feature = "http1_1")]
 use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 use ylong_http::headers::Headers;
 
-use super::{Body, StreamData};
+use super::conn::StreamData;
 use crate::error::{ErrorKind, HttpClientError};
+use crate::runtime::{AsyncRead, ReadBuf, Sleep};
 use crate::util::normalizer::BodyLength;
-use crate::{AsyncRead, ReadBuf, Sleep};
 
 const TRAILER_SIZE: usize = 1024;
 
@@ -35,25 +36,28 @@ const TRAILER_SIZE: usize = 1024;
 /// # Examples
 ///
 /// ```no_run
-/// use ylong_http_client::async_impl::{Body, Client, HttpBody};
-/// use ylong_http_client::{EmptyBody, Request};
+/// use ylong_http_client::async_impl::{Body, Client, HttpBody, Request};
+/// use ylong_http_client::HttpClientError;
 ///
-/// async fn read_body() {
+/// async fn read_body() -> Result<(), HttpClientError> {
 ///     let client = Client::new();
 ///
 ///     // `HttpBody` is the body part of `response`.
-///     let mut response = client.request(Request::new(EmptyBody)).await.unwrap();
+///     let mut response = client
+///         .request(Request::builder().body(Body::empty())?)
+///         .await?;
 ///
 ///     // Users can use `Body::data` to get body data.
 ///     let mut buf = [0u8; 1024];
 ///     loop {
-///         let size = response.body_mut().data(&mut buf).await.unwrap();
+///         let size = response.data(&mut buf).await.unwrap();
 ///         if size == 0 {
 ///             break;
 ///         }
 ///         let _data = &buf[..size];
 ///         // Deals with the data.
 ///     }
+///     Ok(())
 /// }
 /// ```
 pub struct HttpBody {
@@ -74,10 +78,7 @@ impl HttpBody {
                 if !pre.is_empty() {
                     // TODO: Consider the case where BodyLength is empty but pre is not empty.
                     io.shutdown();
-                    return Err(HttpClientError::new_with_message(
-                        ErrorKind::Request,
-                        "Body length is 0 but read extra data",
-                    ));
+                    return err_from_msg!(Request, "Body length is 0 but read extra data");
                 }
                 Kind::Empty
             }
@@ -125,12 +126,10 @@ impl Body for HttpBody {
 
         if let Some(delay) = self.sleep.as_mut() {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
-                return Poll::Ready(Err(HttpClientError::new_with_message(
-                    ErrorKind::Timeout,
-                    "Request timeout",
-                )));
+                return Poll::Ready(err_from_io!(Timeout, std::io::ErrorKind::TimedOut.into()));
             }
         }
+
         match self.kind {
             Kind::Empty => Poll::Ready(Ok(0)),
             Kind::Text(ref mut text) => text.data(cx, buf),
@@ -147,10 +146,7 @@ impl Body for HttpBody {
         // Get trailer data from io
         if let Some(delay) = self.sleep.as_mut() {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
-                return Poll::Ready(Err(HttpClientError::new_with_message(
-                    ErrorKind::Timeout,
-                    "Request timeout",
-                )));
+                return Poll::Ready(err_from_msg!(Timeout, "Request timeout"));
             }
         }
 
@@ -165,14 +161,11 @@ impl Body for HttpBody {
                         return Poll::Pending;
                     }
                     Poll::Ready(Err(e)) => {
-                        return Poll::Ready(Err(HttpClientError::new_with_cause(
-                            ErrorKind::BodyTransfer,
-                            Some(e),
-                        )));
+                        return Poll::Ready(Err(e));
                     }
                 }
-                Poll::Ready(Ok(chunk.decoder.get_trailer().map_err(|_| {
-                    HttpClientError::new_with_message(ErrorKind::BodyDecode, "Get trailer failed")
+                Poll::Ready(Ok(chunk.decoder.get_trailer().map_err(|e| {
+                    HttpClientError::from_error(ErrorKind::BodyDecode, e)
                 })?))
             }
             _ => Poll::Ready(Ok(None)),
@@ -242,7 +235,7 @@ impl UntilClose {
         if !buf[read..].is_empty() {
             if let Some(mut io) = self.io.take() {
                 let mut read_buf = ReadBuf::new(&mut buf[read..]);
-                match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
+                return match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
                     // Disconnected.
                     Poll::Ready(Ok(())) => {
                         let filled = read_buf.filled().len();
@@ -252,24 +245,21 @@ impl UntilClose {
                             self.io = Some(io);
                         }
                         read += filled;
-                        return Poll::Ready(Ok(read));
+                        Poll::Ready(Ok(read))
                     }
                     Poll::Pending => {
                         self.io = Some(io);
                         if read != 0 {
                             return Poll::Ready(Ok(read));
                         }
-                        return Poll::Pending;
+                        Poll::Pending
                     }
                     Poll::Ready(Err(e)) => {
                         // If IO error occurs, shutdowns `io` before return.
                         io.shutdown();
-                        return Poll::Ready(Err(HttpClientError::new_with_cause(
-                            ErrorKind::BodyTransfer,
-                            Some(e),
-                        )));
+                        return Poll::Ready(err_from_io!(BodyTransfer, e));
                     }
-                }
+                };
             }
         }
         Poll::Ready(Ok(read))
@@ -319,10 +309,7 @@ impl Text {
                         if let Some(io) = self.io.take() {
                             io.shutdown();
                         };
-                        return Poll::Ready(Err(HttpClientError::new_with_message(
-                            ErrorKind::BodyDecode,
-                            "Not Eof",
-                        )));
+                        return Poll::Ready(err_from_msg!(BodyDecode, "Not eof"));
                     }
                     (true, true) => {
                         self.io = None;
@@ -343,10 +330,10 @@ impl Text {
                         let filled = read_buf.filled().len();
                         if filled == 0 {
                             io.shutdown();
-                            return Poll::Ready(Err(HttpClientError::new_with_message(
-                                ErrorKind::BodyDecode,
-                                "Response Body Incomplete",
-                            )));
+                            return Poll::Ready(err_from_msg!(
+                                BodyDecode,
+                                "Response body incomplete"
+                            ));
                         }
                         let (text, rem) = self.decoder.decode(read_buf.filled());
                         read += filled;
@@ -354,10 +341,7 @@ impl Text {
                         match (text.is_complete(), rem.is_empty()) {
                             (true, false) => {
                                 io.shutdown();
-                                return Poll::Ready(Err(HttpClientError::new_with_message(
-                                    ErrorKind::BodyDecode,
-                                    "Not Eof",
-                                )));
+                                return Poll::Ready(err_from_msg!(BodyDecode, "Not eof"));
                             }
                             (true, true) => return Poll::Ready(Ok(read)),
                             _ => {}
@@ -374,10 +358,7 @@ impl Text {
                     Poll::Ready(Err(e)) => {
                         // If IO error occurs, shutdowns `io` before return.
                         io.shutdown();
-                        return Poll::Ready(Err(HttpClientError::new_with_cause(
-                            ErrorKind::BodyTransfer,
-                            Some(e),
-                        )));
+                        return Poll::Ready(err_from_io!(BodyDecode, e));
                     }
                 }
             }
@@ -445,10 +426,7 @@ impl Chunk {
                     let filled = read_buf.filled().len();
                     if filled == 0 {
                         io.shutdown();
-                        return Poll::Ready(Err(HttpClientError::new_with_message(
-                            ErrorKind::BodyTransfer,
-                            "Response Body Incomplete",
-                        )));
+                        return Poll::Ready(err_from_msg!(BodyDecode, "Response body incomplete"));
                     }
                     let (size, flag) = self.merge_chunks(read_buf.filled_mut())?;
                     read += size;
@@ -469,10 +447,7 @@ impl Chunk {
                 Poll::Ready(Err(e)) => {
                     // If IO error occurs, shutdowns `io` before return.
                     io.shutdown();
-                    return Poll::Ready(Err(HttpClientError::new_with_cause(
-                        ErrorKind::BodyTransfer,
-                        Some(e),
-                    )));
+                    return Poll::Ready(err_from_io!(BodyDecode, e));
                 }
             }
         }
@@ -499,7 +474,7 @@ impl Chunk {
         let (chunks, junk) = self
             .decoder
             .decode(buf)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
 
         let mut finished = false;
         let mut ptrs = Vec::new();
@@ -520,10 +495,7 @@ impl Chunk {
         }
 
         if finished && !junk.is_empty() {
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::BodyDecode,
-                "Invalid Chunk Body",
-            ));
+            return err_from_msg!(BodyDecode, "Invalid chunk body");
         }
 
         let start = buf.as_ptr();
@@ -579,7 +551,7 @@ mod ut_async_http_body {
             .unwrap()
             .unwrap();
         assert_eq!(
-            res.get("accept").unwrap().to_str().unwrap(),
+            res.get("accept").unwrap().to_string().unwrap(),
             "text/html".to_string()
         );
         let box_stream = Box::new("".as_bytes());

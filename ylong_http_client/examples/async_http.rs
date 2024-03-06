@@ -15,12 +15,12 @@
 //! ylong_http_client crate. It demonstrates creating a client, making a
 //! request, and reading the response asynchronously.
 
-use ylong_http_client::async_impl::{Client, Downloader};
-use ylong_http_client::{HttpClientError, Request};
+use ylong_http_client::async_impl::{Body, Client, Downloader, Request};
+use ylong_http_client::HttpClientError;
 
 fn main() -> Result<(), HttpClientError> {
     let handle = ylong_runtime::spawn(async move {
-        let _ = client_send().await.unwrap();
+        client_send().await.unwrap();
     });
 
     let _ = ylong_runtime::block_on(handle);
@@ -32,9 +32,9 @@ async fn client_send() -> Result<(), HttpClientError> {
     let client = Client::new();
 
     // Creates a `Request`.
-    let request = Request::get("127.0.0.1:3000")
-        .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+    let request = Request::builder()
+        .url("127.0.0.1:3000")
+        .body(Body::empty())?;
 
     // Sends request and receives a `Response`.
     let response = client.request(request).await?;

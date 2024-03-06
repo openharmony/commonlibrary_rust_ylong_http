@@ -24,32 +24,29 @@
 //! which implements the trait.
 
 mod client;
-mod conn;
 mod connector;
 mod downloader;
 mod http_body;
-mod pool;
+mod request;
+mod response;
 mod timeout;
 mod uploader;
-
-pub use client::ClientBuilder;
-pub(crate) use conn::StreamData;
-pub use connector::Connector;
-pub(crate) use connector::HttpConnector;
-pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
-pub use http_body::HttpBody;
-pub(crate) use pool::ConnPool;
-pub use uploader::{UploadOperator, Uploader, UploaderBuilder};
-pub use ylong_http::body::async_impl::Body;
-pub use ylong_http::body::{MultiPart, Part};
 
 #[cfg(feature = "__tls")]
 mod ssl_stream;
 
+pub(crate) mod conn;
+pub(crate) mod pool;
+
+pub use client::ClientBuilder;
+pub use connector::{Connector, HttpConnector};
+pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
+pub use http_body::HttpBody;
+pub use request::{Body, Request, RequestBuilder};
+pub use response::Response;
+pub use uploader::{UploadOperator, Uploader, UploaderBuilder};
+pub use ylong_http::body::{MultiPart, Part};
+
 // TODO: Remove these later.
 /// Client Adapter.
 pub type Client = client::Client<HttpConnector>;
-
-// TODO: Remove these later.
-mod adapter;
-pub use adapter::{RequestBuilder, Response};

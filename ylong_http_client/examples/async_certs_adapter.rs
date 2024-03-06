@@ -16,8 +16,8 @@
 use std::io::Read;
 use std::sync::Arc;
 
-use ylong_http_client::async_impl::{Client, ClientBuilder, Downloader};
-use ylong_http_client::{CertVerifier, HttpClientError, Request, ServerCerts};
+use ylong_http_client::async_impl::{Body, Client, ClientBuilder, Downloader, Request};
+use ylong_http_client::{CertVerifier, HttpClientError, ServerCerts};
 
 struct Verifier;
 
@@ -60,9 +60,9 @@ fn main() -> Result<(), HttpClientError> {
 }
 
 async fn request(client: Arc<Client>) -> Result<(), HttpClientError> {
-    let request = Request::get("https://www.example.com")
-        .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))
+    let request = Request::builder()
+        .url("https://www.example.com")
+        .body(Body::empty())
         .unwrap();
     // Sends request and receives a `Response`.
     let response = client.request(request).await?;

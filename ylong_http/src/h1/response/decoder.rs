@@ -52,7 +52,7 @@ use crate::version::Version;
 ///     part.headers
 ///         .get("content-length")
 ///         .unwrap()
-///         .to_str()
+///         .to_string()
 ///         .unwrap(),
 ///     "4"
 /// );
@@ -651,7 +651,10 @@ mod ut_decoder {
             assert_eq!($res3, result.0.status.as_u16());
             assert_eq!($res4.len(), result.0.headers.len());
             for (key, value) in $res4 {
-                assert_eq!(value, result.0.headers.get(key).unwrap().to_str().unwrap())
+                assert_eq!(
+                    value,
+                    result.0.headers.get(key).unwrap().to_string().unwrap()
+                )
             }
             assert_eq!($res5, result.1);
         }};
@@ -667,7 +670,10 @@ mod ut_decoder {
             assert_eq!($res3, result.0.status.as_u16());
             assert_eq!($res4.len(), result.0.headers.len());
             for (key, value) in $res4 {
-                assert_eq!(value, result.0.headers.get(key).unwrap().to_str().unwrap())
+                assert_eq!(
+                    value,
+                    result.0.headers.get(key).unwrap().to_string().unwrap()
+                )
             }
             assert_eq!($res5, result.1);
         }};

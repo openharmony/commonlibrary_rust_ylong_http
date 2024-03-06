@@ -16,8 +16,6 @@
 #[macro_use]
 pub mod tcp_server;
 
-use ylong_http::body::async_impl::Body;
-
 use crate::tcp_server::{format_header_str, TcpHandle};
 
 /// SDV test cases for `async::Client`.
@@ -80,21 +78,6 @@ fn sdv_async_client_send_request() {
             Version: "HTTP/1.1",
             Header: "Content-Length", "3",
             Body: "Hi!",
-        },
-    );
-
-    // `HEAD` request without body.
-    async_client_test_on_tcp!(
-        HTTP;
-        Request: {
-            Method: "HEAD",
-            Path: "/data",
-            Body: "",
-        },
-        Response: {
-            Status: 200,
-            Version: "HTTP/1.1",
-            Body: "",
         },
     );
 

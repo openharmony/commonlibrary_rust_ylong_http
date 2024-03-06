@@ -14,26 +14,27 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use ylong_http::body::async_impl::Body;
+use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
 use ylong_http::request::uri::Scheme;
-use ylong_http::response::Response;
 use ylong_http::version::Version;
 
+use super::StreamData;
 use crate::async_impl::connector::ConnInfo;
-use crate::async_impl::{Body, HttpBody, StreamData};
-use crate::error::{ErrorKind, HttpClientError};
+use crate::async_impl::{HttpBody, Request, Response};
+use crate::error::HttpClientError;
+use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::util::normalizer::BodyLengthParser;
-use crate::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, Request};
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
 
-pub(crate) async fn request<S, T>(
+pub(crate) async fn request<S>(
     mut conn: Http1Conn<S>,
-    request: &mut Request<T>,
-) -> Result<Response<HttpBody>, HttpClientError>
+    request: &mut Request,
+) -> Result<Response, HttpClientError>
 where
-    T: Body,
     S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
@@ -50,45 +51,48 @@ where
                 // RequestEncoder writes `buf` as much as possible.
                 if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
                     conn.shutdown();
-                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                    return err_from_io!(Request, e);
                 }
             }
             Err(e) => {
                 conn.shutdown();
-                return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                return err_from_other!(Request, e);
             }
         }
     }
 
-    // Encodes Request Body.
+    let content_length = request
+        .part()
+        .headers
+        .get("Content-Length")
+        .and_then(|v| v.to_string().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some();
+
+    let transfer_encoding = request
+        .part()
+        .headers
+        .get("Transfer-Encoding")
+        .and_then(|v| v.to_string().ok())
+        .map(|v| v.contains("chunked"))
+        .unwrap_or(false);
+
     let body = request.body_mut();
-    let mut written = 0;
-    let mut end_body = false;
-    while !end_body {
-        if written < buf.len() {
-            match body.data(&mut buf[written..]).await {
-                Ok(0) => end_body = true,
-                Ok(size) => written += size,
-                Err(e) => {
-                    conn.shutdown();
-                    return Err(HttpClientError::new_with_cause(
-                        ErrorKind::BodyTransfer,
-                        Some(e),
-                    ));
-                }
-            }
+
+    match (content_length, transfer_encoding) {
+        (_, true) => {
+            let body = ChunkBody::from_async_reader(body);
+            encode_body(&mut conn, body, &mut buf).await?;
         }
-        if written == buf.len() || end_body {
-            if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
-                conn.shutdown();
-                return Err(HttpClientError::new_with_cause(
-                    ErrorKind::BodyTransfer,
-                    Some(e),
-                ));
-            }
-            written = 0;
+        (true, false) => {
+            let body = TextBody::from_async_reader(body);
+            encode_body(&mut conn, body, &mut buf).await?;
         }
-    }
+        (false, false) => {
+            let body = TextBody::from_async_reader(body);
+            encode_body(&mut conn, body, &mut buf).await?;
+        }
+    };
 
     // Decodes response part.
     let (part, pre) = {
@@ -97,15 +101,12 @@ where
             let size = match conn.raw_mut().read(buf.as_mut_slice()).await {
                 Ok(0) => {
                     conn.shutdown();
-                    return Err(HttpClientError::new_with_message(
-                        ErrorKind::Request,
-                        "Tcp Closed",
-                    ));
+                    return err_from_msg!(Request, "Tcp closed");
                 }
                 Ok(size) => size,
                 Err(e) => {
                     conn.shutdown();
-                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                    return err_from_io!(Request, e);
                 }
             };
 
@@ -114,7 +115,7 @@ where
                 Ok(Some((part, rem))) => break (part, rem),
                 Err(e) => {
                     conn.shutdown();
-                    return Err(HttpClientError::new_with_cause(ErrorKind::Request, Some(e)));
+                    return err_from_other!(Request, e);
                 }
             }
         }
@@ -133,14 +134,19 @@ where
         Some(value) => {
             if part.version == Version::HTTP1_0 {
                 if value
-                    .to_str()
+                    .to_string()
                     .ok()
                     .and_then(|v| v.find("keep-alive"))
                     .is_none()
                 {
                     conn.shutdown()
                 }
-            } else if value.to_str().ok().and_then(|v| v.find("close")).is_none() {
+            } else if value
+                .to_string()
+                .ok()
+                .and_then(|v| v.find("close"))
+                .is_none()
+            {
                 conn.shutdown()
             }
         }
@@ -155,7 +161,43 @@ where
     };
 
     let body = HttpBody::new(length, Box::new(conn), pre)?;
-    Ok(Response::from_raw_parts(part, body))
+    Ok(Response::new(
+        ylong_http::response::Response::from_raw_parts(part, body),
+    ))
+}
+
+async fn encode_body<S, T>(
+    conn: &mut Http1Conn<S>,
+    mut body: T,
+    buf: &mut [u8],
+) -> Result<(), HttpClientError>
+where
+    T: Body,
+    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+{
+    // Encodes Request Body.
+    let mut written = 0;
+    let mut end_body = false;
+    while !end_body {
+        if written < buf.len() {
+            match body.data(&mut buf[written..]).await {
+                Ok(0) => end_body = true,
+                Ok(size) => written += size,
+                Err(e) => {
+                    conn.shutdown();
+                    return err_from_other!(BodyTransfer, e);
+                }
+            }
+        }
+        if written == buf.len() || end_body {
+            if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
+                conn.shutdown();
+                return err_from_io!(BodyTransfer, e);
+            }
+            written = 0;
+        }
+    }
+    Ok(())
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Http1Conn<S> {

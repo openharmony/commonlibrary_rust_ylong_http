@@ -354,7 +354,7 @@ macro_rules! sync_client_assertions {
                     .headers()
                     .get($resp_n)
                     .expect(format!("Get response header \"{}\" failed", $resp_n).as_str())
-                    .to_str()
+                    .to_string()
                     .expect(format!("Convert response header \"{}\"into string failed", $resp_n).as_str()),
                 $resp_v,
                 "Assert response header \"{}\" failed", $resp_n,

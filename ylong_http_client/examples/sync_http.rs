@@ -25,7 +25,7 @@ fn main() -> Result<(), HttpClientError> {
     // Creates a `Request`.
     let request = Request::get("127.0.0.1:3000")
         .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+        .map_err(HttpClientError::other)?;
 
     // Sends request and receives a `Response`.
     let mut response = client.request(request)?;

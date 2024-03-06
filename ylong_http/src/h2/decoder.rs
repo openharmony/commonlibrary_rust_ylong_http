@@ -909,7 +909,7 @@ mod ut_frame_decoder {
                                 "assert header length failed"
                             );
                             for (key, value) in $payload.1.iter() {
-                                assert_eq!(header.get(*key).unwrap().to_str().unwrap(), *value);
+                                assert_eq!(header.get(*key).unwrap().to_string().unwrap(), *value);
                             }
                             for (key, value) in $payload.0.iter() {
                                 match *key {

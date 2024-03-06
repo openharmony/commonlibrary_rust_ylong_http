@@ -20,7 +20,7 @@
 ///
 /// # Examples
 /// ```
-/// use ylong_http_client::util::AlpnProtocol;
+/// use ylong_http_client::AlpnProtocol;
 ///
 /// let alpn = AlpnProtocol::HTTP11;
 /// assert_eq!(alpn.as_use_bytes(), b"\x08http/1.1");
@@ -115,7 +115,7 @@ impl AlpnProtocol {
 ///
 /// # Examples
 /// ```
-/// use ylong_http_client::util::{AlpnProtocol, AlpnProtocolList};
+/// use ylong_http_client::{AlpnProtocol, AlpnProtocolList};
 ///
 /// let list = AlpnProtocolList::new()
 ///     .extend(AlpnProtocol::SPDY1)

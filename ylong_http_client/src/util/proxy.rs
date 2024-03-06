@@ -16,14 +16,12 @@
 use core::convert::TryFrom;
 use std::net::IpAddr;
 
-use ylong_http::error::HttpError;
 use ylong_http::headers::HeaderValue;
 use ylong_http::request::uri::{Authority, Scheme, Uri};
 
 use crate::error::HttpClientError;
 use crate::util::base64::encode;
 use crate::util::normalizer::UriFormatter;
-use crate::ErrorKind;
 
 /// `Proxies` is responsible for managing a list of proxies.
 #[derive(Clone, Default)]
@@ -158,7 +156,7 @@ impl ProxyInfo {
         let mut uri = match Uri::try_from(uri) {
             Ok(u) => u,
             Err(e) => {
-                return Err(HttpClientError::new_with_cause(ErrorKind::Build, Some(e)));
+                return err_from_other!(Build, e);
             }
         };
         // Makes sure that all parts of uri exist.

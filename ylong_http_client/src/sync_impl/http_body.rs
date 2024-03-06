@@ -27,8 +27,7 @@ use crate::sync_impl::conn::StreamData;
 /// # Examples
 ///
 /// ```no_run
-/// use ylong_http_client::sync_impl::{Body, Client, HttpBody};
-/// use ylong_http_client::{EmptyBody, Request};
+/// use ylong_http_client::sync_impl::{Body, Client, EmptyBody, HttpBody, Request};
 ///
 /// let mut client = Client::new();
 ///
@@ -111,7 +110,7 @@ impl Body for HttpBody {
     fn trailer(&mut self) -> Result<Option<Headers>, Self::Error> {
         match self.kind {
             Kind::Chunk(ref mut chunk) => chunk.decoder.get_trailer().map_err(|_| {
-                HttpClientError::new_with_message(ErrorKind::BodyDecode, "Get trailer failed")
+                HttpClientError::from_str(ErrorKind::BodyDecode, "Get trailer failed")
             }),
             _ => Ok(None),
         }
@@ -140,10 +139,7 @@ impl Text {
                         if let Some(io) = self.io.take() {
                             io.shutdown();
                         };
-                        return Err(HttpClientError::new_with_message(
-                            ErrorKind::BodyDecode,
-                            "Not Eof",
-                        ));
+                        return Err(HttpClientError::from_str(ErrorKind::BodyDecode, "Not Eof"));
                     }
                     (true, true) => {
                         self.io = None;
@@ -160,7 +156,7 @@ impl Text {
                     // Disconnected.
                     Ok(0) => {
                         io.shutdown();
-                        return Err(HttpClientError::new_with_message(
+                        return Err(HttpClientError::from_str(
                             ErrorKind::BodyDecode,
                             "Response Body Incomplete",
                         ));
@@ -172,7 +168,7 @@ impl Text {
                         match (text.is_complete(), rem.is_empty()) {
                             (true, false) => {
                                 io.shutdown();
-                                return Err(HttpClientError::new_with_message(
+                                return Err(HttpClientError::from_str(
                                     ErrorKind::BodyDecode,
                                     "Not Eof",
                                 ));
@@ -182,12 +178,7 @@ impl Text {
                         }
                         self.io = Some(io);
                     }
-                    Err(e) => {
-                        return Err(HttpClientError::new_with_cause(
-                            ErrorKind::BodyTransfer,
-                            Some(e),
-                        ))
-                    }
+                    Err(e) => return Err(HttpClientError::from_error(ErrorKind::BodyTransfer, e)),
                 }
             }
         }
@@ -246,7 +237,7 @@ impl Chunk {
                 Ok(filled) => {
                     if filled == 0 {
                         io.shutdown();
-                        return Err(HttpClientError::new_with_message(
+                        return Err(HttpClientError::from_str(
                             ErrorKind::BodyDecode,
                             "Response Body Incomplete",
                         ));
@@ -263,12 +254,7 @@ impl Chunk {
                         return Ok(read);
                     }
                 }
-                Err(e) => {
-                    return Err(HttpClientError::new_with_cause(
-                        ErrorKind::BodyTransfer,
-                        Some(e),
-                    ))
-                }
+                Err(e) => return Err(HttpClientError::from_error(ErrorKind::BodyTransfer, e)),
             }
         }
         Ok(read)
@@ -293,7 +279,7 @@ impl Chunk {
         let (chunks, junk) = self
             .decoder
             .decode(buf)
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
 
         let mut finished = false;
         let mut ptrs = Vec::new();
@@ -313,7 +299,7 @@ impl Chunk {
         }
 
         if finished && !junk.is_empty() {
-            return Err(HttpClientError::new_with_message(
+            return Err(HttpClientError::from_str(
                 ErrorKind::BodyDecode,
                 "Invalid Chunk Body",
             ));

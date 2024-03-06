@@ -30,8 +30,8 @@ use crate::async_impl::client::Retryable;
 use crate::async_impl::conn::HttpBody;
 use crate::async_impl::StreamData;
 use crate::error::{ErrorKind, HttpClientError};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::util::dispatcher::http2::Http2Conn;
-use crate::{AsyncRead, AsyncWrite, ReadBuf};
 
 const UNUSED_FLAG: u8 = 0x0;
 
@@ -53,28 +53,28 @@ where
     match build_data_frame(conn.id as usize, body).await? {
         None => {
             let headers = build_headers_frame(conn.id, part, true)
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
             conn.send_frame_to_controller(headers).map_err(|e| {
                 retryable.set_retry(true);
-                HttpClientError::new_with_cause(ErrorKind::Request, Some(e))
+                HttpClientError::from_error(ErrorKind::Request, Some(e))
             })?;
         }
         Some(data) => {
             let headers = build_headers_frame(conn.id, part, false)
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
             conn.send_frame_to_controller(headers).map_err(|e| {
                 retryable.set_retry(true);
-                HttpClientError::new_with_cause(ErrorKind::Request, Some(e))
+                HttpClientError::from_error(ErrorKind::Request, Some(e))
             })?;
             conn.send_frame_to_controller(data).map_err(|e| {
                 retryable.set_retry(true);
-                HttpClientError::new_with_cause(ErrorKind::Request, Some(e))
+                HttpClientError::from_error(ErrorKind::Request, Some(e))
             })?;
         }
     }
     let frame = Pin::new(&mut conn.stream_info)
         .await
-        .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+        .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
     frame_2_response(conn, frame, retryable)
 }
 
@@ -91,9 +91,9 @@ where
             let (pseudo, fields) = headers.parts();
             let status_code = match pseudo.status() {
                 Some(status) => StatusCode::from_bytes(status.as_bytes())
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?,
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?,
                 None => {
-                    return Err(HttpClientError::new_with_cause(
+                    return Err(HttpClientError::from_error(
                         ErrorKind::Request,
                         Some(HttpError::from(H2Error::StreamError(
                             conn.id,
@@ -109,23 +109,20 @@ where
             }
         }
         Payload::RstStream(reset) => {
-            return Err(HttpClientError::new_with_cause(
+            return Err(HttpClientError::from_error(
                 ErrorKind::Request,
                 Some(HttpError::from(reset.error(conn.id).map_err(|e| {
-                    HttpClientError::new_with_cause(ErrorKind::Request, Some(e))
+                    HttpClientError::from_error(ErrorKind::Request, Some(e))
                 })?)),
             ));
         }
         Payload::Goaway(_) => {
             // return Err(HttpClientError::from(ErrorKind::Resend));
             retryable.set_retry(true);
-            return Err(HttpClientError::new_with_message(
-                ErrorKind::Request,
-                "GoAway",
-            ));
+            return Err(HttpClientError::from_str(ErrorKind::Request, "GoAway"));
         }
         _ => {
-            return Err(HttpClientError::new_with_cause(
+            return Err(HttpClientError::from_error(
                 ErrorKind::Request,
                 Some(HttpError::from(H2Error::StreamError(
                     conn.id,
@@ -143,7 +140,7 @@ where
             let content_length = part
                 .headers
                 .get("Content-Length")
-                .map(|v| v.to_str().unwrap_or(String::new()))
+                .map(|v| v.to_string().unwrap_or(String::new()))
                 .and_then(|s| s.parse::<usize>().ok());
             match content_length {
                 None => HttpBody::empty(),
@@ -168,7 +165,7 @@ pub(crate) async fn build_data_frame<T: Body>(
         let size = body
             .data(&mut buf)
             .await
-            .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Request, Some(e)))?;
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Request, Some(e)))?;
         if size == 0 {
             break;
         }
@@ -231,7 +228,7 @@ fn check_connection_specific_headers(id: u32, headers: &Headers) -> Result<(), H
         }
     }
     if let Some(te_value) = headers.get("te") {
-        if te_value.to_str()? != "trailers" {
+        if te_value.to_string()? != "trailers" {
             return Err(H2Error::StreamError(id, ErrorCode::ProtocolError).into());
         }
     }

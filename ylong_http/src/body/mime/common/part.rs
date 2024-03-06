@@ -488,7 +488,7 @@ mod ut_mime_part {
             .append_header("accept", "text/plain");
         let binding = part.inner.unwrap();
         let value = binding.headers.get("accept");
-        assert_eq!(value.unwrap().to_str().unwrap(), "text/html, text/plain");
+        assert_eq!(value.unwrap().to_string().unwrap(), "text/html, text/plain");
     }
 
     /// UT test cases for `MimePart::builder`.

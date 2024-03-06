@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Http client Util module.
+//! Ylong http client utility module.
 //!
 //! A tool module that supports various functions of the http client.
 //!
@@ -19,28 +19,21 @@
 //! -[`HttpConfig`] is used to configure `HTTP` related logic.
 //! -[`HttpVersion`] is used to provide Http Version.
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
+pub(crate) mod base64;
 pub(crate) mod config;
-#[cfg(feature = "__tls")]
-pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
-pub(crate) use config::{ClientConfig, ConnectorConfig, HttpConfig, HttpVersion};
-pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
+pub(crate) mod normalizer;
+pub(crate) mod pool;
+pub(crate) mod proxy;
+pub(crate) mod redirect;
 
 #[cfg(feature = "__c_openssl")]
 pub(crate) mod c_openssl;
-#[cfg(feature = "__c_openssl")]
-pub use c_openssl::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
-#[cfg(feature = "http2")]
-pub use config::H2Config;
 
 #[cfg(any(feature = "http1_1", feature = "http2"))]
 pub(crate) mod dispatcher;
 
-pub(crate) mod normalizer;
-pub(crate) mod pool;
-
-pub(crate) mod base64;
-pub(crate) mod proxy;
-pub(crate) mod redirect;
+#[cfg(feature = "__c_openssl")]
+pub use c_openssl::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
+#[cfg(feature = "__tls")]
+pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
+pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};

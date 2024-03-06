@@ -26,8 +26,7 @@ use crate::ErrorKind;
 /// # Examples
 ///
 /// ```
-/// use ylong_http_client::sync_impl::{BodyProcessError, BodyProcessor, BodyReader};
-/// use ylong_http_client::TextBody;
+/// use ylong_http_client::sync_impl::{BodyProcessError, BodyProcessor, BodyReader, TextBody};
 ///
 /// // Defines a processor, which provides read and echo ability.
 /// struct Processor {
@@ -89,7 +88,7 @@ impl<T: BodyProcessor> BodyReader<T> {
     ///
     /// ```
     /// use ylong_http_client::sync_impl::{BodyReader, DefaultBodyProcessor};
-    /// use ylong_http_client::util::Timeout;
+    /// use ylong_http_client::Timeout;
     ///
     /// let reader = BodyReader::new(DefaultBodyProcessor::new()).read_timeout(Timeout::none());
     /// ```
@@ -108,8 +107,7 @@ impl<T: BodyProcessor> BodyReader<T> {
     /// # Examples
     ///
     /// ```
-    /// use ylong_http_client::sync_impl::{BodyProcessor, BodyReader};
-    /// use ylong_http_client::TextBody;
+    /// use ylong_http_client::sync_impl::{BodyProcessor, BodyReader, TextBody};
     ///
     /// let mut body = TextBody::from_bytes(b"HelloWorld");
     /// let _ = BodyReader::default().read_all(&mut body);
@@ -125,18 +123,18 @@ impl<T: BodyProcessor> BodyReader<T> {
         loop {
             let read_len = body
                 .data(&mut buf)
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
 
             if read_len == 0 {
                 self.processor
                     .progress(written)
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
                 break;
             }
 
             self.processor
                 .write(&buf[..read_len])
-                .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+                .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
 
             written += read_len;
 
@@ -144,7 +142,7 @@ impl<T: BodyProcessor> BodyReader<T> {
             if now.duration_since(last) >= Duration::from_secs(1) {
                 self.processor
                     .progress(written)
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::BodyDecode, Some(e)))?;
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))?;
             }
             last = now;
         }

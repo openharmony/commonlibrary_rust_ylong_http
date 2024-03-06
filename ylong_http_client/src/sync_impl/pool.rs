@@ -16,11 +16,12 @@ use std::io::{Read, Write};
 use std::mem::take;
 use std::sync::{Arc, Mutex};
 
+use ylong_http::request::uri::Uri;
+
 use crate::error::{ErrorKind, HttpClientError};
 use crate::sync_impl::Connector;
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher};
 use crate::util::pool::{Pool, PoolKey};
-use crate::Uri;
 
 pub(crate) struct ConnPool<C, S> {
     pool: Pool<PoolKey, Conns<S>>,
@@ -91,8 +92,7 @@ impl<S: Read + Write + 'static> Conns<S> {
             Ok(conn)
         } else {
             let dispatcher = ConnDispatcher::http1(
-                connect_fn()
-                    .map_err(|e| HttpClientError::new_with_cause(ErrorKind::Connect, Some(e)))?,
+                connect_fn().map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?,
             );
             // We must be able to get the `Conn` here.
             let conn = dispatcher.dispatch().unwrap();

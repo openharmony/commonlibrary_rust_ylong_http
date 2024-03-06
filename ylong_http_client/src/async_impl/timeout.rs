@@ -14,32 +14,38 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
-use ylong_http::response::Response;
-
-use crate::async_impl::HttpBody;
-use crate::{ErrorKind, HttpClientError, Sleep};
+use super::Response;
+use crate::error::HttpClientError;
+use crate::runtime::{sleep, Sleep};
 
 pub(crate) struct TimeoutFuture<T> {
     pub(crate) timeout: Option<Pin<Box<Sleep>>>,
     pub(crate) future: T,
 }
 
+impl<T> TimeoutFuture<Pin<Box<T>>> {
+    pub(crate) fn new(future: T, timeout: Duration) -> Self {
+        Self {
+            timeout: Some(Box::pin(sleep(timeout))),
+            future: Box::pin(future),
+        }
+    }
+}
+
 impl<T> Future for TimeoutFuture<T>
 where
-    T: Future<Output = Result<Response<HttpBody>, HttpClientError>> + Unpin,
+    T: Future<Output = Result<Response, HttpClientError>> + Unpin,
 {
-    type Output = Result<Response<HttpBody>, HttpClientError>;
+    type Output = Result<Response, HttpClientError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
         if let Some(delay) = this.timeout.as_mut() {
             if let Poll::Ready(()) = delay.as_mut().poll(cx) {
-                return Poll::Ready(Err(HttpClientError::new_with_message(
-                    ErrorKind::Timeout,
-                    "Request timeout",
-                )));
+                return Poll::Ready(err_from_io!(Timeout, std::io::ErrorKind::TimedOut.into()));
             }
         }
         match Pin::new(&mut this.future).poll(cx) {
@@ -79,11 +85,15 @@ mod ut_timeout {
                 headers: Default::default(),
             };
             let body = HttpBody::new(BodyLength::Empty, Box::new([].as_slice()), &[]).unwrap();
-            Ok(Response::from_raw_parts(part, body))
+            Ok(crate::async_impl::Response::new(Response::from_raw_parts(
+                part, body,
+            )))
         });
 
         let future2 = Box::pin(async {
-            Result::<Response<HttpBody>, HttpClientError>::Err(HttpClientError::user_aborted())
+            Result::<crate::async_impl::Response, HttpClientError>::Err(
+                HttpClientError::user_aborted(),
+            )
         });
 
         let time_future1 = TimeoutFuture {

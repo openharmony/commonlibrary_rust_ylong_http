@@ -181,24 +181,6 @@ impl<T: AsyncRead + Unpin + Send + Sync> TextBody<FromAsyncReader<T>> {
     }
 }
 
-impl<T: async_impl::Body> TextBody<FromAsyncBody<T>> {
-    /// Creates a `TextBody` from an asynchronous body.
-    ///
-    /// ```no_run
-    /// use ylong_http::body::TextBody;
-    ///
-    /// async fn text_body_from_async_body() {
-    ///     let reader = "Hello World";
-    ///     let body = TextBody::from_async_body(reader.as_bytes());
-    /// }
-    /// ```
-    pub fn from_async_body(body: T) -> Self {
-        Self {
-            from: FromAsyncBody::new(body),
-        }
-    }
-}
-
 impl<'a> sync_impl::Body for TextBody<FromBytes<'a>> {
     type Error = Error;
 
@@ -241,18 +223,6 @@ impl<T: AsyncRead + Unpin + Send + Sync> async_impl::Body for TextBody<FromAsync
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-impl<T: async_impl::Body> async_impl::Body for TextBody<FromAsyncBody<T>> {
-    type Error = T::Error;
-
-    fn poll_data(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
-        Pin::new(&mut *self.from).poll_data(cx, buf)
     }
 }
 

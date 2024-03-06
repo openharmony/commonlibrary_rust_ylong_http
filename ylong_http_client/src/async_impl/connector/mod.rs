@@ -21,9 +21,10 @@ use std::io;
 
 /// Information of an IO.
 pub use stream::ConnInfo;
+use ylong_http::request::uri::Uri;
 
-use crate::util::ConnectorConfig;
-use crate::{AsyncRead, AsyncWrite, TcpStream, Uri};
+use crate::runtime::{AsyncRead, AsyncWrite, TcpStream};
+use crate::util::config::ConnectorConfig;
 
 /// `Connector` trait used by `async_impl::Client`. `Connector` provides
 /// asynchronous connection establishment interfaces.
@@ -70,9 +71,11 @@ mod no_tls {
     use core::pin::Pin;
     use std::io::Error;
 
+    use ylong_http::request::uri::Uri;
+
     use super::{tcp_stream, Connector, HttpConnector};
     use crate::async_impl::connector::stream::HttpStream;
-    use crate::{TcpStream, Uri};
+    use crate::runtime::TcpStream;
 
     impl Connector for HttpConnector {
         type Stream = HttpStream<TcpStream>;
@@ -101,13 +104,16 @@ mod no_tls {
 mod tls {
     use core::future::Future;
     use core::pin::Pin;
+    use std::error;
+    use std::fmt::{Debug, Display, Formatter};
     use std::io::{Error, ErrorKind, Write};
+
+    use ylong_http::request::uri::{Scheme, Uri};
 
     use super::{tcp_stream, Connector, HttpConnector};
     use crate::async_impl::connector::stream::HttpStream;
     use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
-    use crate::error::CauseMessage;
-    use crate::{AsyncReadExt, AsyncWriteExt, Scheme, TcpStream, Uri};
+    use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
     impl Connector for HttpConnector {
         type Stream = HttpStream<MixStream<TcpStream>>;
@@ -130,7 +136,7 @@ mod tls {
                     .proxy_info()
                     .basic_auth
                     .as_ref()
-                    .and_then(|v| v.to_str().ok());
+                    .and_then(|v| v.to_string().ok());
                 is_proxy = true;
             }
 
@@ -199,7 +205,7 @@ mod tls {
             let n = conn.read(&mut buf[pos..]).await?;
 
             if n == 0 {
-                return Err(other_io_error("error receiving from proxy"));
+                return Err(other_io_error(CreateTunnelErr::Unsuccessful));
             }
 
             pos += n;
@@ -209,17 +215,41 @@ mod tls {
                     return Ok(conn);
                 }
                 if pos == buf.len() {
-                    return Err(other_io_error("proxy headers too long for tunnel"));
+                    return Err(other_io_error(CreateTunnelErr::ProxyHeadersTooLong));
                 }
             } else if resp.starts_with(b"HTTP/1.1 407") {
-                return Err(other_io_error("proxy authentication required"));
+                return Err(other_io_error(CreateTunnelErr::ProxyAuthenticationRequired));
             } else {
-                return Err(other_io_error("unsuccessful tunnel"));
+                return Err(other_io_error(CreateTunnelErr::Unsuccessful));
             }
         }
     }
 
-    fn other_io_error(msg: &str) -> Error {
-        Error::new(ErrorKind::Other, CauseMessage::new(msg))
+    fn other_io_error(err: CreateTunnelErr) -> Error {
+        Error::new(ErrorKind::Other, err)
     }
+
+    enum CreateTunnelErr {
+        ProxyHeadersTooLong,
+        ProxyAuthenticationRequired,
+        Unsuccessful,
+    }
+
+    impl Debug for CreateTunnelErr {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::ProxyHeadersTooLong => f.write_str("Proxy headers too long for tunnel"),
+                Self::ProxyAuthenticationRequired => f.write_str("Proxy authentication required"),
+                Self::Unsuccessful => f.write_str("Unsuccessful tunnel"),
+            }
+        }
+    }
+
+    impl Display for CreateTunnelErr {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            Debug::fmt(self, f)
+        }
+    }
+
+    impl error::Error for CreateTunnelErr {}
 }

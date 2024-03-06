@@ -36,7 +36,7 @@ use crate::error::{ErrorKind, HttpError};
 ///
 /// let status = StatusCode::OK;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct StatusCode(u16);
 
 impl StatusCode {
@@ -110,12 +110,6 @@ impl StatusCode {
             (((self.0 % 100) / 10) as u8) + b'0',
             ((self.0 % 10) as u8) + b'0',
         ]
-    }
-
-    /// StatusCode as str.
-    // TODO: Adapter, remove it later.
-    pub fn as_str(&self) -> String {
-        format!("{}", self.0)
     }
 
     /// Determines whether the `StatusCode` is [`1xx (Informational)`].

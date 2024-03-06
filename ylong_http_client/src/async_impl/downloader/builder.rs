@@ -12,9 +12,8 @@
 // limitations under the License.
 
 use super::{Console, DownloadConfig, DownloadOperator, Downloader};
-// TODO: Adapter, use Response<HttpBody> later.
 use crate::async_impl::Response;
-use crate::{SpeedLimit, Timeout};
+use crate::util::{SpeedLimit, Timeout};
 
 /// A builder that can create a `Downloader`.
 ///

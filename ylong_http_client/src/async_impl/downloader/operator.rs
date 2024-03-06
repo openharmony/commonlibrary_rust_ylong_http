@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::HttpClientError;
+use crate::error::HttpClientError;
 
 /// The trait defines the functionality required for processing bodies of HTTP
 /// messages.
@@ -139,7 +139,10 @@ impl DownloadOperator for Console {
         _cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<Result<usize, HttpClientError>> {
-        println!("{data:?}");
+        println!(
+            "{}",
+            std::str::from_utf8(data).unwrap_or("<Contains non-UTF8>")
+        );
         Poll::Ready(Ok(data.len()))
     }
 

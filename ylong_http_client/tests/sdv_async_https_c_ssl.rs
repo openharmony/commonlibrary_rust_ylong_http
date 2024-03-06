@@ -23,8 +23,6 @@ mod common;
 
 use std::path::PathBuf;
 
-use ylong_http_client::Body;
-
 use crate::common::init_test_work_runtime;
 
 // TODO: Add doc for sdv tests.

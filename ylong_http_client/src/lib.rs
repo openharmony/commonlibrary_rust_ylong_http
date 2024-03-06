@@ -16,7 +16,8 @@
 //! response.
 //!
 //! # Supported HTTP Version
-//! - HTTP1.1
+//! - HTTP/1.1
+//! - HTTP/2
 // TODO: Need doc.
 
 // ylong_http crate re-export.
@@ -33,11 +34,15 @@ pub use ylong_http::response::status::StatusCode;
 pub use ylong_http::response::ResponsePart;
 pub use ylong_http::version::Version;
 
-#[cfg(all(feature = "async", any(feature = "http1_1", feature = "http2")))]
-pub mod async_impl;
+#[macro_use]
+#[cfg(all(
+    any(feature = "async", feature = "sync"),
+    any(feature = "http1_1", feature = "http2"),
+))]
+mod error;
 
 #[cfg(all(feature = "async", any(feature = "http1_1", feature = "http2")))]
-pub use async_impl::{Body, RequestBuilder, Response};
+pub mod async_impl;
 
 #[cfg(all(feature = "sync", any(feature = "http1_1", feature = "http2")))]
 pub mod sync_impl;
@@ -46,44 +51,42 @@ pub mod sync_impl;
     any(feature = "async", feature = "sync"),
     any(feature = "http1_1", feature = "http2"),
 ))]
-mod error;
+pub(crate) mod util;
 
 #[cfg(all(
     any(feature = "async", feature = "sync"),
     any(feature = "http1_1", feature = "http2"),
 ))]
 pub use error::{ErrorKind, HttpClientError};
-
-#[cfg(all(
-    any(feature = "async", feature = "sync"),
-    any(feature = "http1_1", feature = "http2"),
-))]
-pub mod util;
-
-#[cfg(all(feature = "tokio_base", feature = "http2"))]
-pub(crate) use tokio::sync::{
-    mpsc::{error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender},
-    Mutex as AsyncMutex, MutexGuard,
-};
-#[cfg(all(feature = "tokio_base", feature = "async"))]
-pub(crate) use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
-    net::TcpStream,
-    time::{sleep, timeout, Sleep},
-};
 #[cfg(all(
     any(feature = "async", feature = "sync"),
     any(feature = "http1_1", feature = "http2"),
 ))]
 pub use util::*;
-#[cfg(all(feature = "ylong_base", feature = "http2"))]
-pub(crate) use ylong_runtime::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    Mutex as AsyncMutex, MutexGuard, RecvError as TryRecvError,
-};
-#[cfg(all(feature = "ylong_base", feature = "async"))]
-pub(crate) use ylong_runtime::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
-    net::TcpStream,
-    time::{sleep, timeout, Sleep},
-};
+
+// Runtime components import adapter.
+#[cfg(any(feature = "tokio_base", feature = "ylong_base"))]
+pub(crate) mod runtime {
+    #[cfg(all(feature = "tokio_base", feature = "http2"))]
+    pub(crate) use tokio::sync::{
+        mpsc::{error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex as AsyncMutex, MutexGuard,
+    };
+    #[cfg(all(feature = "tokio_base", feature = "async"))]
+    pub(crate) use tokio::{
+        io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+        net::TcpStream,
+        time::{sleep, timeout, Sleep},
+    };
+    #[cfg(all(feature = "ylong_base", feature = "http2"))]
+    pub(crate) use ylong_runtime::sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex as AsyncMutex, MutexGuard, RecvError as TryRecvError,
+    };
+    #[cfg(feature = "ylong_base")]
+    pub(crate) use ylong_runtime::{
+        io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+        net::TcpStream,
+        time::{sleep, timeout, Sleep},
+    };
+}

@@ -35,7 +35,7 @@ macro_rules! async_client_test_on_tcp {
     ) => {{
 
         // The number of servers may be variable based on the number of servers set by the user.
-        // However, cliipy checks that the variable does not need to be variable.
+        // However, clippy checks that the variable does not need to be variable.
         #[allow(unused_mut, unused_assignments)]
         let mut server_num = 1;
         $(server_num = $client_num;)?
@@ -200,7 +200,7 @@ macro_rules! async_client_assertions_on_tcp {
                         .headers()
                         .get($resp_n)
                         .expect(format!("Get response header \"{}\" failed", $resp_n).as_str())
-                        .to_str()
+                        .to_string()
                         .expect(format!("Convert response header \"{}\"into string failed", $resp_n).as_str()),
                     $resp_v,
                     "Assert response header \"{}\" failed", $resp_n,
@@ -209,7 +209,6 @@ macro_rules! async_client_assertions_on_tcp {
                 let mut size = 0;
                 loop {
                     let read = response
-                        .body_mut()
                         .data(&mut buf[size..]).await
                         .expect("Response body read failed");
                     if read == 0 {

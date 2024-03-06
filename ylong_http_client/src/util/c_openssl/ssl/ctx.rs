@@ -14,8 +14,6 @@
 use core::{fmt, mem, ptr};
 use std::ffi::CString;
 use std::path::Path;
-use std::ptr::{null, null_mut};
-use std::sync::Weak;
 
 use libc::{c_int, c_long, c_uint, c_void};
 
@@ -34,12 +32,8 @@ use crate::util::c_openssl::ffi::ssl::{
     SSL_CTX_use_certificate_file, SSL_CTX,
 };
 use crate::util::c_openssl::foreign::{Foreign, ForeignRef};
-use crate::util::c_openssl::x509::{X509Ref, X509};
 use crate::util::c_openssl::{cert_verify, check_ptr, check_ret, ssl_init};
 use crate::util::config::tls::DefaultCertVerifier;
-use crate::{CertVerifier, ServerCerts};
-
-const SSL_CTRL_EXTRA_CHAIN_CERT: c_int = 14;
 
 const SSL_CTRL_SET_MIN_PROTO_VERSION: c_int = 123;
 const SSL_CTRL_SET_MAX_PROTO_VERSION: c_int = 124;

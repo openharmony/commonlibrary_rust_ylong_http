@@ -955,7 +955,7 @@ impl PartsIter {
                     return self
                         .map
                         .next()
-                        .map(|(h, v)| (Field::Other(h.to_string()), v.to_str().unwrap()));
+                        .map(|(h, v)| (Field::Other(h.to_string()), v.to_string().unwrap()));
                 }
             }
         }

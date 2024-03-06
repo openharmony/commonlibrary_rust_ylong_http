@@ -14,19 +14,18 @@
 //! This is a simple asynchronous HTTP client redirect example using the
 //! ylong_http_client crate. It demonstrates creating a client, making a
 //! request, and reading the response asynchronously.
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::async_impl::{ClientBuilder, Downloader};
-#[cfg(feature = "tokio_base")]
-use ylong_http_client::{HttpClientError, Redirect, Request};
-#[cfg(feature = "tokio_base")]
+
+use ylong_http_client::async_impl::{Body, ClientBuilder, Downloader, Request};
+use ylong_http_client::{HttpClientError, Redirect};
+
 #[tokio::main]
 async fn main() -> Result<(), HttpClientError> {
     // Creates a `async_impl::Client`
     let client = ClientBuilder::new().redirect(Redirect::default()).build()?;
     // Creates a `Request`.
-    let request = Request::get("127.0.0.1:3000")
-        .body("".as_bytes())
-        .map_err(|e| HttpClientError::other(Some(e)))?;
+    let request = Request::builder()
+        .url("127.0.0.1:3000")
+        .body(Body::empty())?;
 
     // Sends request and receives a `Response`.
     let response = client.request(request).await?;

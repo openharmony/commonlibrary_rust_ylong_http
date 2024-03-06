@@ -13,10 +13,7 @@
 
 use std::io::{Read, Write};
 
-use ylong_http::body::sync_impl::Body;
-use ylong_http::request::Request;
-use ylong_http::response::Response;
-
+use super::{Body, Request, Response};
 use crate::error::HttpClientError;
 use crate::sync_impl::HttpBody;
 use crate::util::dispatcher::Conn;

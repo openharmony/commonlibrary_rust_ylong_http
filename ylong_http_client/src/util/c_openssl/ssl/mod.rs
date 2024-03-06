@@ -19,7 +19,7 @@ mod ssl_base;
 mod stream;
 mod version;
 
-pub(crate) use ctx::{SslContext, SslContextBuilder, SSL_VERIFY_NONE, SSL_VERIFY_PEER};
+pub(crate) use ctx::{SslContext, SslContextBuilder, SSL_VERIFY_NONE};
 pub(crate) use error::{InternalError, SslError, SslErrorCode};
 pub(crate) use filetype::SslFiletype;
 pub(crate) use method::SslMethod;

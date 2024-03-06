@@ -19,12 +19,11 @@ use std::time::Instant;
 pub use builder::DownloaderBuilder;
 use builder::WantsBody;
 use operator::Console;
-pub use operator::{DownloadFuture, DownloadOperator, ProgressFuture};
-use ylong_http::body::async_impl::Body;
+pub use operator::DownloadOperator;
 
-// TODO: Adapter, use Response<HttpBody> later.
 use crate::async_impl::Response;
-use crate::{ErrorKind, HttpClientError, SpeedLimit, Timeout};
+use crate::error::HttpClientError;
+use crate::util::{SpeedLimit, Timeout};
 
 /// A downloader that can help you download the response body.
 ///
@@ -169,7 +168,7 @@ impl<T: DownloadOperator + Unpin> Downloader<T> {
                 .body
                 .headers()
                 .get("Content")
-                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.to_string().ok())
                 .and_then(|v| v.parse::<u64>().ok());
             self.info = Some(DownloadInfo::new(content_length));
         }
@@ -185,18 +184,12 @@ impl<T: DownloadOperator + Unpin> Downloader<T> {
         let mut buf = [0; 16 * 1024];
 
         loop {
-            let data_size = match self.body.body_mut().data(&mut buf).await {
-                Ok(0) => {
+            let data_size = match self.body.data(&mut buf).await? {
+                0 => {
                     self.show_progress().await?;
                     return Ok(());
                 }
-                Ok(size) => size,
-                Err(e) => {
-                    return Err(HttpClientError::new_with_cause(
-                        ErrorKind::BodyTransfer,
-                        Some(e),
-                    ))
-                }
+                size => size,
             };
 
             let data = &buf[..data_size];
@@ -214,10 +207,7 @@ impl<T: DownloadOperator + Unpin> Downloader<T> {
         if let Some(timeout) = self.config.timeout.inner() {
             let now = Instant::now();
             if now.duration_since(self.info.as_mut().unwrap().start_time) >= timeout {
-                return Err(HttpClientError::new_with_message(
-                    ErrorKind::Timeout,
-                    "Download timeout",
-                ));
+                return err_from_io!(Timeout, std::io::ErrorKind::TimedOut.into());
             }
         }
         Ok(())
@@ -266,8 +256,8 @@ mod ut_downloader {
     use ylong_http::h1::ResponseDecoder;
     use ylong_http::response::Response;
 
-    use crate::async_impl::adapter::Response as adpater_resp;
-    use crate::async_impl::{Downloader, HttpBody, StreamData};
+    use crate::async_impl::conn::StreamData;
+    use crate::async_impl::{Downloader, HttpBody, Response as adpater_resp};
     use crate::util::normalizer::BodyLength;
 
     impl StreamData for &[u8] {

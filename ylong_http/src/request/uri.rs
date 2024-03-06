@@ -290,6 +290,29 @@ impl Uri {
     ) {
         (self.scheme, self.authority, self.path, self.query)
     }
+
+    /// Creates an `Uri` from `Scheme`, `Authority`, `Path`, `Query`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http::request::uri::Uri;
+    ///
+    /// let uri = Uri::from_raw_parts(None, None, None, None);
+    /// ```
+    pub fn from_raw_parts(
+        scheme: Option<Scheme>,
+        authority: Option<Authority>,
+        path: Option<Path>,
+        query: Option<Query>,
+    ) -> Self {
+        Self {
+            scheme,
+            authority,
+            path,
+            query,
+        }
+    }
 }
 
 impl ToString for Uri {
