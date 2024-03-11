@@ -570,6 +570,7 @@ impl TlsFileType {
 /// let cert = Cert::from_der(der);
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct Cert(X509);
 
 impl Cert {
@@ -636,10 +637,12 @@ impl Cert {
 ///     let certs = Certificate::from_pem(pem);
 /// }
 /// ```
+#[derive(Clone)]
 pub struct Certificate {
     inner: CertificateList,
 }
 
+#[derive(Clone)]
 pub(crate) enum CertificateList {
     CertList(Vec<Cert>),
     #[cfg(feature = "c_openssl_3_0")]
@@ -796,6 +799,34 @@ mod ut_openssl_adapter {
 
         let builder = TlsConfigBuilder::new().add_root_certificates(certs).build();
         assert!(builder.is_ok());
+    }
+
+    /// UT test cases for `Certificate::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Certificate` by calling `Certificate::from_pem`.
+    /// 2. Creates another `Certificate` by calling `Certificate::clone`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn ut_certificate_clone() {
+        let pem = include_bytes!("../../../tests/file/root-ca.pem");
+        let certificate = Certificate::from_pem(pem).unwrap();
+        drop(certificate.clone());
+    }
+
+    /// UT test cases for `Cert::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Cert` by calling `Cert::from_pem`.
+    /// 2. Creates another `Cert` by calling `Cert::clone`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn ut_cert_clone() {
+        let pem = include_bytes!("../../../tests/file/root-ca.pem");
+        let cert = Cert::from_pem(pem).unwrap();
+        drop(cert.clone());
     }
 
     /// UT test cases for `TlsConfigBuilder::build_in_root_certs`.

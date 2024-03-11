@@ -52,6 +52,8 @@ extern "C" {
     pub(crate) fn X509_get_pubkey(a: *mut C_X509) -> *mut EVP_PKEY;
 
     pub(crate) fn X509_verify(a: *mut C_X509, pkey: *mut EVP_PKEY) -> c_int;
+
+    pub(crate) fn X509_up_ref(x: *mut C_X509) -> c_int;
 }
 pub(crate) enum X509_NAME {}
 

@@ -29,8 +29,8 @@ use super::ffi::x509::{
     X509_STORE_CTX_get0_cert, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new,
     X509_VERIFY_PARAM_free, X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
     X509_VERIFY_PARAM_set_hostflags, X509_get_issuer_name, X509_get_pubkey, X509_get_subject_name,
-    X509_get_version, X509_verify, X509_verify_cert_error_string, EVP_PKEY, STACK_X509, X509_NAME,
-    X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM,
+    X509_get_version, X509_up_ref, X509_verify, X509_verify_cert_error_string, EVP_PKEY,
+    STACK_X509, X509_NAME, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM,
 };
 use super::foreign::{Foreign, ForeignRef};
 use super::stack::Stackof;
@@ -146,6 +146,23 @@ impl X509Name {
 }
 impl Stackof for X509 {
     type StackType = STACK_X509;
+}
+
+impl Clone for X509 {
+    fn clone(&self) -> Self {
+        X509Ref::to_owned(self)
+    }
+}
+
+impl ToOwned for X509Ref {
+    type Owned = X509;
+
+    fn to_owned(&self) -> Self::Owned {
+        unsafe {
+            X509_up_ref(self.as_ptr());
+            X509::from_ptr(self.as_ptr())
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -268,5 +285,25 @@ impl X509StoreContextRef {
                 self.as_ptr() as *const _,
             ))?))
         }
+    }
+}
+
+#[cfg(test)]
+mod ut_x509 {
+
+    /// UT test cases for `X509::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `X509` by calling `X509::from_pem`.
+    /// 2. Creates another `X509` by calling `X509::clone`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn ut_x509_clone() {
+        use crate::util::c_openssl::x509::X509;
+
+        let pem = include_bytes!("../../../tests/file/root-ca.pem");
+        let x509 = X509::from_pem(pem).unwrap();
+        drop(x509.clone());
     }
 }
