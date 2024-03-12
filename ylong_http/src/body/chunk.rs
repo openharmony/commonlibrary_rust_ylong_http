@@ -861,6 +861,7 @@ pub struct ChunkBodyDecoder {
     trailer: Vec<u8>,
     cr_meet: bool,
     chunk_flag: bool,
+    num_flag: bool,
     is_last_chunk: bool,
     is_chunk_trailer: bool,
     is_trailer: bool,
@@ -886,6 +887,7 @@ impl ChunkBodyDecoder {
             trailer: vec![],
             cr_meet: false,
             chunk_flag: false,
+            num_flag: false,
             is_last_chunk: false,
             is_chunk_trailer: false,
             is_trailer: false,
@@ -1083,8 +1085,9 @@ impl ChunkBodyDecoder {
                         self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
                         continue;
                     }
-                    if self.is_trailer && !self.chunk_flag {
+                    if self.is_trailer && !self.chunk_flag && !self.num_flag {
                         self.is_chunk_trailer = true;
+                        self.num_flag = false;
                         return self.skip_extension(&buf[i..]);
                     } else {
                         self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
@@ -1094,27 +1097,31 @@ impl ChunkBodyDecoder {
                 b'1'..=b'9' => {
                     self.hex_count = Self::hex_to_decimal(self.hex_count, b as i64 - '0' as i64)?;
                     self.chunk_flag = true;
+                    self.num_flag = true;
                     continue;
                 }
-
                 b'a'..=b'f' => {
                     self.hex_count =
                         Self::hex_to_decimal(self.hex_count, b as i64 - 'a' as i64 + 10i64)?;
                     self.chunk_flag = true;
+                    self.num_flag = true;
                     continue;
                 }
                 b'A'..=b'F' => {
                     self.hex_count =
                         Self::hex_to_decimal(self.hex_count, b as i64 - 'A' as i64 + 10i64)?;
                     self.chunk_flag = true;
+                    self.num_flag = true;
                     continue;
                 }
                 b' ' | b'\t' | b';' | b'\r' | b'\n' => {
                     if self.is_chunk_trailer {
+                        self.num_flag = false;
                         return self.skip_trailer_crlf(&buf[i..]);
                     } else {
                         self.total_size = self.hex_count as usize;
                         self.hex_count = 0;
+                        self.num_flag = false;
                         // Decode to the last chunk
                         return if self.total_size == 0 {
                             self.is_last_chunk = true;
@@ -2131,6 +2138,81 @@ mod ut_chunk {
         let mut decoder = ChunkBodyDecoder::new().contains_trailer(true);
         let buf = b"010\r\nAAAAAAAAAAAAAAAA\r\n0\r\ntrailer:value\r\n\r\n";
         let res = decoder.decode(&buf[0..23]); // 010\r\nAAAAAAAAAAAAAAAA\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 0,
+            state: ChunkState::Finish,
+            size: 16,
+            extension: ChunkExt::new(),
+            data: "AAAAAAAAAAAAAAAA".as_bytes(),
+            trailer: None,
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[23..39]); // 0\r\ntrailer:value
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 1,
+            state: ChunkState::Data,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some("trailer:value".as_bytes()),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[39..41]); //\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 2,
+            state: ChunkState::DataCrlf,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some(&[] as &[u8]),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[41..]); //\r\n
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 3,
+            state: ChunkState::Finish,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: Some(&[] as &[u8]),
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let trailer_headers = decoder.get_trailer().unwrap().unwrap();
+        let value = trailer_headers.get("trailer");
+        assert_eq!(value.unwrap().to_string().unwrap(), "value");
+    }
+
+    /// UT test cases for `ChunkBodyDecoder::decode`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ChunkBodyDecoder` by calling `ChunkBodyDecoder::new`.
+    /// 2. Decodes chunk body by calling `ChunkBodyDecoder::decode`
+    /// 3. Checks if the test result is correct.
+    #[test]
+    fn ut_chunk_body_decode_8() {
+        let mut decoder = ChunkBodyDecoder::new().contains_trailer(true);
+        let buf = b"010\r\nAAAAAAAAAAAAAAAA\r\n0\r\ntrailer:value\r\n\r\n";
+        let res = decoder.decode(&buf[0..2]); // 01
+        let mut chunks = Chunks::new();
+        chunks.push(Chunk {
+            id: 0,
+            state: ChunkState::MetaSize,
+            size: 0,
+            extension: ChunkExt::new(),
+            data: &[] as &[u8],
+            trailer: None,
+        });
+        assert_eq!(res, Ok((chunks, &[] as &[u8])));
+
+        let res = decoder.decode(&buf[2..23]); // 0\r\nAAAAAAAAAAAAAAAA\r\n
         let mut chunks = Chunks::new();
         chunks.push(Chunk {
             id: 0,
