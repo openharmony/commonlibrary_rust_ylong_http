@@ -754,14 +754,14 @@ mod ut_request {
     fn ut_request_builder_build_2() {
         let mut request = RequestBuilder::new()
             .method("GET")
-            .url("www.baidu.com")
+            .url("www.example.com")
             .version("HTTP/1.1")
             .header("ACCEPT", "text/html")
             .body(())
             .unwrap();
 
         *request.method_mut() = Method::POST;
-        *request.uri_mut() = Uri::try_from("www.google.com").unwrap();
+        *request.uri_mut() = Uri::try_from("www.test.com").unwrap();
         *request.version_mut() = Version::HTTP2;
         let _ = request.headers_mut().insert("accept", "application/xml");
 
@@ -769,7 +769,7 @@ mod ut_request {
         let _ = new_headers.insert("accept", "application/xml");
 
         assert_eq!(request.method().as_str(), "POST");
-        assert_eq!(request.uri().to_string().as_str(), "www.google.com");
+        assert_eq!(request.uri().to_string().as_str(), "www.test.com");
         assert_eq!(request.version().as_str(), "HTTP/2.0");
         assert_eq!(request.headers(), &new_headers);
     }
