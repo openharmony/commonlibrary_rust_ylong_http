@@ -806,7 +806,7 @@ mod ut_openssl_adapter {
     /// # Brief
     /// 1. Creates a `Certificate` by calling `Certificate::from_pem`.
     /// 2. Creates another `Certificate` by calling `Certificate::clone`.
-    /// 2. Checks if the result is as expected.
+    /// 3. Checks if the result is as expected.
     #[test]
     #[allow(clippy::redundant_clone)]
     fn ut_certificate_clone() {
@@ -820,7 +820,7 @@ mod ut_openssl_adapter {
     /// # Brief
     /// 1. Creates a `Cert` by calling `Cert::from_pem`.
     /// 2. Creates another `Cert` by calling `Cert::clone`.
-    /// 2. Checks if the result is as expected.
+    /// 3. Checks if the result is as expected.
     #[test]
     #[allow(clippy::redundant_clone)]
     fn ut_cert_clone() {

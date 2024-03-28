@@ -296,7 +296,7 @@ mod ut_x509 {
     /// # Brief
     /// 1. Creates a `X509` by calling `X509::from_pem`.
     /// 2. Creates another `X509` by calling `X509::clone`.
-    /// 2. Checks if the result is as expected.
+    /// 3. Checks if the result is as expected.
     #[test]
     #[allow(clippy::redundant_clone)]
     fn ut_x509_clone() {

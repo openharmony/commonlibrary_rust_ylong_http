@@ -390,3 +390,75 @@ fn poll_read_cursor(
 
     Poll::Ready(Ok(()))
 }
+
+#[cfg(test)]
+mod ut_client_request {
+    use crate::async_impl::{Body, RequestBuilder};
+
+    /// UT test cases for `RequestBuilder::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `RequestBuilder` by `RequestBuilder::default`.
+    /// 2. Checks if result is correct.
+    #[test]
+    fn ut_client_request_builder_default() {
+        let builder = RequestBuilder::default().append_header("name", "value");
+        let request = builder.body(Body::empty());
+        assert!(request.is_ok());
+
+        let request = RequestBuilder::default()
+            .append_header("name", "value")
+            .url("http://")
+            .body(Body::empty());
+        assert!(request.is_err())
+    }
+
+    /// UT test cases for `RequestBuilder::body`.
+    ///
+    /// # Brief
+    /// 1. Creates a `RequestBuilder` by `RequestBuilder::body`.
+    /// 2. Checks if result is correct.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_request_builder_body() {
+        use std::pin::Pin;
+
+        use ylong_http::body::{MultiPart, Part};
+        use ylong_runtime::futures::poll_fn;
+        use ylong_runtime::io::ReadBuf;
+
+        use crate::runtime::AsyncRead;
+
+        let mp = MultiPart::new().part(
+            Part::new()
+                .name("name")
+                .file_name("example.txt")
+                .mime("application/octet-stream")
+                .stream("1234".as_bytes())
+                .length(Some(4)),
+        );
+        let mut request = RequestBuilder::default().body(Body::multipart(mp)).unwrap();
+        assert!(!request.body_mut().reuse());
+        let handle = ylong_runtime::spawn(async move {
+            let mut buf = vec![0u8; 50];
+            let mut v_size = vec![];
+            let mut v_str = vec![];
+
+            loop {
+                let mut read_buf = ReadBuf::new(&mut buf);
+                poll_fn(|cx| Pin::new(request.body_mut()).poll_read(cx, &mut read_buf))
+                    .await
+                    .unwrap();
+
+                let len = read_buf.filled().len();
+                if len == 0 {
+                    break;
+                }
+                v_size.push(len);
+                v_str.extend_from_slice(&buf[..len]);
+            }
+            assert_eq!(v_size, vec![50, 50, 50, 50, 50, 11]);
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+}

@@ -1018,7 +1018,7 @@ impl ChunkBodyDecoder {
                 continue;
             }
 
-            if *b == b':' {
+            if *b == b':' && colon == 0 {
                 colon = i;
                 if lf == 0 {
                     let trailer_name = &self.trailer[..colon];
@@ -1035,12 +1035,22 @@ impl ChunkBodyDecoder {
                     break;
                 }
                 lf = i;
-                let trailer_value = &self.trailer[colon + 1..lf - 1];
+                let mut trailer_value = &self.trailer[colon + 1..lf - 1];
+                if let Some(start) = trailer_value.iter().position(|b| *b != b' ' && *b != b'\t') {
+                    trailer_value = &trailer_value[start..];
+                }
+                if let Some(end) = trailer_value
+                    .iter()
+                    .rposition(|b| *b != b' ' && *b != b'\t')
+                {
+                    trailer_value = &trailer_value[..end + 1];
+                }
                 let trailer_header_value = HeaderValue::from_bytes(trailer_value)?;
                 let _ = trailer_headers.insert::<HeaderName, HeaderValue>(
                     trailer_header_name.clone(),
                     trailer_header_value.clone(),
                 )?;
+                colon = 0;
             }
         }
 

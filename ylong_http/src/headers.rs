@@ -248,6 +248,17 @@ impl HeaderName {
     }
 }
 
+/// Returns a `String` value of the `HeaderName`.
+///
+/// # Examples
+///
+/// ```
+/// use ylong_http::headers::HeaderName;
+///
+/// let name = HeaderName::from_bytes(b"Example-Field").unwrap();
+/// let name_str = name.to_string();
+/// assert_eq!(name_str, "example-field");
+/// ```
 impl ToString for HeaderName {
     fn to_string(&self) -> String {
         self.name.clone()

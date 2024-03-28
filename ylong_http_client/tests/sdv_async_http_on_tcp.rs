@@ -36,6 +36,7 @@ fn sdv_async_client_send_request() {
         HTTP;
         Request: {
             Method: "GET",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -53,6 +54,7 @@ fn sdv_async_client_send_request() {
         HTTP;
         Request: {
             Method: "HEAD",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -69,6 +71,7 @@ fn sdv_async_client_send_request() {
         HTTP;
         Request: {
             Method: "POST",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -86,6 +89,7 @@ fn sdv_async_client_send_request() {
         HTTP;
         Request: {
             Method: "PUT",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -103,6 +107,7 @@ fn sdv_async_client_send_request() {
         HTTP;
         Request: {
             Method: "GET",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -130,6 +135,7 @@ fn sdv_client_send_request_repeatedly() {
         HTTP;
         Request: {
             Method: "GET",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -142,6 +148,7 @@ fn sdv_client_send_request_repeatedly() {
         },
         Request: {
             Method: "POST",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",
@@ -170,6 +177,7 @@ fn sdv_client_making_multiple_connections() {
         ClientNum: 5,
         Request: {
             Method: "GET",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
             Body: "Hello!",

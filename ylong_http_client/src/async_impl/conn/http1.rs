@@ -145,7 +145,7 @@ where
                 .to_string()
                 .ok()
                 .and_then(|v| v.find("close"))
-                .is_none()
+                .is_some()
             {
                 conn.shutdown()
             }
