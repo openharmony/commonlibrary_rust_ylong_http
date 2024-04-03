@@ -529,12 +529,13 @@ mod ut_async_http_body {
     #[test]
     fn ut_asnyc_chunk_trailer_1() {
         let handle = ylong_runtime::spawn(async move {
-            asnyc_chunk_trailer_1().await;
+            async_chunk_trailer_1().await;
+            async_chunk_trailer_2().await;
         });
         ylong_runtime::block_on(handle).unwrap();
     }
 
-    async fn asnyc_chunk_trailer_1() {
+    async fn async_chunk_trailer_1() {
         let box_stream = Box::new("".as_bytes());
         let chunk_body_bytes = "\
             5\r\n\
@@ -584,6 +585,28 @@ mod ut_async_http_body {
         // try read trailer part
         let res = async_impl::Body::trailer(&mut chunk).await.unwrap();
         assert!(res.is_none());
+    }
+
+    async fn async_chunk_trailer_2() {
+        let box_stream = Box::new("".as_bytes());
+        let chunk_body_bytes = "\
+            5\r\n\
+            hello\r\n\
+            C ; type = text ;end = !\r\n\
+            hello world!\r\n\
+            000; message = last\r\n\
+            Expires: Wed, 21 Oct 2015 07:27:00 GMT \r\n\r\n\
+            ";
+        let mut chunk =
+            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let res = async_impl::Body::trailer(&mut chunk)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            res.get("expires").unwrap().to_string().unwrap(),
+            "Wed, 21 Oct 2015 07:27:00 GMT".to_string()
+        );
     }
 
     /// UT test cases for `Body::data`.
