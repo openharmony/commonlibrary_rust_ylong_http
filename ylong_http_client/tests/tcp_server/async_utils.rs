@@ -18,6 +18,7 @@ macro_rules! async_client_test_on_tcp {
         $(ClientNum: $client_num: expr,)?
         $(Request: {
             Method: $method: expr,
+            Version: $req_version: expr,
             Path: $path: expr,
             $(
                 Header: $req_n: expr, $req_v: expr,
@@ -26,7 +27,7 @@ macro_rules! async_client_test_on_tcp {
         },
         Response: {
             Status: $status: expr,
-            Version: $version: expr,
+            Version: $resp_version: expr,
             $(
                 Header: $resp_n: expr, $resp_v: expr,
             )*
@@ -48,15 +49,17 @@ macro_rules! async_client_test_on_tcp {
             Handles: handles_vec,
             $(Request: {
                 Method: $method,
+                Version: $req_version,
                 Path: $path,
                 $(
                     Header: $req_n, $req_v,
                 )*
+                Header: "Accept", "*/*",
                 Body: $req_body,
             },
             Response: {
                 Status: $status,
-                Version: $version,
+                Version: $resp_version,
                 $(
                     Header: $resp_n, $resp_v,
                 )*
@@ -72,6 +75,7 @@ macro_rules! async_client_test_on_tcp {
             ShutDownHandles: shut_downs,
             $(Request: {
                 Method: $method,
+                Version: $req_version,
                 Path: $path,
                 $(
                     Header: $req_n, $req_v,
@@ -80,7 +84,7 @@ macro_rules! async_client_test_on_tcp {
             },
             Response: {
                 Status: $status,
-                Version: $version,
+                Version: $resp_version,
                 $(
                     Header: $resp_n, $resp_v,
                 )*
@@ -104,6 +108,7 @@ macro_rules! async_client_assert_on_tcp {
         ShutDownHandles: $shut_downs: expr,
         $(Request: {
             Method: $method: expr,
+            Version: $req_version: expr,
             Path: $path: expr,
             $(
             Header: $req_n: expr, $req_v: expr,
@@ -112,7 +117,7 @@ macro_rules! async_client_assert_on_tcp {
         },
         Response: {
             Status: $status: expr,
-            Version: $version: expr,
+            Version: $resp_version: expr,
             $(
             Header: $resp_n: expr, $resp_v: expr,
             )*
@@ -130,6 +135,7 @@ macro_rules! async_client_assert_on_tcp {
                     ClientRef: client,
                     $(Request: {
                         Method: $method,
+                        Version: $req_version,
                         Path: $path,
                         $(
                             Header: $req_n, $req_v,
@@ -138,7 +144,7 @@ macro_rules! async_client_assert_on_tcp {
                     },
                     Response: {
                         Status: $status,
-                        Version: $version,
+                        Version: $resp_version,
                         $(
                             Header: $resp_n, $resp_v,
                         )*
@@ -159,6 +165,7 @@ macro_rules! async_client_assertions_on_tcp {
         ClientRef: $client:expr,
         $(Request: {
             Method: $method: expr,
+            Version: $req_version: expr,
             Path: $path: expr,
             $(
             Header: $req_n: expr, $req_v: expr,
@@ -167,7 +174,7 @@ macro_rules! async_client_assertions_on_tcp {
         },
         Response: {
             Status: $status: expr,
-            Version: $version: expr,
+            Version: $resp_version: expr,
             $(
             Header: $resp_n: expr, $resp_v: expr,
             )*
@@ -179,6 +186,7 @@ macro_rules! async_client_assertions_on_tcp {
                 let request = build_client_request!(
                     Request: {
                         Method: $method,
+                        Version: $req_version,
                         Path: $path,
                         Addr: $handle.addr.as_str(),
                         $(
@@ -194,7 +202,7 @@ macro_rules! async_client_assertions_on_tcp {
                     .expect("Request send failed");
 
                 assert_eq!(response.status().as_u16(), $status, "Assert response status code failed") ;
-                assert_eq!(response.version().as_str(), $version, "Assert response version failed");
+                assert_eq!(response.version().as_str(), $resp_version, "Assert response version failed");
                 $(assert_eq!(
                     response
                         .headers()

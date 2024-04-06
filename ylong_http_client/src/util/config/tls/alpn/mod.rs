@@ -167,6 +167,25 @@ mod ut_alpn {
     #[test]
     fn ut_alpn_as_use_bytes() {
         assert_eq!(AlpnProtocol::HTTP09.as_use_bytes(), b"\x08http/0.9");
+        assert_eq!(AlpnProtocol::HTTP10.as_use_bytes(), b"\x08http/1.0");
+        assert_eq!(AlpnProtocol::HTTP11.as_use_bytes(), b"\x08http/1.1");
+        assert_eq!(AlpnProtocol::SPDY1.as_use_bytes(), b"\x06spdy/1");
+        assert_eq!(AlpnProtocol::SPDY2.as_use_bytes(), b"\x06spdy/2");
+        assert_eq!(AlpnProtocol::SPDY3.as_use_bytes(), b"\x06spdy/3");
+        assert_eq!(AlpnProtocol::H2.as_use_bytes(), b"\x02h2");
+        assert_eq!(AlpnProtocol::H2C.as_use_bytes(), b"\x03h2c");
+        assert_eq!(AlpnProtocol::H3.as_use_bytes(), b"\x02h3");
+    }
+
+    /// UT test cases for `AlpnProtocol::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `AlpnProtocol`.
+    /// 2. Compares the cloned values.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_alpn_clone() {
+        assert_eq!(AlpnProtocol::HTTP09, AlpnProtocol::HTTP09.clone());
     }
 
     /// UT test cases for `AlpnProtocol::id_sequence`.
@@ -188,6 +207,16 @@ mod ut_alpn {
     #[test]
     fn ut_alpn_list_new() {
         assert_eq!(AlpnProtocolList::new().as_slice(), b"");
+    }
+
+    /// UT test cases for `AlpnProtocolList::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `AlpnProtocolList` by `AlpnProtocolList::default`.
+    /// 2. Checks whether the result is correct.
+    #[test]
+    fn ut_alpn_list_default() {
+        assert_eq!(AlpnProtocolList::default().as_slice(), b"");
     }
 
     /// UT test cases for `AlpnProtocolList::add`.

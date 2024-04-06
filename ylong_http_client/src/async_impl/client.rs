@@ -27,6 +27,7 @@ use crate::util::proxy::Proxies;
 use crate::util::redirect::{RedirectInfo, Trigger};
 #[cfg(feature = "__tls")]
 use crate::CertVerifier;
+use crate::Retry;
 
 /// HTTP asynchronous client implementation. Users can use `async_impl::Client`
 /// to send `Request` asynchronously.
@@ -324,6 +325,24 @@ impl ClientBuilder {
     /// ```
     pub fn redirect(mut self, redirect: Redirect) -> Self {
         self.client.redirect = redirect;
+        self
+    }
+
+    /// Sets retry times for this client.
+    ///
+    /// The Retry is the number of times the client will retry the request if
+    /// the response is not obtained correctly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    /// use ylong_http_client::Retry;
+    ///
+    /// let builder = ClientBuilder::new().retry(Retry::max());
+    /// ```
+    pub fn retry(mut self, retry: Retry) -> Self {
+        self.client.retry = retry;
         self
     }
 
@@ -673,74 +692,34 @@ impl Default for ClientBuilder {
 
 #[cfg(test)]
 mod ut_async_impl_client {
-    use crate::async_impl::Client;
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+
+    #[cfg(feature = "ylong_base")]
+    use ylong_runtime::io::AsyncWriteExt;
+
+    #[cfg(feature = "ylong_base")]
     use crate::async_impl::{Body, Request, Response};
-    use crate::Proxy;
+    use crate::async_impl::{Client, HttpConnector};
+    #[cfg(feature = "ylong_base")]
+    use crate::util::test_utils::{format_header_str, TcpHandle};
+    #[cfg(feature = "ylong_base")]
+    use crate::{build_client_request, start_tcp_server, Retry};
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     use crate::{CertVerifier, ServerCerts};
-
-    /// UT test cases for `Client::builder`.
-    ///
-    /// # Brief
-    /// 1. Creates a ClientBuilder by calling `Client::Builder`.
-    /// 2. Calls `http_config`, `client_config`, `build` on the builder
-    ///    respectively.
-    /// 3. Checks if the result is as expected.
-    #[cfg(feature = "http1_1")]
-    #[test]
-    fn ut_client_builder() {
-        let builder = Client::builder().http1_only().build();
-        assert!(builder.is_ok());
-        let builder_proxy = Client::builder()
-            .proxy(Proxy::http("http://www.example.com").build().unwrap())
-            .build();
-        assert!(builder_proxy.is_ok());
-    }
-
-    /// UT test cases for `ClientBuilder::default`.
-    ///
-    /// # Brief
-    /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
-    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build`
-    ///    respectively.
-    /// 3. Checks if the result is as expected.
     #[cfg(feature = "__tls")]
-    #[test]
-    fn ut_client_builder_default() {
-        use crate::async_impl::ClientBuilder;
-        use crate::util::{Redirect, Timeout};
-
-        let builder = ClientBuilder::default()
-            .redirect(Redirect::none())
-            .connect_timeout(Timeout::from_secs(9))
-            .build();
-        assert!(builder.is_ok())
-    }
-
-    /// UT test cases for `ClientBuilder::default`.
-    ///
-    /// # Brief
-    /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
-    /// 2. Set redirect for client and call `Client::redirect_request`.
-    /// 3. Checks if the result is as expected.
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
-    #[test]
-    fn ut_client_request_redirect() {
-        let handle = ylong_runtime::spawn(async move {
-            client_request_redirect().await;
-        });
-        ylong_runtime::block_on(handle).unwrap();
-    }
+    use crate::{Certificate, TlsVersion};
+    use crate::{Proxy, Timeout};
 
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    struct Verifier;
+
+    #[cfg(feature = "ylong_base")]
     async fn client_request_redirect() {
         use ylong_http::h1::ResponseDecoder;
         use ylong_http::response::Response as HttpResponse;
 
         use crate::async_impl::{ClientBuilder, HttpBody};
         use crate::util::normalizer::BodyLength;
-        use crate::util::{Redirect, Timeout};
+        use crate::util::Redirect;
 
         let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nLocation: \t http://example3.com:80/foo?a=1 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
         let mut decoder = ResponseDecoder::new();
@@ -766,22 +745,7 @@ mod ut_async_impl_client {
         assert!(res.is_ok())
     }
 
-    /// UT test cases for `Client::request`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Client` by calling `Client::builder()`.
-    /// 2. Set version HTTP/1.0 for client and call `Client::request`.
-    /// 3. Checks if the result is as expected.
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
-    #[test]
-    fn ut_client_request_http1_0() {
-        let handle = ylong_runtime::spawn(async move {
-            client_request_version_1_0().await;
-        });
-        ylong_runtime::block_on(handle).unwrap();
-    }
-
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    #[cfg(feature = "ylong_base")]
     async fn client_request_version_1_0() {
         let request = Request::builder()
             .url("http://example1.com:80/foo?a=1")
@@ -801,20 +765,35 @@ mod ut_async_impl_client {
     }
 
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
-    #[test]
-    fn ut_client_request_verify() {
-        let handle = ylong_runtime::spawn(async move {
-            client_request_verify().await;
-        });
-        ylong_runtime::block_on(handle).unwrap();
-    }
-
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
-    struct Verifier;
-
-    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     impl CertVerifier for Verifier {
-        fn verify(&self, _certs: &ServerCerts) -> bool {
+        fn verify(&self, certs: &ServerCerts) -> bool {
+            // get version
+            let _v = certs.version().unwrap();
+            // get issuer
+            let _i = certs.issuer().unwrap();
+            // get name
+            let _n = certs.cert_name().unwrap();
+            // cmp cert file
+            let cert_pem = r#"-----BEGIN CERTIFICATE-----
+MIIDGzCCAgMCCQCHcfe97pgvpTANBgkqhkiG9w0BAQsFADBFMQswCQYDVQQGEwJB
+VTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0
+cyBQdHkgTHRkMB4XDTE2MDgxNDE3MDAwM1oXDTI2MDgxMjE3MDAwM1owWjELMAkG
+A1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0
+IFdpZGdpdHMgUHR5IEx0ZDETMBEGA1UEAwwKZm9vYmFyLmNvbTCCASIwDQYJKoZI
+hvcNAQEBBQADggEPADCCAQoCggEBAKj0JYxEsxejUIX+I5GH0Hg2G0kX/y1H0+Ub
+3mw2/Ja5BD/yN96/7zMSumXF8uS3SkmpyiJkbyD01TSRTqjlP7/VCBlyUIChlpLQ
+mrGaijZiT/VCyPXqmcwFzXS5IOTpX1olJfW8rA41U1LCIcDUyFf6LtZ/v8rSeKr6
+TuE6SGV4WRaBm1SrjWBeHVV866CRrtSS1ieT2asFsAyOZqWhk2fakwwBDFWDhOGI
+ubfO+5aq9cBJbNRlzsgB3UZs3gC0O6GzbnZ6oT0TiJMeTsXXjABLUlaq/rrqFF4Y
+euZkkbHTFBMz288PUc3m3ZTcpN+E7+ZOUBRZXKD20K07NugqCzUCAwEAATANBgkq
+hkiG9w0BAQsFAAOCAQEASvYHuIl5C0NHBELPpVHNuLbQsDQNKVj3a54+9q1JkiMM
+6taEJYfw7K1Xjm4RoiFSHpQBh+PWZS3hToToL2Zx8JfMR5MuAirdPAy1Sia/J/qE
+wQdJccqmvuLkLTSlsGbEJ/LUUgOAgrgHOZM5lUgIhCneA0/dWJ3PsN0zvn69/faY
+oo1iiolWiIHWWBUSdr3jM2AJaVAsTmLh00cKaDNk37JB940xConBGSl98JPrNrf9
+dUAiT0iIBngDBdHnn/yTj+InVEFyZSKrNtiDSObFHxPcxGteHNrCPJdP1e+GqkHp
+HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
+-----END CERTIFICATE-----"#;
+            let _c = certs.cmp_pem_cert(cert_pem.as_bytes()).unwrap();
             false
         }
     }
@@ -831,5 +810,664 @@ mod ut_async_impl_client {
         // Sends request and receives a `Response`.
         let response = client.request(request).await;
         assert!(response.is_err())
+    }
+
+    /// UT test cases for `Client::builder`.
+    ///
+    /// # Brief
+    /// 1. Creates a ClientBuilder by calling `Client::Builder`.
+    /// 2. Calls `http_config`, `client_config`, `build` on the builder
+    ///    respectively.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "http1_1")]
+    #[test]
+    fn ut_client_builder() {
+        let builder = Client::builder().http1_only().build();
+        assert!(builder.is_ok());
+        let builder_proxy = Client::builder()
+            .proxy(Proxy::http("http://www.example.com").build().unwrap())
+            .build();
+        assert!(builder_proxy.is_ok());
+    }
+
+    /// UT test cases for `Client::with_connector`.
+    ///
+    /// # Brief
+    /// 1. Creates a Client by calling `Client::with_connector`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    fn ut_client_with_connector() {
+        let client = Client::with_connector(HttpConnector::default());
+        assert_eq!(client.config.connect_timeout, Timeout::none())
+    }
+
+    /// UT test cases for `Client::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a Client by calling `Client::new`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    fn ut_client_new() {
+        let client = Client::new();
+        assert_eq!(client.config.connect_timeout, Timeout::none())
+    }
+
+    /// UT test cases for `Client::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a Client by calling `Client::default`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    fn ut_client_default() {
+        let client = Client::default();
+        assert_eq!(client.config.connect_timeout, Timeout::none())
+    }
+
+    /// UT test cases for `ClientBuilder::build`.
+    ///
+    /// # Brief
+    /// 1. Creates a ClientBuilder by calling `Client::Builder`.
+    /// 2. Checks if the result is as expected.
+    #[cfg(feature = "__tls")]
+    #[test]
+    fn ut_client_build_tls() {
+        let client = Client::builder()
+            .max_tls_version(TlsVersion::TLS_1_3)
+            .min_tls_version(TlsVersion::TLS_1_0)
+            .add_root_certificate(Certificate::from_pem(b"cert").unwrap())
+            .tls_ca_file("ca.crt")
+            .tls_cipher_list(
+                "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+            )
+            .tls_cipher_suites(
+                "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+            )
+            .tls_built_in_root_certs(false)
+            .danger_accept_invalid_certs(false)
+            .danger_accept_invalid_hostnames(false)
+            .tls_sni(false)
+            .build();
+
+        assert!(client.is_err());
+    }
+
+    /// UT test cases for `ClientBuilder::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
+    /// 2. Calls `http_config`, `client_config`, `tls_config` and `build`
+    ///    respectively.
+    /// 3. Checks if the result is as expected.
+    #[test]
+    fn ut_client_builder_default() {
+        use crate::async_impl::ClientBuilder;
+        use crate::util::{Redirect, Timeout};
+
+        let builder = ClientBuilder::default()
+            .redirect(Redirect::none())
+            .connect_timeout(Timeout::from_secs(9))
+            .build();
+        assert!(builder.is_ok())
+    }
+
+    /// UT test cases for `ClientBuilder::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ClientBuilder` by calling `ClientBuilder::default`.
+    /// 2. Set redirect for client and call `Client::redirect_request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_request_redirect() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_redirect().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Set version HTTP/1.0 for client and call `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_connect_http1_0() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_version_1_0().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for retry of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Set version HTTP/1.0 for client and call `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_request_http1_0_retry() {
+        let request = Request::builder()
+            .url("http://example1.com:80/foo?a=1")
+            .method("CONNECT")
+            .version("HTTP/1.0")
+            .body(Body::empty())
+            .unwrap();
+
+        let retry_times = Retry::new(1).unwrap();
+        let client = Client::builder()
+            .retry(retry_times)
+            .http1_only()
+            .build()
+            .unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let res = client.request(request).await;
+            assert!(res
+                .map_err(|e| {
+                    assert_eq!(format!("{e}"), "Request Error: Unknown METHOD in HTTP/1.0");
+                    e
+                })
+                .is_err());
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for certificate verify of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. implement `CertVerifier` for struct `Verifier`.
+    /// 3. Sets `CertVerifier` for this client.
+    /// 4. Checks if the result is as expected.
+    #[cfg(all(feature = "__tls", feature = "ylong_base"))]
+    #[test]
+    fn ut_client_request_verify() {
+        let handle = ylong_runtime::spawn(async move {
+            client_request_verify().await;
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for certificate verify of `Client::send_request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::send_request`.
+    /// 4. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_send_request() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder()
+            .connect_timeout(Timeout::from_secs(2))
+            .http1_only()
+            .build()
+            .unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            let body = resp.unwrap().text().await;
+            assert!(body.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for retry of `Client::connect_to`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sets connect timeout for this client.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_connect_to() {
+        let client = Client::builder()
+            .connect_timeout(Timeout::from_secs(1))
+            .http1_only()
+            .build()
+            .unwrap();
+
+        let request = build_client_request!(
+            Request: {
+                Path: "",
+                Addr: "198.18.0.25:80",
+                Body: Body::empty(),
+            },
+        );
+        let handle = ylong_runtime::spawn(async move {
+            let res = client.request(request).await;
+            assert!(res.is_err());
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for certificate verify of `Client::redirect`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::redirect`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_redirect() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 302,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Header: "Location", "http://ylong_http.com:80",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder()
+            .request_timeout(Timeout::from_secs(2))
+            .http1_only()
+            .build()
+            .unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_err());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for proxy of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_http_proxy() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: "ylong_http.com",
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder()
+            .proxy(
+                Proxy::http(format!("http://{}{}", handle.addr.as_str(), "/data").as_str())
+                    .build()
+                    .expect("Http proxy build failed"),
+            )
+            .build()
+            .expect("Client build failed!");
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for sends chunk body of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_send_trunk_body() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Transfer-Encoding", "chunked",
+                Body: Body::slice("aaaaa bbbbb ccccc ddddd".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for sends no headers request of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_send_unknown_size() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Body: Body::empty(),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for receive `Connection` header response of
+    /// `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_recv_conn_close() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Header: "Connection", "close",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for receive HTTP/1.0 response with invalid header of
+    /// `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_recv_http1_0_resp() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.0",
+               Header: "Content-Length", "11",
+               Header: "Connection", "close",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Version: "HTTP/1.0",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_ok());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for receive HTTP/1.0 response with transfer-encoding
+    /// header of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_recv_invalid_http1_0_resp() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 201,
+               Version: "HTTP/1.0",
+               Header: "Transfer-Encoding", "chunked",
+               Body: "0\r\n\r\n",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Version: "HTTP/1.0",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_err());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for receive response when server is shutdown of
+    /// `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_recv_when_server_shutdown() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Shutdown: std::net::Shutdown::Both,
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_err());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for receive response status in error of `Client::request`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Client` by calling `Client::builder()`.
+    /// 2. Sends a `Request` by `Client::request`.
+    /// 3. Checks if the result is as expected.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_client_recv_error_resp_status() {
+        let mut handles = vec![];
+        start_tcp_server!(
+           Handles: handles,
+           Response: {
+               Status: 2023,
+               Version: "HTTP/1.1",
+               Header: "Content-Length", "11",
+               Header: "Connection", "close",
+               Body: "METHOD GET!",
+           },
+        );
+        let handle = handles.pop().expect("No more handles !");
+
+        let request = build_client_request!(
+            Request: {
+                Method: "GET",
+                Path: "/data",
+                Addr: handle.addr.as_str(),
+                Header: "Content-Length", "5",
+                Body: Body::slice("HELLO".as_bytes()),
+            },
+        );
+        let client = Client::builder().http1_only().build().unwrap();
+
+        let handle = ylong_runtime::spawn(async move {
+            let resp = client.request(request).await;
+            assert!(resp.is_err());
+            handle
+                .server_shutdown
+                .recv()
+                .expect("server send order failed !");
+        });
+        ylong_runtime::block_on(handle).unwrap();
     }
 }

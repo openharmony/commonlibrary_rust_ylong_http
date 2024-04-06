@@ -22,3 +22,22 @@ pub(crate) struct ConnectorConfig {
     #[cfg(feature = "__tls")]
     pub(crate) tls: crate::util::TlsConfig,
 }
+
+#[cfg(test)]
+mod ut_connector_config {
+    use ylong_http::request::uri::Uri;
+
+    use crate::util::config::ConnectorConfig;
+
+    /// UT test cases for `ConnectorConfig::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `ConnectorConfig` by calling `ConnectorConfig::default`.
+    /// 2. Checks if the result is as expected.
+    #[test]
+    fn ut_connector_config_default() {
+        let config = ConnectorConfig::default();
+        let uri = Uri::from_bytes(b"http://127.0.0.1").unwrap();
+        assert!(config.proxies.match_proxy(&uri).is_none())
+    }
+}

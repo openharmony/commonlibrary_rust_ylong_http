@@ -464,7 +464,11 @@ impl ProxyBuilder {
 
 #[cfg(test)]
 mod ut_settings {
-    use crate::Retry;
+    use std::time::Duration;
+
+    use ylong_http::request::uri::Uri;
+
+    use crate::{Proxy, Redirect, Retry, SpeedLimit, Timeout};
 
     /// UT test cases for `Retry::new`.
     ///
@@ -479,5 +483,134 @@ mod ut_settings {
         assert!(retry.is_err());
         let retry = Retry::new(10);
         assert!(retry.is_err());
+    }
+
+    /// UT test cases for `Redirect::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Redirect` by calling `Redirect::default`.
+    /// 2. Creates a 10 Redirect.
+    /// 3. Checks if the results are correct.
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn ut_redirect_clone() {
+        let redirect = Redirect::default();
+        let redirect_10 = Redirect::limited(10);
+        assert_eq!(redirect, redirect_10);
+        assert_eq!(redirect.clone(), redirect_10)
+    }
+
+    /// UT test cases for `Retry::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Retry` by calling `Redirect::new`.
+    /// 2. Creates another `Retry` by `Redirect::clone`.
+    /// 3. Checks if the results are correct.
+    #[test]
+    fn ut_retry_clone() {
+        let retry = Retry::new(1).unwrap();
+        assert_eq!(retry.clone(), retry)
+    }
+
+    /// UT test cases for `Retry::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Retry` by calling `Redirect::default`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_retry_default() {
+        let retry = Retry::default();
+        assert_eq!(retry, Retry::none())
+    }
+
+    /// UT test cases for `Retry::max`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Retry` by calling `Redirect::max`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_retry_max() {
+        let retry = Retry::max();
+        assert_eq!(retry.times(), Some(3))
+    }
+
+    /// UT test cases for `Timeout::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Timeout` by calling `Timeout::from_secs`.
+    /// 2. Creates another `Timeout` by `Timeout::clone`.
+    /// 3. Checks if the results are correct.
+    #[test]
+    fn ut_timeout_clone() {
+        let timeout = Timeout::from_secs(5);
+        assert_eq!(timeout.clone(), timeout)
+    }
+
+    /// UT test cases for `Timeout::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Timeout` by calling `Timeout::default`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_timeout_default() {
+        let timeout = Timeout::default();
+        assert_eq!(timeout, Timeout::none())
+    }
+
+    /// UT test cases for `SpeedLimit::default`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SpeedLimit` by calling `SpeedLimit::default`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_speed_limit_default() {
+        let speed = SpeedLimit::new();
+        assert_eq!(speed.max, SpeedLimit::default().max)
+    }
+
+    /// UT test cases for `SpeedLimit::min_speed`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SpeedLimit` by calling `SpeedLimit::new`.
+    /// 2. Sets the max speed of `SpeedLimit`.
+    /// 3. Sets a min speed value that is greater than the max speed value.
+    /// 4. Checks if the results are correct.
+    #[test]
+    fn ut_speed_limit_min_speed() {
+        let speed = SpeedLimit::new();
+        let speed = speed.max_speed(1024);
+        let speed = speed.min_speed(2048, 12);
+        assert_eq!(speed.min, (1024, Duration::from_secs(12)))
+    }
+
+    /// UT test cases for `Proxy::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Proxy` by calling `Proxy::all`.
+    /// 2. Creates another `Proxy` by `Timeout::clone`.
+    /// 3. Checks if the results are correct.
+    #[test]
+    fn ut_proxy_clone() {
+        let proxy = Proxy::all("http://127.0.0.1:6789")
+            .no_proxy("127.0.0.1")
+            .basic_auth("user", "password")
+            .build()
+            .unwrap();
+        let proxy_clone = proxy.clone();
+        let uri = Uri::from_bytes(b"http://127.0.0.1:3456").unwrap();
+        assert!(!proxy.inner().is_intercepted(&uri));
+        assert!(!proxy_clone.inner().is_intercepted(&uri));
+    }
+
+    /// UT test cases for `Proxy::https`.
+    ///
+    /// # Brief
+    /// 1. Creates a `Proxy` by calling `Proxy::https`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_proxy_https() {
+        let proxy = Proxy::https("http://127.0.0.1:6789").build().unwrap();
+        let uri = Uri::from_bytes(b"https://127.0.0.1:3456").unwrap();
+        assert!(proxy.inner().is_intercepted(&uri));
     }
 }

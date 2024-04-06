@@ -346,4 +346,69 @@ mod ut_util_error {
         );
         assert_eq!(format!("{error_timeout}"), "Timeout Error: error");
     }
+
+    /// UT test cases for `HttpClientError::io_error` function.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::io_error`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_client_err_io_error() {
+        let error = HttpClientError::from_io_error(
+            ErrorKind::Request,
+            io::Error::from(io::ErrorKind::BrokenPipe),
+        );
+        assert!(error.io_error().is_some());
+        let error = HttpClientError::from_str(ErrorKind::Request, "error");
+        assert!(error.io_error().is_none());
+    }
+
+    /// UT test cases for `Debug` of `HttpClientError`.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::fmt`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_client_err_debug_fmt() {
+        let error = HttpClientError::from_io_error(
+            ErrorKind::Request,
+            io::Error::from(io::ErrorKind::BrokenPipe),
+        );
+        assert_eq!(
+            format!("{:?}", error),
+            "HttpClientError { ErrorKind: Request, Cause: Kind(BrokenPipe) }"
+        );
+
+        let error = HttpClientError::user_aborted();
+        assert_eq!(
+            format!("{:?}", error),
+            "HttpClientError { ErrorKind: UserAborted, Cause: No reason }"
+        );
+
+        let error = HttpClientError::other(io::Error::from(io::ErrorKind::BrokenPipe));
+        assert_eq!(
+            format!("{:?}", error),
+            "HttpClientError { ErrorKind: Other, Cause: Kind(BrokenPipe) }"
+        );
+    }
+
+    /// UT test cases for `Display` of `HttpClientError`.
+    ///
+    /// # Brief
+    /// 1. Calls `HttpClientError::fmt`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_client_err_display_fmt() {
+        let error = HttpClientError::from_io_error(
+            ErrorKind::Request,
+            io::Error::from(io::ErrorKind::BrokenPipe),
+        );
+        assert_eq!(format!("{}", error), "Request Error: broken pipe");
+
+        let error = HttpClientError::user_aborted();
+        assert_eq!(format!("{}", error), "User Aborted Error: No reason");
+
+        let error = HttpClientError::other(io::Error::from(io::ErrorKind::BrokenPipe));
+        assert_eq!(format!("{}", error), "Other Error: broken pipe");
+    }
 }

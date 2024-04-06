@@ -32,6 +32,9 @@ pub(crate) mod c_openssl;
 #[cfg(any(feature = "http1_1", feature = "http2"))]
 pub(crate) mod dispatcher;
 
+#[cfg(all(test, feature = "ylong_base"))]
+pub(crate) mod test_utils;
+
 #[cfg(feature = "__c_openssl")]
 pub use c_openssl::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
 #[cfg(feature = "__tls")]

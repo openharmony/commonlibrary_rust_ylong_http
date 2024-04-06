@@ -174,3 +174,214 @@ impl<S: fmt::Debug> fmt::Display for HandshakeError<S> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod ut_ssl_error {
+    use std::error::Error;
+    use std::io;
+
+    use crate::util::c_openssl::error::ErrorStack;
+    use crate::util::c_openssl::ssl::{InternalError, SslError, SslErrorCode};
+
+    /// UT test cases for `SslErrorCode::from_int`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SslErrorCode` by calling `Redirect::from_int`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_ssl_error_code_from_int() {
+        let v_6 = SslErrorCode::from_int(6);
+        assert_eq!(v_6, SslErrorCode::ZERO_RETURN);
+        assert!(v_6 > SslErrorCode::WANT_READ);
+        assert_eq!(v_6.clone(), v_6);
+        assert_eq!(format!("{v_6}"), "6");
+    }
+
+    /// UT test cases for `SslError::into_io_error`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SslErrorCode`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_ssl_error_into_io_error() {
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert!(ssl_error.get_io_error().is_some());
+        assert!(ssl_error.into_io_error().is_ok());
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: None,
+        };
+        assert!(ssl_error.get_io_error().is_none());
+        assert!(ssl_error.into_io_error().is_err());
+    }
+
+    /// UT test cases for `SslError::source`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SslErrorCode`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_ssl_error_source() {
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert!(ssl_error.source().is_some());
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
+        };
+        assert!(ssl_error.source().is_some());
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: None,
+        };
+        assert!(ssl_error.source().is_none());
+    }
+
+    /// UT test cases for `SslError::fmt`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SslErrorCode`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_ssl_error_fmt() {
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert_eq!(format!("{}", ssl_error), "SSL session has been closed");
+
+        let ssl_error = SslError {
+            code: SslErrorCode::SYSCALL,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            format!(
+                "SslCode[5], IO Error: {}",
+                io::Error::from(io::ErrorKind::BrokenPipe)
+            )
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::SYSCALL,
+            internal: None,
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            "SslCode[5], Unexpected EOF".to_string()
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::SSL,
+            internal: None,
+        };
+        assert_eq!(format!("{}", ssl_error), "SslCode: [1]".to_string());
+
+        let error_stack = ErrorStack::get();
+        let ssl_error = SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::Ssl(error_stack.clone())),
+        };
+        let error_stack = format!("{error_stack}");
+        assert_eq!(
+            format!("{}", ssl_error),
+            format!("ErrorStack: {}", error_stack)
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::WANT_READ,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            format!(
+                "SslCode[2], IO Error: {}",
+                io::Error::from(io::ErrorKind::BrokenPipe)
+            )
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::WANT_READ,
+            internal: None,
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            "SslCode[2], Read operation should be retried".to_string()
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::WANT_WRITE,
+            internal: Some(InternalError::Io(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            format!(
+                "SslCode[3], IO Error: {}",
+                io::Error::from(io::ErrorKind::BrokenPipe)
+            )
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::WANT_WRITE,
+            internal: None,
+        };
+        assert_eq!(
+            format!("{}", ssl_error),
+            "SslCode[3], Write operation should be retried".to_string()
+        );
+
+        let ssl_error = SslError {
+            code: SslErrorCode::from_int(15),
+            internal: None,
+        };
+        assert_eq!(format!("{}", ssl_error), "Unknown SslCode[15]".to_string());
+    }
+
+    /// UT test cases for `Debug` of `SslError`.
+    ///
+    /// # Brief
+    /// 1. Creates a `SslErrorCode`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_ssl_error_debug() {
+        let ssl_error = SslError {
+            code: SslErrorCode::from_int(15),
+            internal: None,
+        };
+        assert_eq!(
+            format!("{:?}", ssl_error),
+            "SslError { code: SslErrorCode(15), internal: None }".to_string()
+        );
+    }
+
+    /// UT test cases for `Debug` of `InternalError`.
+    ///
+    /// # Brief
+    /// 1. Creates a `InternalError`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_internal_error_debug() {
+        let internal_error = InternalError::Ssl(ErrorStack::get());
+        assert_eq!(
+            format!("{:?}", internal_error),
+            "Ssl(ErrorStack([]))".to_string()
+        );
+    }
+}

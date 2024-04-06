@@ -41,8 +41,10 @@ fn sdv_async_client_send_request() {
         Handles: handles_vec,
         Request: {
             Method: "GET",
+            Version: "HTTP/1.1",
             Path: "/data",
             Header: "Content-Length", "6",
+            Header: "Accept", "*/*",
             Body: "Hello!",
         },
         Response: {

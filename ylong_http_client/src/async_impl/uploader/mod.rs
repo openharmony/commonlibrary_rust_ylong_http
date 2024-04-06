@@ -270,4 +270,47 @@ mod ut_uploader {
         let res = MyUploadOperator.progress(10, Some(20)).await;
         assert!(res.is_ok());
     }
+
+    /// UT test cases for `Uploader::builder`.
+    ///
+    /// # Brief
+    /// 1. Creates a `UploaderBuilder` by `Uploader::builder`.
+    /// 2. Checks if the result is correct.
+
+    #[test]
+    fn ut_uploader_builder() {
+        let handle = ylong_runtime::spawn(async { upload_and_show_progress().await });
+        ylong_runtime::block_on(handle).unwrap();
+    }
+
+    async fn upload_and_show_progress() {
+        // Customizes your own `UploadOperator`.
+        struct MyUploadOperator;
+
+        impl UploadOperator for MyUploadOperator {
+            fn poll_progress(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                _uploaded: u64,
+                _total: Option<u64>,
+            ) -> Poll<Result<(), HttpClientError>> {
+                Poll::Ready(Err(HttpClientError::user_aborted()))
+            }
+        }
+
+        // Creates a default `Uploader` based on `MyUploadOperator`.
+        // Configures your uploader by using `UploaderBuilder`.
+        let mut uploader = Uploader::builder()
+            .reader("HelloWorld".as_bytes())
+            .operator(MyUploadOperator)
+            .build();
+
+        let mut user_slice = [0_u8; 12];
+        let mut buf = ylong_runtime::io::ReadBuf::new(user_slice.as_mut_slice());
+        ylong_runtime::futures::poll_fn(|cx| Pin::new(&mut uploader).poll_read(cx, &mut buf))
+            .await
+            .unwrap();
+        let size = buf.filled_len();
+        assert_eq!(size, 0);
+    }
 }

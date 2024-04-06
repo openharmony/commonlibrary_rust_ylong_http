@@ -37,22 +37,30 @@ macro_rules! start_tcp_server {
         Proxy: $proxy: expr,
         ServerNum: $server_num: expr,
         Handles: $handle_vec: expr,
-        $(Request: {
+        $(
+        Request: {
             Method: $method: expr,
+            Version: $req_version: expr,
             Path: $path: expr,
             $(
                 Header: $req_n: expr, $req_v: expr,
             )*
             Body: $req_body: expr,
         },
+        $(
         Response: {
             Status: $status: expr,
-            Version: $version: expr,
+            Version: $resp_version: expr,
             $(
                 Header: $resp_n: expr, $resp_v: expr,
             )*
             Body: $resp_body: expr,
-        },)*
+        },
+        $(Sleep: $during: expr,)?
+        )?
+        )*
+        $(RequestEnds: $end: expr,)?
+        $(Shutdown: $shutdown: expr,)?
 
     ) => {{
         use std::sync::mpsc::channel;
@@ -85,16 +93,12 @@ macro_rules! start_tcp_server {
                     let request_str = String::from_utf8_lossy(&buf[..size]);
 
                     let request_line = if $proxy {
-                        format!("{} http://{}{} {}{}", $method, addr.to_string().as_str(), $path, "HTTP/1.1", crlf)
+                        format!("{} http://{}{} {}{}", $method, addr.to_string().as_str(), $path, $req_version, crlf)
                     } else {
-                        format!("{} {} {}{}", $method, $path, "HTTP/1.1", crlf)
+                        format!("{} {} {}{}", $method, $path, $req_version, crlf)
                     };
                     assert!(&buf[..size].starts_with(request_line.as_bytes()), "Incorrect Request-Line!");
                     length += request_line.len();
-
-                    let accept = format_header_str("accept", "*/*");
-                    assert!(request_str.contains(accept.as_str()), "Incorrect accept header!");
-                    length += accept.len();
 
                     let host = format_header_str("host", addr.to_string().as_str());
                     assert!(request_str.contains(host.as_str()), "Incorrect host header!");
@@ -117,17 +121,23 @@ macro_rules! start_tcp_server {
                         assert_eq!(size, length, "Incorrect total request bytes !");
                     }
 
-                    let mut resp_str = String::from(format!("{} {} OK\r\n", $version, $status));
+                    $(
+                    let mut resp_str = String::from(format!("{} {} OK\r\n", $resp_version, $status));
                     $(
                     let header = format_header_str($resp_n, $resp_v);
                     resp_str.push_str(header.as_str());
                     )*
                     resp_str.push_str(crlf);
                     resp_str.push_str($resp_body);
-
+                    $(ylong_runtime::time::sleep(Duration::from_millis($during)).await;)?
                     stream.write_all(resp_str.as_bytes()).await.expect("server write response failed");
+                    )?
                 }
                 )*
+
+                $(
+                    stream.shutdown($shutdown).expect("server shutdown failed");
+                )?
                 rx.send(()).expect("server send order failed !");
 
             });
@@ -270,6 +280,7 @@ macro_rules! build_client_request {
     (
         Request: {
             Method: $method: expr,
+            $(Version: $version: expr,)?
             Path: $path: expr,
             Addr: $addr: expr,
             $(
@@ -280,6 +291,7 @@ macro_rules! build_client_request {
     ) => {{
         ylong_http_client::async_impl::RequestBuilder::new()
              .method($method)
+             $(.version($version))?
              .url(format!("http://{}{}",$addr, $path).as_str())
              $(.header($req_n, $req_v))*
              .body(ylong_http_client::async_impl::Body::slice($req_body.as_bytes()))

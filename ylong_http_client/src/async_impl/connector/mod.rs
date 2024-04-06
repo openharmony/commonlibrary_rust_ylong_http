@@ -252,4 +252,252 @@ mod tls {
     }
 
     impl error::Error for CreateTunnelErr {}
+
+    #[cfg(all(test, feature = "__tls"))]
+    mod ut_create_tunnel_err_debug {
+        #[cfg(feature = "ylong_base")]
+        use ylong_runtime::io::AsyncWriteExt;
+
+        #[cfg(feature = "ylong_base")]
+        use crate::async_impl::connector::tcp_stream;
+        use crate::async_impl::connector::tls::CreateTunnelErr;
+        #[cfg(feature = "ylong_base")]
+        use crate::async_impl::connector::tls::{other_io_error, tunnel};
+        #[cfg(feature = "ylong_base")]
+        use crate::start_tcp_server;
+        #[cfg(feature = "ylong_base")]
+        use crate::util::test_utils::{format_header_str, TcpHandle};
+
+        /// UT test cases for debug of`CreateTunnelErr`.
+        ///
+        /// # Brief
+        /// 1. Checks `CreateTunnelErr` debug by calling `CreateTunnelErr::fmt`.
+        /// 2. Checks if the result is as expected.
+        #[test]
+        fn ut_create_tunnel_error_debug() {
+            assert_eq!(
+                format!("{:?}", CreateTunnelErr::ProxyHeadersTooLong),
+                "Proxy headers too long for tunnel"
+            );
+            assert_eq!(
+                format!("{:?}", CreateTunnelErr::ProxyAuthenticationRequired),
+                "Proxy authentication required"
+            );
+            assert_eq!(
+                format!("{:?}", CreateTunnelErr::Unsuccessful),
+                "Unsuccessful tunnel"
+            );
+            assert_eq!(
+                format!("{}", CreateTunnelErr::ProxyHeadersTooLong),
+                "Proxy headers too long for tunnel"
+            );
+            assert_eq!(
+                format!("{}", CreateTunnelErr::ProxyAuthenticationRequired),
+                "Proxy authentication required"
+            );
+            assert_eq!(
+                format!("{}", CreateTunnelErr::Unsuccessful),
+                "Unsuccessful tunnel"
+            );
+        }
+
+        /// UT test cases for `tunnel`.
+        ///
+        /// # Brief
+        /// 1. Creates a `tcp stream` by calling `tcp_stream`.
+        /// 2. Sends a `Request` by `tunnel`.
+        /// 3. Checks if the result is as expected.
+        #[cfg(feature = "ylong_base")]
+        #[test]
+        fn ut_ssl_tunnel_error() {
+            let mut handles = vec![];
+            start_tcp_server!(
+               Handles: handles,
+               EndWith: "\r\n\r\n",
+               Shutdown: std::net::Shutdown::Both,
+            );
+            let handle = handles.pop().expect("No more handles !");
+
+            let handle = ylong_runtime::spawn(async move {
+                let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
+                let res = tunnel(
+                    tcp,
+                    String::from("ylong_http.com"),
+                    443,
+                    Some(String::from("base64 bytes")),
+                )
+                .await;
+                assert_eq!(
+                    format!("{:?}", res.err()),
+                    format!("{:?}", Some(other_io_error(CreateTunnelErr::Unsuccessful)))
+                );
+                handle
+                    .server_shutdown
+                    .recv()
+                    .expect("server send order failed !");
+            });
+            ylong_runtime::block_on(handle).unwrap();
+
+            start_tcp_server!(
+               Handles: handles,
+               EndWith: "\r\n\r\n",
+               Response: {
+                   Status: 407,
+                   Version: "HTTP/1.1",
+                   Header: "Content-Length", "11",
+                   Body: "METHOD GET!",
+               },
+               Shutdown: std::net::Shutdown::Both,
+            );
+            let handle = handles.pop().expect("No more handles !");
+
+            let handle = ylong_runtime::spawn(async move {
+                let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
+                let res = tunnel(
+                    tcp,
+                    String::from("ylong_http.com"),
+                    443,
+                    Some(String::from("base64 bytes")),
+                )
+                .await;
+                assert_eq!(
+                    format!("{:?}", res.err()),
+                    format!(
+                        "{:?}",
+                        Some(other_io_error(CreateTunnelErr::ProxyAuthenticationRequired))
+                    )
+                );
+                handle
+                    .server_shutdown
+                    .recv()
+                    .expect("server send order failed !");
+            });
+            ylong_runtime::block_on(handle).unwrap();
+
+            start_tcp_server!(
+               Handles: handles,
+               EndWith: "\r\n\r\n",
+               Response: {
+                   Status: 402,
+                   Version: "HTTP/1.1",
+                   Header: "Content-Length", "11",
+                   Body: "METHOD GET!",
+               },
+               Shutdown: std::net::Shutdown::Both,
+            );
+            let handle = handles.pop().expect("No more handles !");
+
+            let handle = ylong_runtime::spawn(async move {
+                let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
+                let res = tunnel(
+                    tcp,
+                    String::from("ylong_http.com"),
+                    443,
+                    Some(String::from("base64 bytes")),
+                )
+                .await;
+                assert_eq!(
+                    format!("{:?}", res.err()),
+                    format!("{:?}", Some(other_io_error(CreateTunnelErr::Unsuccessful)))
+                );
+                handle
+                    .server_shutdown
+                    .recv()
+                    .expect("server send order failed !");
+            });
+            ylong_runtime::block_on(handle).unwrap();
+        }
+
+        /// UT test cases for `tunnel`.
+        ///
+        /// # Brief
+        /// 1. Creates a `tcp stream` by calling `tcp_stream`.
+        /// 2. Sends a `Request` by `tunnel`.
+        /// 3. Checks if the result is as expected.
+        #[cfg(feature = "ylong_base")]
+        #[test]
+        fn ut_ssl_tunnel_connect() {
+            let mut handles = vec![];
+
+            start_tcp_server!(
+               Handles: handles,
+               EndWith: "\r\n\r\n",
+                Response: {
+                   Status: 200,
+                   Version: "HTTP/1.1",
+                   Body: "",
+               },
+               Shutdown: std::net::Shutdown::Both,
+            );
+            let handle = handles.pop().expect("No more handles !");
+
+            let handle = ylong_runtime::spawn(async move {
+                let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
+                let res = tunnel(
+                    tcp,
+                    String::from("ylong_http.com"),
+                    443,
+                    Some(String::from("base64 bytes")),
+                )
+                .await;
+                assert!(res.is_ok());
+                handle
+                    .server_shutdown
+                    .recv()
+                    .expect("server send order failed !");
+            });
+            ylong_runtime::block_on(handle).unwrap();
+        }
+
+        /// UT test cases for response beyond size of `tunnel`.
+        ///
+        /// # Brief
+        /// 1. Creates a `tcp stream` by calling `tcp_stream`.
+        /// 2. Sends a `Request` by `tunnel`.
+        /// 3. Checks if the result is as expected.
+        #[cfg(feature = "ylong_base")]
+        #[test]
+        fn ut_ssl_tunnel_resp_beyond_size() {
+            let mut handles = vec![];
+
+            let buf = vec![b'b'; 8192];
+            let body = String::from_utf8(buf).unwrap();
+
+            start_tcp_server!(
+               Handles: handles,
+               EndWith: "\r\n\r\n",
+                Response: {
+                   Status: 200,
+                   Version: "HTTP/1.1",
+                   Header: "Content-Length", "11",
+                   Body: body.as_str(),
+               },
+               Shutdown: std::net::Shutdown::Both,
+            );
+            let handle = handles.pop().expect("No more handles !");
+
+            let handle = ylong_runtime::spawn(async move {
+                let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
+                let res = tunnel(
+                    tcp,
+                    String::from("ylong_http.com"),
+                    443,
+                    Some(String::from("base64 bytes")),
+                )
+                .await;
+                assert_eq!(
+                    format!("{:?}", res.err()),
+                    format!(
+                        "{:?}",
+                        Some(other_io_error(CreateTunnelErr::ProxyHeadersTooLong))
+                    )
+                );
+                handle
+                    .server_shutdown
+                    .recv()
+                    .expect("server send order failed !");
+            });
+            ylong_runtime::block_on(handle).unwrap();
+        }
+    }
 }
