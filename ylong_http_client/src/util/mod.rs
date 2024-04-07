@@ -36,7 +36,10 @@ pub(crate) mod dispatcher;
 pub(crate) mod test_utils;
 
 #[cfg(feature = "__c_openssl")]
-pub use c_openssl::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
+pub use c_openssl::{
+    Cert, Certificate, PubKeyPins, PubKeyPinsBuilder, TlsConfig, TlsConfigBuilder, TlsFileType,
+    TlsVersion,
+};
 #[cfg(feature = "__tls")]
 pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
 pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};

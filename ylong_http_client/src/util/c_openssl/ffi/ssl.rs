@@ -14,7 +14,7 @@
 use libc::{c_char, c_int, c_long, c_uchar, c_uint, c_void};
 
 use super::bio::BIO;
-use super::x509::{X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM};
+use super::x509::{C_X509, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM};
 
 /// This is the global context structure which is created by a server or client
 /// once per program life-time and which holds mainly default values for the
@@ -148,6 +148,8 @@ extern "C" {
     /// Returns the result of the verification of the X509 certificate presented
     /// by the peer, if any.
     pub(crate) fn SSL_get_verify_result(ssl: *const SSL) -> c_long;
+
+    pub(crate) fn SSL_get1_peer_certificate(ssl: *const SSL) -> *mut C_X509;
 
     pub(crate) fn SSL_set_bio(ssl: *mut SSL, rbio: *mut BIO, wbio: *mut BIO);
 

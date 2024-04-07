@@ -16,7 +16,7 @@ macro_rules! async_client_test_case {
     (
         HTTPS;
         ServeFnName: $server_fn_name: ident,
-        Tls: $tls_config: expr,
+        RootCA: $ca_file: expr,
         RuntimeThreads: $thread_num: expr,
         $(ClientNum: $client_num: expr,)?
         $(Request: {
@@ -76,7 +76,7 @@ macro_rules! async_client_test_case {
         let mut shut_downs = vec![];
         async_client_assert!(
             HTTPS;
-            Tls: $tls_config,
+            RootCA: $ca_file,
             Runtime: runtime,
             ServerNum: server_num,
             Handles: handles_vec,
@@ -198,7 +198,7 @@ macro_rules! async_client_test_case {
 macro_rules! async_client_assert {
     (
         HTTPS;
-        Tls: $tls_config: expr,
+        RootCA: $ca_file: expr,
         Runtime: $runtime: expr,
         ServerNum: $server_num: expr,
         Handles: $handle_vec: expr,
@@ -221,7 +221,7 @@ macro_rules! async_client_assert {
         },)*
     ) => {{
         let client = ylong_http_client::async_impl::Client::builder()
-        .tls_ca_file($tls_config)
+        .tls_ca_file($ca_file)
         .danger_accept_invalid_hostnames(true)
         .build()
         .unwrap();

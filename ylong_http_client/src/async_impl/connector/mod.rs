@@ -161,9 +161,10 @@ mod tls {
                             tcp = tunnel(tcp, host, port, auth).await?;
                         };
 
+                        let pinned_key = config.pinning_host_match(addr.as_str());
                         let mut stream = config
                             .ssl_new(&host_name)
-                            .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp))
+                            .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp, pinned_key))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
                         Pin::new(&mut stream)

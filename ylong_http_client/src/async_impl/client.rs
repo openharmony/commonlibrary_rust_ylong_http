@@ -18,6 +18,8 @@ use super::timeout::TimeoutFuture;
 use super::{conn, Body, Connector, HttpConnector, Request, Response};
 use crate::error::HttpClientError;
 use crate::runtime::timeout;
+#[cfg(feature = "__c_openssl")]
+use crate::util::c_openssl::verify::PubKeyPins;
 use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
 };
@@ -514,6 +516,28 @@ impl ClientBuilder {
         self
     }
 
+    /// Adds user pinned Public Key.
+    ///
+    /// Used to avoid man-in-the-middle attacks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    /// use ylong_http_client::PubKeyPins;
+    ///
+    /// let pinned_key = PubKeyPins::builder()
+    /// .add("https://example.com:443",
+    /// "sha256//YhKJKSzoTt2b5FP18fvpHo7fJYqQCjAa3HWY3tvRMwE=;sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=")
+    /// .build()
+    /// .unwrap();
+    /// let builder = ClientBuilder::new().add_public_key_pins(pinned_key);
+    /// ```
+    pub fn add_public_key_pins(mut self, pin: PubKeyPins) -> Self {
+        self.tls = self.tls.pinning_public_key(pin);
+        self
+    }
+
     /// Loads trusted root certificates from a file. The file should contain a
     /// sequence of PEM-formatted CA certificates.
     ///
@@ -889,6 +913,34 @@ HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
             .build();
 
         assert!(client.is_err());
+    }
+
+    /// UT test cases for `ClientBuilder::build`.
+    ///
+    /// # Brief
+    /// 1. Creates a ClientBuilder by calling `Client::Builder`.
+    /// 2. Checks if the result is as expected.
+    #[cfg(feature = "__tls")]
+    #[test]
+    fn ut_client_build_tls_pubkey_pinning() {
+        use crate::PubKeyPins;
+
+        let client = Client::builder()
+            .tls_built_in_root_certs(true) // not use root certs
+            .danger_accept_invalid_certs(true) // not verify certs
+            .max_tls_version(TlsVersion::TLS_1_2)
+            .min_tls_version(TlsVersion::TLS_1_2)
+            .add_public_key_pins(
+                PubKeyPins::builder()
+                    .add(
+                        "https://7.249.243.101:6789",
+                        "sha256//VHQAbNl67nmkZJNESeTKvTxb5bQmd1maWnMKG/tjcAY=",
+                    )
+                    .build()
+                    .unwrap(),
+            )
+            .build();
+        assert!(client.is_ok())
     }
 
     /// UT test cases for `ClientBuilder::default`.
@@ -1399,10 +1451,7 @@ HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
     #[test]
     fn ut_client_recv_when_server_shutdown() {
         let mut handles = vec![];
-        start_tcp_server!(
-           Handles: handles,
-           Shutdown: std::net::Shutdown::Both,
-        );
+        start_tcp_server!(Handles: handles, Shutdown: std::net::Shutdown::Both,);
         let handle = handles.pop().expect("No more handles !");
 
         let request = build_client_request!(

@@ -36,7 +36,7 @@ fn sdv_async_client_send_request() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 1,
         Request: {
             Method: "GET",
@@ -56,7 +56,7 @@ fn sdv_async_client_send_request() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 1,
         Request: {
             Method: "HEAD",
@@ -75,7 +75,7 @@ fn sdv_async_client_send_request() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 1,
         Request: {
             Method: "POST",
@@ -95,7 +95,7 @@ fn sdv_async_client_send_request() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 1,
         Request: {
             Method: "HEAD",
@@ -113,7 +113,7 @@ fn sdv_async_client_send_request() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 1,
         Request: {
             Method: "PUT",
@@ -139,7 +139,7 @@ fn sdv_client_send_request_repeatedly() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 2,
         Request: {
             Method: "GET",
@@ -177,7 +177,7 @@ fn sdv_client_making_multiple_connections() {
     async_client_test_case!(
         HTTPS;
         ServeFnName: ylong_server_fn,
-        Tls: path.to_str().unwrap(),
+        RootCA: path.to_str().unwrap(),
         RuntimeThreads: 2,
         ClientNum: 5,
         Request: {
