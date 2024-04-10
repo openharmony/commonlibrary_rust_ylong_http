@@ -16,6 +16,7 @@ use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use std::io::{self, Read, Write};
 use std::panic::resume_unwind;
+use std::ptr;
 
 use libc::c_int;
 
@@ -24,12 +25,19 @@ use crate::c_openssl::bio::{self, get_error, get_panic, get_stream_mut, get_stre
 use crate::c_openssl::error::ErrorStack;
 use crate::c_openssl::ffi::ssl::{SSL_connect, SSL_set_bio, SSL_shutdown};
 use crate::c_openssl::foreign::Foreign;
+use crate::util::base64::encode;
 use crate::util::c_openssl::bio::BioMethod;
+use crate::util::c_openssl::error::VerifyError;
+use crate::util::c_openssl::error::VerifyKind::PubKeyPinning;
+use crate::util::c_openssl::ffi::ssl::{SSL_get1_peer_certificate, SSL};
+use crate::util::c_openssl::ffi::x509::{i2d_X509_PUBKEY, X509_free, X509_get_X509_PUBKEY};
+use crate::util::c_openssl::verify::sha256_digest;
 
 /// A TLS session over a stream.
 pub struct SslStream<S> {
     pub(crate) ssl: ManuallyDrop<Ssl>,
     method: ManuallyDrop<BioMethod>,
+    pinned_pubkey: Option<String>,
     p: PhantomData<S>,
 }
 
@@ -130,7 +138,11 @@ impl<S: Read + Write> SslStream<S> {
         }
     }
 
-    pub(crate) fn new_base(ssl: Ssl, stream: S) -> Result<Self, ErrorStack> {
+    pub(crate) fn new_base(
+        ssl: Ssl,
+        stream: S,
+        pinned_pubkey: Option<String>,
+    ) -> Result<Self, ErrorStack> {
         unsafe {
             let (bio, method) = bio::new(stream)?;
             SSL_set_bio(ssl.as_ptr(), bio, bio);
@@ -138,6 +150,7 @@ impl<S: Read + Write> SslStream<S> {
             Ok(SslStream {
                 ssl: ManuallyDrop::new(ssl),
                 method: ManuallyDrop::new(method),
+                pinned_pubkey,
                 p: PhantomData,
             })
         }
@@ -146,6 +159,12 @@ impl<S: Read + Write> SslStream<S> {
     pub(crate) fn connect(&mut self) -> Result<(), SslError> {
         let ret = unsafe { SSL_connect(self.ssl.as_ptr()) };
         if ret > 0 {
+            match &self.pinned_pubkey {
+                None => {}
+                Some(key) => {
+                    verify_server_cert(self.ssl.as_ptr(), key.as_str())?;
+                }
+            }
             Ok(())
         } else {
             Err(self.get_error(ret))
@@ -231,4 +250,94 @@ impl<S> MidHandshakeSslStream<S> {
 pub(crate) enum ShutdownResult {
     Sent,
     Received,
+}
+
+// TODO The SSLError thrown here is meaningless and has no information.
+fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
+    let certificate = unsafe { SSL_get1_peer_certificate(ssl) };
+    if certificate.is_null() {
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::User(VerifyError::from_msg(
+                PubKeyPinning,
+                "Failed to get the peer certificate.",
+            ))),
+        });
+    }
+
+    let size_1 = unsafe { i2d_X509_PUBKEY(X509_get_X509_PUBKEY(certificate), ptr::null_mut()) };
+    if size_1 < 1 {
+        unsafe { X509_free(certificate) };
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::User(VerifyError::from_msg(
+                PubKeyPinning,
+                "Failed to get the length of the peer public key.",
+            ))),
+        });
+    }
+    let key = vec![0u8; size_1 as usize];
+    let size_2 = unsafe { i2d_X509_PUBKEY(X509_get_X509_PUBKEY(certificate), &mut key.as_ptr()) };
+
+    if size_1 != size_2 || size_2 <= 0 {
+        unsafe { X509_free(certificate) };
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::User(VerifyError::from_msg(
+                PubKeyPinning,
+                "Failed to read the peer public key.",
+            ))),
+        });
+    }
+
+    // sha256 length.
+    let mut digest = [0u8; 32];
+    unsafe { sha256_digest(key.as_slice(), size_2, &mut digest)? }
+    let base64_digest = encode(&digest);
+
+    let mut user_bytes = pinned_key.as_bytes();
+
+    let mut begin;
+    let mut end;
+    let prefix = b"sha256//";
+    let suffix = b";sha256//";
+    while !user_bytes.is_empty() {
+        begin = match user_bytes
+            .windows(prefix.len())
+            .position(|window| window == prefix)
+        {
+            None => {
+                break;
+            }
+            Some(index) => index + 8,
+        };
+        end = match user_bytes
+            .windows(suffix.len())
+            .position(|window| window == suffix)
+        {
+            None => user_bytes.len(),
+            Some(index) => index,
+        };
+
+        let bytes = &user_bytes[begin..end];
+        if bytes.eq(base64_digest.as_slice()) {
+            unsafe { X509_free(certificate) };
+            return Ok(());
+        }
+
+        if end != user_bytes.len() {
+            user_bytes = &user_bytes[end + 1..];
+        } else {
+            user_bytes = &user_bytes[end..];
+        }
+    }
+
+    unsafe { X509_free(certificate) };
+    Err(SslError {
+        code: SslErrorCode::SSL,
+        internal: Some(InternalError::User(VerifyError::from_msg(
+            PubKeyPinning,
+            "Pinned public key verification failed.",
+        ))),
+    })
 }

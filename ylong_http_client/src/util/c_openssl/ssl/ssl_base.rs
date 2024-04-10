@@ -64,7 +64,7 @@ impl Ssl {
         use super::MidHandshakeSslStream;
         use crate::c_openssl::ffi::ssl::SSL_connect;
 
-        let mut stream = SslStream::new_base(self, stream)?;
+        let mut stream = SslStream::new_base(self, stream, None)?;
         let ret = unsafe { SSL_connect(stream.ssl.as_ptr()) };
         if ret > 0 {
             Ok(stream)

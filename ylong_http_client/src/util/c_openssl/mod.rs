@@ -26,6 +26,7 @@ pub(crate) mod stack;
 pub(crate) mod x509;
 
 pub mod adapter;
+pub(crate) mod verify;
 
 use core::ptr;
 use std::sync::Once;
@@ -33,6 +34,7 @@ use std::sync::Once;
 pub use adapter::{Cert, Certificate, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
 use error::ErrorStack;
 use libc::c_int;
+pub use verify::{PubKeyPins, PubKeyPinsBuilder};
 
 pub(crate) use crate::util::c_openssl::ffi::callback::*;
 use crate::util::c_openssl::ffi::OPENSSL_init_ssl;

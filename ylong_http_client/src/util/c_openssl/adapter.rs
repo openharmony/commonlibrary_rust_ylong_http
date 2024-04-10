@@ -20,6 +20,7 @@ use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ssl::{
     Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion,
 };
+use crate::util::c_openssl::verify::PubKeyPins;
 use crate::util::c_openssl::x509::{X509Store, X509};
 use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::AlpnProtocolList;
@@ -44,6 +45,7 @@ pub struct TlsConfigBuilder {
     use_sni: bool,
     verify_hostname: bool,
     certs_list: Vec<Cert>,
+    pins: Option<PubKeyPins>,
     #[cfg(feature = "c_openssl_3_0")]
     paths_list: Vec<String>,
 }
@@ -65,6 +67,7 @@ impl TlsConfigBuilder {
             use_sni: true,
             verify_hostname: true,
             certs_list: vec![],
+            pins: None,
             #[cfg(feature = "c_openssl_3_0")]
             paths_list: vec![],
         }
@@ -88,10 +91,10 @@ impl TlsConfigBuilder {
     }
 
     /// Sets the maximum supported protocol version. A value of `None` will
-    /// enable protocol versions down the the highest version supported by
+    /// enable protocol versions down the highest version supported by
     /// `OpenSSL`.
     ///
-    /// Requires `OpenSSL 1.1.0` or or `LibreSSL 2.6.1` or newer.
+    /// Requires `OpenSSL 1.1.0` or `LibreSSL 2.6.1` or newer.
     ///
     /// # Examples
     ///
@@ -371,6 +374,11 @@ impl TlsConfigBuilder {
         self
     }
 
+    pub(crate) fn pinning_public_key(mut self, pin: PubKeyPins) -> Self {
+        self.pins = Some(pin);
+        self
+    }
+
     /// Controls the use of TLS server name indication.
     ///
     /// Defaults to `true` -- sets sni.
@@ -427,6 +435,7 @@ impl TlsConfigBuilder {
             cert_verifier: self.cert_verifier,
             use_sni: self.use_sni,
             verify_hostname: self.verify_hostname,
+            pins: self.pins,
         })
     }
 }
@@ -454,6 +463,7 @@ pub struct TlsConfig {
     cert_verifier: Option<Arc<DefaultCertVerifier>>,
     use_sni: bool,
     verify_hostname: bool,
+    pins: Option<PubKeyPins>,
 }
 
 impl TlsConfig {
@@ -486,11 +496,18 @@ impl TlsConfig {
         }
         Ok(TlsSsl(ssl))
     }
+
+    pub(crate) fn pinning_host_match(&self, domain: &str) -> Option<String> {
+        match &self.pins {
+            None => None,
+            Some(pins) => pins.get_pin(domain),
+        }
+    }
 }
 
 impl Default for TlsConfig {
     fn default() -> Self {
-        // It must can be successful.
+        // It certainly can be successful.
         TlsConfig::builder()
             .build()
             .expect("TlsConfig build error!")

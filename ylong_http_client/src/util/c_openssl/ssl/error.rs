@@ -19,6 +19,7 @@ use libc::c_int;
 
 use super::MidHandshakeSslStream;
 use crate::c_openssl::error::ErrorStack;
+use crate::util::c_openssl::error::VerifyError;
 
 #[derive(Debug)]
 pub(crate) struct SslError {
@@ -30,6 +31,7 @@ pub(crate) struct SslError {
 pub(crate) enum InternalError {
     Io(io::Error),
     Ssl(ErrorStack),
+    User(VerifyError),
 }
 
 impl SslError {
@@ -57,6 +59,7 @@ impl Error for SslError {
         match self.internal {
             Some(InternalError::Io(ref e)) => Some(e),
             Some(InternalError::Ssl(ref e)) => Some(e),
+            Some(InternalError::User(ref e)) => Some(e),
             None => None,
         }
     }
@@ -180,7 +183,8 @@ mod ut_ssl_error {
     use std::error::Error;
     use std::io;
 
-    use crate::util::c_openssl::error::ErrorStack;
+    use crate::util::c_openssl::error::VerifyKind::PubKeyPinning;
+    use crate::util::c_openssl::error::{ErrorStack, VerifyError};
     use crate::util::c_openssl::ssl::{InternalError, SslError, SslErrorCode};
 
     /// UT test cases for `SslErrorCode::from_int`.
@@ -244,6 +248,14 @@ mod ut_ssl_error {
             internal: None,
         };
         assert!(ssl_error.source().is_none());
+        let ssl_error = SslError {
+            code: SslErrorCode::ZERO_RETURN,
+            internal: Some(InternalError::User(VerifyError::from_msg(
+                PubKeyPinning,
+                "error",
+            ))),
+        };
+        assert!(ssl_error.source().is_some());
     }
 
     /// UT test cases for `SslError::fmt`.

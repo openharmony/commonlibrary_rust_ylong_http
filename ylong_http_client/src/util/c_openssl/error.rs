@@ -266,3 +266,102 @@ pub(crate) const fn error_get_reason(code: c_ulong) -> c_int {
     return ((2 as c_ulong * (error_system_error(code) as c_ulong))
         | ((code & 0x7FFFFF) * (!error_system_error(code) as c_ulong))) as c_int;
 }
+
+pub(crate) struct VerifyError {
+    kind: VerifyKind,
+    cause: Reason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VerifyKind {
+    PubKeyPinning,
+}
+
+pub(crate) enum Reason {
+    Msg(&'static str),
+}
+
+impl VerifyError {
+    pub(crate) fn from_msg(kind: VerifyKind, msg: &'static str) -> Self {
+        Self {
+            kind,
+            cause: Reason::Msg(msg),
+        }
+    }
+}
+
+impl VerifyKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PubKeyPinning => "Public Key Pinning Error",
+        }
+    }
+}
+
+impl fmt::Debug for VerifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut builder = f.debug_struct("VerifyError");
+        builder.field("ErrorKind", &self.kind);
+        builder.field("Cause", &self.cause);
+        builder.finish()
+    }
+}
+
+impl fmt::Display for VerifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.kind.as_str())?;
+        write!(f, ": {}", self.cause)?;
+        Ok(())
+    }
+}
+
+impl fmt::Debug for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Msg(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl fmt::Display for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Msg(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl Error for VerifyError {}
+
+#[cfg(test)]
+mod ut_c_openssl_error {
+    use crate::util::c_openssl::error::{VerifyError, VerifyKind};
+
+    /// UT test cases for `VerifyKind::as_str`.
+    ///
+    /// # Brief
+    /// 1. Transfer ErrorKind to str a by calling `VerifyKind::as_str`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_verify_err_as_str() {
+        assert_eq!(
+            VerifyKind::PubKeyPinning.as_str(),
+            "Public Key Pinning Error"
+        );
+    }
+
+    /// UT test cases for `VerifyKind::from` function.
+    ///
+    /// # Brief
+    /// 1. Calls `VerifyKind::from`.
+    /// 2. Checks if the results are correct.
+    #[test]
+    fn ut_verify_err_from() {
+        let error = VerifyError::from_msg(VerifyKind::PubKeyPinning, "error");
+        assert_eq!(
+            format!("{:?}", error),
+            "VerifyError { ErrorKind: PubKeyPinning, Cause: error }"
+        );
+        assert_eq!(format!("{error}"), "Public Key Pinning Error: error");
+    }
+}

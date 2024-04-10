@@ -53,7 +53,11 @@ where
     S: AsyncRead + AsyncWrite,
 {
     /// Like [`SslStream::new`](ssl::SslStream::new).
-    pub(crate) fn new(ssl: Ssl, stream: S) -> Result<Self, ErrorStack> {
+    pub(crate) fn new(
+        ssl: Ssl,
+        stream: S,
+        pinned_pubkey: Option<String>,
+    ) -> Result<Self, ErrorStack> {
         // This corresponds to `SSL_set_bio`.
         ssl::SslStream::new_base(
             ssl,
@@ -61,6 +65,7 @@ where
                 stream,
                 context: ptr::null_mut(),
             },
+            pinned_pubkey,
         )
         .map(AsyncSslStream)
     }

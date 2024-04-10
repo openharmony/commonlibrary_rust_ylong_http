@@ -19,6 +19,28 @@ extern "C" {
     pub(crate) fn EVP_PKEY_free(ctx: *mut EVP_PKEY);
 }
 
+pub(crate) enum EVP_MD_CTX {}
+
+pub(crate) enum EVP_MD {}
+
+extern "C" {
+    pub(crate) fn EVP_MD_CTX_new() -> *mut EVP_MD_CTX;
+
+    pub(crate) fn EVP_sha256() -> *mut EVP_MD;
+
+    pub(crate) fn EVP_DigestInit(ctx: *mut EVP_MD_CTX, md: *mut EVP_MD) -> c_int;
+
+    pub(crate) fn EVP_MD_CTX_free(ctx: *mut EVP_MD_CTX);
+
+    pub(crate) fn EVP_DigestUpdate(ctx: *mut EVP_MD_CTX, buf: *const c_uchar, cnt: c_int) -> c_int;
+
+    pub(crate) fn EVP_DigestFinal_ex(
+        ctx: *mut EVP_MD_CTX,
+        buf: *const c_uchar,
+        start: *const c_uint,
+    );
+}
+
 pub(crate) enum C_X509 {}
 
 // for `C_X509`
@@ -113,3 +135,12 @@ extern "C" {
 }
 
 pub(crate) enum STACK_X509 {}
+pub(crate) enum X509_PUBKEY {}
+
+extern "C" {
+    pub(crate) fn X509_get_X509_PUBKEY(x509: *mut C_X509) -> *mut X509_PUBKEY;
+
+    pub(crate) fn X509_PUBKEY_free(x509: *mut X509_PUBKEY);
+
+    pub(crate) fn i2d_X509_PUBKEY(pubkey: *const X509_PUBKEY, buf: *mut *const c_uchar) -> c_int;
+}

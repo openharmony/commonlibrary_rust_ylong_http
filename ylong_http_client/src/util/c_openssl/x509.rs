@@ -25,12 +25,12 @@ use super::ffi::pem::PEM_read_bio_X509;
 #[cfg(feature = "c_openssl_3_0")]
 use super::ffi::x509::X509_STORE_load_path;
 use super::ffi::x509::{
-    d2i_X509, EVP_PKEY_free, X509_NAME_free, X509_NAME_oneline, X509_STORE_CTX_free,
-    X509_STORE_CTX_get0_cert, X509_STORE_add_cert, X509_STORE_free, X509_STORE_new,
-    X509_VERIFY_PARAM_free, X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
+    d2i_X509, EVP_PKEY_free, X509_NAME_free, X509_NAME_oneline, X509_PUBKEY_free,
+    X509_STORE_CTX_free, X509_STORE_CTX_get0_cert, X509_STORE_add_cert, X509_STORE_free,
+    X509_STORE_new, X509_VERIFY_PARAM_free, X509_VERIFY_PARAM_set1_host, X509_VERIFY_PARAM_set1_ip,
     X509_VERIFY_PARAM_set_hostflags, X509_get_issuer_name, X509_get_pubkey, X509_get_subject_name,
     X509_get_version, X509_up_ref, X509_verify, X509_verify_cert_error_string, EVP_PKEY,
-    STACK_X509, X509_NAME, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM,
+    STACK_X509, X509_NAME, X509_PUBKEY, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM,
 };
 use super::foreign::{Foreign, ForeignRef};
 use super::stack::Stackof;
@@ -287,6 +287,13 @@ impl X509StoreContextRef {
         }
     }
 }
+
+foreign_type!(
+    type CStruct = X509_PUBKEY;
+    fn drop = X509_PUBKEY_free;
+    pub(crate) struct X509PubKey;
+    pub(crate) struct X509PubKeyRef;
+);
 
 #[cfg(test)]
 mod ut_x509 {
