@@ -16,8 +16,7 @@ use std::collections::HashMap;
 use libc::c_int;
 use ylong_http::request::uri::Uri;
 
-use crate::util::c_openssl::error::VerifyError;
-use crate::util::c_openssl::error::VerifyKind::PubKeyPinning;
+use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ffi::x509::{
     EVP_DigestFinal_ex, EVP_DigestInit, EVP_DigestUpdate, EVP_MD_CTX_free, EVP_MD_CTX_new,
     EVP_sha256,
@@ -179,10 +178,7 @@ pub(crate) unsafe fn sha256_digest(
     if md_ctx.is_null() {
         return Err(SslError {
             code: SslErrorCode::SSL,
-            internal: Some(InternalError::User(VerifyError::from_msg(
-                PubKeyPinning,
-                "Failed to allocates a digest context.",
-            ))),
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
     let init = EVP_DigestInit(md_ctx, EVP_sha256());
@@ -190,10 +186,7 @@ pub(crate) unsafe fn sha256_digest(
         EVP_MD_CTX_free(md_ctx);
         return Err(SslError {
             code: SslErrorCode::SSL,
-            internal: Some(InternalError::User(VerifyError::from_msg(
-                PubKeyPinning,
-                "Failed to set up digest context.",
-            ))),
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
     EVP_DigestUpdate(md_ctx, pub_key.as_ptr(), len);
