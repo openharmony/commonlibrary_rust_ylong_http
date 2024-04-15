@@ -280,7 +280,7 @@ fn sdv_client_public_key_pinning_error() {
 
         assert_eq!(
             format!("{:?}", response.expect("response is not an error")),
-            "HttpClientError { ErrorKind: Connect, Cause: Custom { kind: Other, error: SslError {\
+            "HttpClientError { ErrorKind: Connect, Cause: Custom { kind: Other, error: SslError { \
              code: SslErrorCode(1), internal: Some(User(VerifyError { ErrorKind: PubKeyPinning, \
              Cause: Pinned public key verification failed. })) } } }"
         );

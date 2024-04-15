@@ -258,10 +258,7 @@ fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError>
     if certificate.is_null() {
         return Err(SslError {
             code: SslErrorCode::SSL,
-            internal: Some(InternalError::User(VerifyError::from_msg(
-                PubKeyPinning,
-                "Failed to get the peer certificate.",
-            ))),
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
 
@@ -270,10 +267,7 @@ fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError>
         unsafe { X509_free(certificate) };
         return Err(SslError {
             code: SslErrorCode::SSL,
-            internal: Some(InternalError::User(VerifyError::from_msg(
-                PubKeyPinning,
-                "Failed to get the length of the peer public key.",
-            ))),
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
     let key = vec![0u8; size_1 as usize];
@@ -283,10 +277,7 @@ fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError>
         unsafe { X509_free(certificate) };
         return Err(SslError {
             code: SslErrorCode::SSL,
-            internal: Some(InternalError::User(VerifyError::from_msg(
-                PubKeyPinning,
-                "Failed to read the peer public key.",
-            ))),
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
 
