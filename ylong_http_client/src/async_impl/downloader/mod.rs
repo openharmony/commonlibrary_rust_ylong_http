@@ -253,10 +253,13 @@ impl Default for DownloadConfig {
 
 #[cfg(all(test, feature = "ylong_base"))]
 mod ut_downloader {
+    use std::sync::Arc;
+
     use ylong_http::h1::ResponseDecoder;
     use ylong_http::response::Response;
 
     use crate::async_impl::conn::StreamData;
+    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::{Downloader, HttpBody, Response as adpater_resp};
     use crate::util::normalizer::BodyLength;
 
@@ -291,8 +294,13 @@ mod ut_downloader {
             000; message = last\r\n\
             \r\n\
             ";
-        let chunk =
-            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_bytes.as_bytes(),
+        )
+        .unwrap();
         let mut decoder = ResponseDecoder::new();
         let result = decoder.decode(response_str).unwrap().unwrap();
         let response = Response::from_raw_parts(result.0, chunk);

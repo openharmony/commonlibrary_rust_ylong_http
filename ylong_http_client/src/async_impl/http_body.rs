@@ -15,6 +15,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::future::Future;
 use std::io::{Cursor, Read};
+use std::sync::Arc;
 
 use ylong_http::body::async_impl::Body;
 use ylong_http::body::TextBodyDecoder;
@@ -23,6 +24,7 @@ use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 use ylong_http::headers::Headers;
 
 use super::conn::StreamData;
+use crate::async_impl::interceptor::Interceptors;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf, Sleep};
 use crate::util::normalizer::BodyLength;
@@ -69,6 +71,7 @@ type BoxStreamData = Box<dyn StreamData + Sync + Send + Unpin>;
 
 impl HttpBody {
     pub(crate) fn new(
+        interceptors: Arc<Interceptors>,
         body_length: BodyLength,
         io: BoxStreamData,
         pre: &[u8],
@@ -82,11 +85,11 @@ impl HttpBody {
                 }
                 Kind::Empty
             }
-            BodyLength::Length(len) => Kind::Text(Text::new(len, pre, io)),
-            BodyLength::UntilClose => Kind::UntilClose(UntilClose::new(pre, io)),
+            BodyLength::Length(len) => Kind::Text(Text::new(len, pre, io, interceptors)),
+            BodyLength::UntilClose => Kind::UntilClose(UntilClose::new(pre, io, interceptors)),
 
             #[cfg(feature = "http1_1")]
-            BodyLength::Chunk => Kind::Chunk(Chunk::new(pre, io)),
+            BodyLength::Chunk => Kind::Chunk(Chunk::new(pre, io, interceptors)),
         };
         Ok(Self { kind, sleep: None })
     }
@@ -100,9 +103,14 @@ impl HttpBody {
     }
 
     #[cfg(feature = "http2")]
-    pub(crate) fn text(len: usize, pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn text(
+        len: usize,
+        pre: &[u8],
+        io: BoxStreamData,
+        interceptors: Arc<Interceptors>,
+    ) -> Self {
         Self {
-            kind: Kind::Text(Text::new(len, pre, io)),
+            kind: Kind::Text(Text::new(len, pre, io, interceptors)),
             sleep: None,
         }
     }
@@ -199,13 +207,15 @@ enum Kind {
 }
 
 struct UntilClose {
+    interceptors: Arc<Interceptors>,
     pre: Option<Cursor<Vec<u8>>>,
     io: Option<BoxStreamData>,
 }
 
 impl UntilClose {
-    pub(crate) fn new(pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn new(pre: &[u8], io: BoxStreamData, interceptors: Arc<Interceptors>) -> Self {
         Self {
+            interceptors,
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
         }
@@ -242,6 +252,8 @@ impl UntilClose {
                         if filled == 0 {
                             io.shutdown();
                         } else {
+                            self.interceptors
+                                .intercept_output(&buf[read..(read + filled)])?;
                             self.io = Some(io);
                         }
                         read += filled;
@@ -267,14 +279,21 @@ impl UntilClose {
 }
 
 struct Text {
+    interceptors: Arc<Interceptors>,
     decoder: TextBodyDecoder,
     pre: Option<Cursor<Vec<u8>>>,
     io: Option<BoxStreamData>,
 }
 
 impl Text {
-    pub(crate) fn new(len: usize, pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn new(
+        len: usize,
+        pre: &[u8],
+        io: BoxStreamData,
+        interceptors: Arc<Interceptors>,
+    ) -> Self {
         Self {
+            interceptors,
             decoder: TextBodyDecoder::new(len),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
@@ -336,6 +355,7 @@ impl Text {
                             ));
                         }
                         let (text, rem) = self.decoder.decode(read_buf.filled());
+                        self.interceptors.intercept_output(read_buf.filled())?;
                         read += filled;
                         // Contains redundant `rem`, return error.
                         match (text.is_complete(), rem.is_empty()) {
@@ -369,6 +389,7 @@ impl Text {
 
 #[cfg(feature = "http1_1")]
 struct Chunk {
+    interceptors: Arc<Interceptors>,
     decoder: ChunkBodyDecoder,
     pre: Option<Cursor<Vec<u8>>>,
     io: Option<BoxStreamData>,
@@ -376,8 +397,9 @@ struct Chunk {
 
 #[cfg(feature = "http1_1")]
 impl Chunk {
-    pub(crate) fn new(pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn new(pre: &[u8], io: BoxStreamData, interceptors: Arc<Interceptors>) -> Self {
         Self {
+            interceptors,
             decoder: ChunkBodyDecoder::new().contains_trailer(true),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),
             io: Some(io),
@@ -429,6 +451,7 @@ impl Chunk {
                         return Poll::Ready(err_from_msg!(BodyDecode, "Response body incomplete"));
                     }
                     let (size, flag) = self.merge_chunks(read_buf.filled_mut())?;
+                    self.interceptors.intercept_output(read_buf.filled_mut())?;
                     read += size;
                     if flag {
                         // Return if we find a 0-sized chunk.
@@ -514,8 +537,11 @@ impl Chunk {
 #[cfg(feature = "ylong_base")]
 #[cfg(test)]
 mod ut_async_http_body {
+    use std::sync::Arc;
+
     use ylong_http::body::async_impl;
 
+    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::HttpBody;
     use crate::util::normalizer::BodyLength;
     use crate::ErrorKind;
@@ -545,8 +571,13 @@ mod ut_async_http_body {
             000; message = last\r\n\
             accept:text/html\r\n\r\n\
             ";
-        let mut chunk =
-            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let mut chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_bytes.as_bytes(),
+        )
+        .unwrap();
         let res = async_impl::Body::trailer(&mut chunk)
             .await
             .unwrap()
@@ -565,6 +596,7 @@ mod ut_async_http_body {
             ";
 
         let mut chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
             BodyLength::Chunk,
             box_stream,
             chunk_body_no_trailer_bytes.as_bytes(),
@@ -597,8 +629,13 @@ mod ut_async_http_body {
             000; message = last\r\n\
             Expires: Wed, 21 Oct 2015 07:27:00 GMT \r\n\r\n\
             ";
-        let mut chunk =
-            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let mut chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_bytes.as_bytes(),
+        )
+        .unwrap();
         let res = async_impl::Body::trailer(&mut chunk)
             .await
             .unwrap()
@@ -636,8 +673,13 @@ mod ut_async_http_body {
             .as_bytes(),
         );
         let chunk_body_bytes = "";
-        let mut chunk =
-            HttpBody::new(BodyLength::Chunk, box_stream, chunk_body_bytes.as_bytes()).unwrap();
+        let mut chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Chunk,
+            box_stream,
+            chunk_body_bytes.as_bytes(),
+        )
+        .unwrap();
 
         let mut buf = [0u8; 32];
         // Read body part
@@ -654,6 +696,7 @@ mod ut_async_http_body {
             ";
 
         let mut chunk = HttpBody::new(
+            Arc::new(IdleInterceptor),
             BodyLength::Chunk,
             box_stream,
             chunk_body_no_trailer_bytes.as_bytes(),
@@ -686,7 +729,12 @@ mod ut_async_http_body {
         let box_stream = Box::new("".as_bytes());
         let content_bytes = "hello";
 
-        match HttpBody::new(BodyLength::Empty, box_stream, content_bytes.as_bytes()) {
+        match HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Empty,
+            box_stream,
+            content_bytes.as_bytes(),
+        ) {
             Ok(_) => (),
             Err(e) => assert_eq!(e.error_kind(), ErrorKind::Request),
         }
@@ -710,8 +758,13 @@ mod ut_async_http_body {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";
 
-        let mut text =
-            HttpBody::new(BodyLength::Length(11), box_stream, content_bytes.as_bytes()).unwrap();
+        let mut text = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Length(11),
+            box_stream,
+            content_bytes.as_bytes(),
+        )
+        .unwrap();
 
         let mut buf = [0u8; 5];
         // Read body part
@@ -727,8 +780,13 @@ mod ut_async_http_body {
         let box_stream = Box::new("".as_bytes());
         let content_bytes = "hello";
 
-        let mut text =
-            HttpBody::new(BodyLength::Length(5), box_stream, content_bytes.as_bytes()).unwrap();
+        let mut text = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::Length(5),
+            box_stream,
+            content_bytes.as_bytes(),
+        )
+        .unwrap();
 
         let mut buf = [0u8; 32];
         // Read body part
@@ -756,8 +814,13 @@ mod ut_async_http_body {
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";
 
-        let mut until_close =
-            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+        let mut until_close = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::UntilClose,
+            box_stream,
+            content_bytes.as_bytes(),
+        )
+        .unwrap();
 
         let mut buf = [0u8; 5];
         // Read body part
@@ -777,8 +840,13 @@ mod ut_async_http_body {
         let box_stream = Box::new("".as_bytes());
         let content_bytes = "hello";
 
-        let mut until_close =
-            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+        let mut until_close = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::UntilClose,
+            box_stream,
+            content_bytes.as_bytes(),
+        )
+        .unwrap();
 
         let mut buf = [0u8; 5];
         // Read body part

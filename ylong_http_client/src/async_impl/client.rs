@@ -11,11 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use ylong_http::request::uri::Uri;
 
 use super::pool::ConnPool;
 use super::timeout::TimeoutFuture;
 use super::{conn, Body, Connector, HttpConnector, Request, Response};
+use crate::async_impl::interceptor::{IdleInterceptor, Interceptor, Interceptors};
+use crate::async_impl::request::Message;
 use crate::error::HttpClientError;
 use crate::runtime::timeout;
 #[cfg(feature = "__c_openssl")]
@@ -64,6 +68,7 @@ use crate::Retry;
 pub struct Client<C: Connector> {
     inner: ConnPool<C, C::Stream>,
     config: ClientConfig,
+    interceptors: Arc<Interceptors>,
 }
 
 impl Client<HttpConnector> {
@@ -113,6 +118,7 @@ impl<C: Connector> Client<C> {
         Self {
             inner: ConnPool::new(HttpConfig::default(), connector),
             config: ClientConfig::default(),
+            interceptors: Arc::new(IdleInterceptor),
         }
     }
 
@@ -137,11 +143,14 @@ impl<C: Connector> Client<C> {
         let mut retries = self.config.retry.times().unwrap_or(0);
         loop {
             let response = self.send_request(&mut request).await;
-            // Only bodies which are reusable can be retried.
-            if response.is_ok() || retries == 0 || !request.body_mut().reuse() {
-                return response;
+            if let Err(ref err) = response {
+                if retries > 0 && request.body_mut().reuse() {
+                    self.interceptors.intercept_retry(err)?;
+                    retries -= 1;
+                    continue;
+                }
             }
-            retries -= 1;
+            return response;
         }
     }
 }
@@ -178,10 +187,14 @@ impl<C: Connector> Client<C> {
         conn: Conn<C::Stream>,
         request: &mut Request,
     ) -> Result<Response, HttpClientError> {
+        let message = Message {
+            request,
+            interceptor: Arc::clone(&self.interceptors),
+        };
         if let Some(timeout) = self.config.request_timeout.inner() {
-            TimeoutFuture::new(conn::request(conn, request), timeout).await
+            TimeoutFuture::new(conn::request(conn, message), timeout).await
         } else {
-            conn::request(conn, request).await
+            conn::request(conn, message).await
         }
     }
 
@@ -204,9 +217,14 @@ impl<C: Connector> Client<C> {
                     if !request.body_mut().reuse() {
                         *request.body_mut() = Body::empty();
                     }
+                    self.interceptors.intercept_redirect_request(request)?;
                     response = self.send_unformatted_request(request).await?;
+                    self.interceptors.intercept_redirect_response(&response)?;
                 }
-                Trigger::Stop => return Ok(response),
+                Trigger::Stop => {
+                    self.interceptors.intercept_response(&response)?;
+                    return Ok(response);
+                }
             }
         }
     }
@@ -237,6 +255,8 @@ pub struct ClientBuilder {
     /// Options and flags that is related to `Proxy`.
     proxies: Proxies,
 
+    interceptors: Arc<Interceptors>,
+
     /// Options and flags that is related to `TLS`.
     #[cfg(feature = "__tls")]
     tls: crate::util::TlsConfigBuilder,
@@ -257,7 +277,7 @@ impl ClientBuilder {
             http: HttpConfig::default(),
             client: ClientConfig::default(),
             proxies: Proxies::default(),
-
+            interceptors: Arc::new(IdleInterceptor),
             #[cfg(feature = "__tls")]
             tls: crate::util::TlsConfig::builder(),
         }
@@ -366,6 +386,28 @@ impl ClientBuilder {
         self
     }
 
+    /// Adds a `Interceptor` to the `Client`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ylong_http_client::async_impl::{ClientBuilder, Interceptor};
+    /// # use ylong_http_client::HttpClientError;
+    ///
+    /// # fn add_interceptor<T>(interceptor: T)
+    /// # where T: Interceptor + Sync + Send + 'static,
+    /// # {
+    /// let builder = ClientBuilder::new().interceptor(interceptor);
+    /// # }
+    /// ```
+    pub fn interceptor<T>(mut self, interceptors: T) -> Self
+    where
+        T: Interceptor + Sync + Send + 'static,
+    {
+        self.interceptors = Arc::new(interceptors);
+        self
+    }
+
     /// Constructs a `Client` based on the given settings.
     ///
     /// # Examples
@@ -387,6 +429,7 @@ impl ClientBuilder {
         Ok(Client {
             inner: ConnPool::new(self.http, connector),
             config: self.client,
+            interceptors: self.interceptors,
         })
     }
 }
@@ -697,8 +740,6 @@ impl ClientBuilder {
     /// let builder = ClientBuilder::new().cert_verifier(verifier);
     /// ```
     pub fn cert_verifier<T: CertVerifier + Send + Sync + 'static>(mut self, verifier: T) -> Self {
-        use std::sync::Arc;
-
         use crate::util::config::tls::DefaultCertVerifier;
 
         self.tls = self
@@ -716,7 +757,6 @@ impl Default for ClientBuilder {
 
 #[cfg(test)]
 mod ut_async_impl_client {
-
     #[cfg(feature = "ylong_base")]
     use ylong_runtime::io::AsyncWriteExt;
 
@@ -738,9 +778,12 @@ mod ut_async_impl_client {
 
     #[cfg(feature = "ylong_base")]
     async fn client_request_redirect() {
+        use std::sync::Arc;
+
         use ylong_http::h1::ResponseDecoder;
         use ylong_http::response::Response as HttpResponse;
 
+        use crate::async_impl::interceptor::IdleInterceptor;
         use crate::async_impl::{ClientBuilder, HttpBody};
         use crate::util::normalizer::BodyLength;
         use crate::util::Redirect;
@@ -751,8 +794,13 @@ mod ut_async_impl_client {
 
         let box_stream = Box::new("hello world".as_bytes());
         let content_bytes = "";
-        let until_close =
-            HttpBody::new(BodyLength::UntilClose, box_stream, content_bytes.as_bytes()).unwrap();
+        let until_close = HttpBody::new(
+            Arc::new(IdleInterceptor),
+            BodyLength::UntilClose,
+            box_stream,
+            content_bytes.as_bytes(),
+        )
+        .unwrap();
         let response = HttpResponse::from_raw_parts(result.0, until_close);
         let response = Response::new(response);
         let mut request = Request::builder()

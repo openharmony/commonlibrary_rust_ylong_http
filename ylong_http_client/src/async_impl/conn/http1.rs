@@ -22,7 +22,8 @@ use ylong_http::version::Version;
 
 use super::StreamData;
 use crate::async_impl::connector::ConnInfo;
-use crate::async_impl::{HttpBody, Request, Response};
+use crate::async_impl::request::Message;
+use crate::async_impl::{HttpBody, Response};
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use crate::util::dispatcher::http1::Http1Conn;
@@ -32,22 +33,27 @@ const TEMP_BUF_SIZE: usize = 16 * 1024;
 
 pub(crate) async fn request<S>(
     mut conn: Http1Conn<S>,
-    request: &mut Request,
+    message: Message<'_>,
 ) -> Result<Response, HttpClientError>
 where
     S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {
+    message
+        .interceptor
+        .intercept_connection(conn.raw_mut().conn_detail())?;
+    message.interceptor.intercept_request(message.request)?;
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
 
     // Encodes and sends Request-line and Headers(non-body fields).
-    let mut part_encoder = RequestEncoder::new(request.part().clone());
-    if conn.raw_mut().is_proxy() && request.uri().scheme() == Some(&Scheme::HTTP) {
+    let mut part_encoder = RequestEncoder::new(message.request.part().clone());
+    if conn.raw_mut().is_proxy() && message.request.uri().scheme() == Some(&Scheme::HTTP) {
         part_encoder.absolute_uri(true);
     }
     loop {
         match part_encoder.encode(&mut buf[..]) {
             Ok(0) => break,
             Ok(written) => {
+                message.interceptor.intercept_input(&buf[..written])?;
                 // RequestEncoder writes `buf` as much as possible.
                 if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
                     conn.shutdown();
@@ -61,7 +67,8 @@ where
         }
     }
 
-    let content_length = request
+    let content_length = message
+        .request
         .part()
         .headers
         .get("Content-Length")
@@ -69,7 +76,8 @@ where
         .and_then(|v| v.parse::<u64>().ok())
         .is_some();
 
-    let transfer_encoding = request
+    let transfer_encoding = message
+        .request
         .part()
         .headers
         .get("Transfer-Encoding")
@@ -77,7 +85,7 @@ where
         .map(|v| v.contains("chunked"))
         .unwrap_or(false);
 
-    let body = request.body_mut();
+    let body = message.request.body_mut();
 
     match (content_length, transfer_encoding) {
         (_, true) => {
@@ -110,6 +118,7 @@ where
                 }
             };
 
+            message.interceptor.intercept_output(&buf[..size])?;
             match decoder.decode(&buf[..size]) {
                 Ok(None) => {}
                 Ok(Some((part, rem))) => break (part, rem),
@@ -152,7 +161,7 @@ where
         }
     }
 
-    let length = match BodyLengthParser::new(request.method(), &part).parse() {
+    let length = match BodyLengthParser::new(message.request.method(), &part).parse() {
         Ok(length) => length,
         Err(e) => {
             conn.shutdown();
@@ -160,7 +169,7 @@ where
         }
     };
 
-    let body = HttpBody::new(length, Box::new(conn), pre)?;
+    let body = HttpBody::new(message.interceptor, length, Box::new(conn), pre)?;
     Ok(Response::new(
         ylong_http::response::Response::from_raw_parts(part, body),
     ))
