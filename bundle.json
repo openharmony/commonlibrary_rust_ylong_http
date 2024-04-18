@@ -26,9 +26,7 @@
     "ram": "~200KB",
     "deps": {
       "components": [
-        "ylong_runtime"
-      ],
-      "third_party": [
+        "ylong_runtime",
         "openssl"
       ]
     },
