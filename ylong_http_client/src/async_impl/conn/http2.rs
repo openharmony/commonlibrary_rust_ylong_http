@@ -28,6 +28,7 @@ use ylong_http::response::{Response, ResponsePart};
 
 use crate::async_impl::client::Retryable;
 use crate::async_impl::conn::HttpBody;
+use crate::async_impl::request::Message;
 use crate::async_impl::StreamData;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
@@ -37,15 +38,15 @@ const UNUSED_FLAG: u8 = 0x0;
 
 pub(crate) async fn request<S, T>(
     mut conn: Http2Conn<S>,
-    request: &mut Request<T>,
+    message: Message<T>,
     retryable: &mut Retryable,
 ) -> Result<Response<HttpBody>, HttpClientError>
 where
     T: Body,
     S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
 {
-    let part = request.part().clone();
-    let body = request.body_mut();
+    let part = message.request.part().clone();
+    let body = message.request.body_mut();
 
     // TODO Due to the reason of the Body structure, the use of the trailer is not
     // implemented here for the time being, and it needs to be completed after the
@@ -78,10 +79,11 @@ where
     frame_2_response(conn, frame, retryable)
 }
 
-fn frame_2_response<S>(
+fn frame_2_response<S, T>(
     conn: Http2Conn<S>,
     headers_frame: Frame,
     retryable: &mut Retryable,
+    message: Message<T>,
 ) -> Result<Response<HttpBody>, HttpClientError>
 where
     S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
@@ -147,7 +149,7 @@ where
                 Some(0) => HttpBody::empty(),
                 Some(size) => {
                     let text_io = TextIo::new(conn);
-                    HttpBody::text(size, &[0u8; 0], Box::new(text_io))
+                    HttpBody::text(size, &[0u8; 0], Box::new(text_io), message.interceptor)
                 }
             }
         }

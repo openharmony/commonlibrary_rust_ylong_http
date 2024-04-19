@@ -61,10 +61,13 @@ where
 
 #[cfg(all(test, feature = "ylong_base"))]
 mod ut_timeout {
+    use std::sync::Arc;
+
     use ylong_http::response::status::StatusCode;
     use ylong_http::response::{Response, ResponsePart};
     use ylong_http::version::Version;
 
+    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::timeout::TimeoutFuture;
     use crate::async_impl::HttpBody;
     use crate::util::normalizer::BodyLength;
@@ -84,7 +87,13 @@ mod ut_timeout {
                 status: StatusCode::OK,
                 headers: Default::default(),
             };
-            let body = HttpBody::new(BodyLength::Empty, Box::new([].as_slice()), &[]).unwrap();
+            let body = HttpBody::new(
+                Arc::new(IdleInterceptor),
+                BodyLength::Empty,
+                Box::new([].as_slice()),
+                &[],
+            )
+            .unwrap();
             Ok(crate::async_impl::Response::new(Response::from_raw_parts(
                 part, body,
             )))

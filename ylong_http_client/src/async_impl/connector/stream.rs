@@ -11,23 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `ConnInfo` trait and `HttpStream` implementation.
+//! `ConnDetail` trait and `HttpStream` implementation.
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::async_impl::interceptor::ConnDetail;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// `ConnInfo` trait, which is used to obtain information about the current
+/// `ConnDetail` trait, which is used to obtain information about the current
 /// connection.
 pub trait ConnInfo {
     /// Whether the current connection is a proxy.
     fn is_proxy(&self) -> bool;
+
+    fn conn_detail(&self) -> ConnDetail;
 }
 
 /// A connection wrapper containing io and io information.
 pub struct HttpStream<T> {
-    is_proxy: bool,
+    detail: ConnDetail,
     stream: T,
 }
 
@@ -69,16 +72,17 @@ where
 
 impl<T> ConnInfo for HttpStream<T> {
     fn is_proxy(&self) -> bool {
-        self.is_proxy
+        self.detail.proxy
+    }
+
+    fn conn_detail(&self) -> ConnDetail {
+        self.detail.clone()
     }
 }
 
 impl<T> HttpStream<T> {
     /// HttpStream constructor.
-    pub fn new(io: T, is_proxy: bool) -> HttpStream<T> {
-        HttpStream {
-            is_proxy,
-            stream: io,
-        }
+    pub fn new(io: T, detail: ConnDetail) -> HttpStream<T> {
+        HttpStream { detail, stream: io }
     }
 }

@@ -75,6 +75,7 @@ mod no_tls {
 
     use super::{tcp_stream, Connector, HttpConnector};
     use crate::async_impl::connector::stream::HttpStream;
+    use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::runtime::TcpStream;
 
     impl Connector for HttpConnector {
@@ -92,9 +93,17 @@ mod no_tls {
                 is_proxy = true;
             }
             Box::pin(async move {
-                tcp_stream(&addr)
-                    .await
-                    .map(|stream| HttpStream::new(stream, is_proxy))
+                let stream = tcp_stream(&addr).await?;
+                let local = stream.local_addr()?;
+                let peer = stream.peer_addr()?;
+                let detail = ConnDetail {
+                    protocol: ConnProtocol::Tcp,
+                    local,
+                    peer,
+                    addr,
+                    proxy: is_proxy,
+                };
+                Ok(HttpStream::new(stream, detail))
             })
         }
     }
@@ -112,6 +121,7 @@ mod tls {
 
     use super::{tcp_stream, Connector, HttpConnector};
     use crate::async_impl::connector::stream::HttpStream;
+    use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
@@ -147,16 +157,25 @@ mod tls {
 
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
-                    Ok(HttpStream::new(
-                        MixStream::Http(tcp_stream(&addr).await?),
-                        is_proxy,
-                    ))
+                    let stream = tcp_stream(&addr).await?;
+                    let local = stream.local_addr()?;
+                    let peer = stream.peer_addr()?;
+                    let detail = ConnDetail {
+                        protocol: ConnProtocol::Tcp,
+                        local,
+                        peer,
+                        addr,
+                        proxy: is_proxy,
+                    };
+
+                    Ok(HttpStream::new(MixStream::Http(stream), detail))
                 }),
                 Scheme::HTTPS => {
                     let config = self.config.tls.clone();
                     Box::pin(async move {
                         let mut tcp = tcp_stream(&addr).await?;
-
+                        let local = tcp.local_addr()?;
+                        let peer = tcp.peer_addr()?;
                         if is_proxy {
                             tcp = tunnel(tcp, host, port, auth).await?;
                         };
@@ -166,12 +185,19 @@ mod tls {
                             .ssl_new(&host_name)
                             .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp, pinned_key))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                        let detail = ConnDetail {
+                            protocol: ConnProtocol::Tcp,
+                            local,
+                            peer,
+                            addr,
+                            proxy: is_proxy,
+                        };
 
                         Pin::new(&mut stream)
                             .connect()
                             .await
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-                        Ok(HttpStream::new(MixStream::Https(stream), is_proxy))
+                        Ok(HttpStream::new(MixStream::Https(stream), detail))
                     })
                 }
             }

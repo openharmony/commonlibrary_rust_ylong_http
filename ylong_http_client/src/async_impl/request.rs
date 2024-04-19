@@ -17,10 +17,12 @@ use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::io::Cursor;
+use std::sync::Arc;
 
 use ylong_http::body::MultiPartBase;
 use ylong_http::request::{Request as Req, RequestBuilder as ReqBuilder};
 
+use crate::async_impl::interceptor::Interceptors;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf};
 
@@ -368,6 +370,11 @@ impl AsyncRead for Body {
             BodyKind::Multipart(ref mut multipart) => Pin::new(multipart).poll_read(cx, buf),
         }
     }
+}
+
+pub(crate) struct Message<'a> {
+    pub(crate) request: &'a mut Request,
+    pub(crate) interceptor: Arc<Interceptors>,
 }
 
 #[cfg(feature = "ylong_base")]
