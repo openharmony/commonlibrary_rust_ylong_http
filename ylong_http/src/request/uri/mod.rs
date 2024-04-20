@@ -18,7 +18,11 @@
 //!
 //! [`URI`]: https://httpwg.org/specs/rfc9110.html#uri.references
 
+mod percent_encoding;
+
 use core::convert::{Infallible, TryFrom, TryInto};
+
+pub use percent_encoding::PercentEncoder;
 
 use crate::error::{ErrorKind, HttpError};
 

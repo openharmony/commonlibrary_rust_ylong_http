@@ -20,6 +20,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use ylong_http::body::MultiPartBase;
+use ylong_http::request::uri::PercentEncoder as PerEncoder;
 use ylong_http::request::{Request as Req, RequestBuilder as ReqBuilder};
 
 use crate::async_impl::interceptor::Interceptors;
@@ -372,6 +373,29 @@ impl AsyncRead for Body {
     }
 }
 
+/// HTTP url percent encoding implementation.
+///
+/// # Examples
+///
+/// ```
+/// use ylong_http_client::async_impl::PercentEncoder;
+///
+/// let url = "https://www.example.com/data/测试文件.txt";
+/// let encoded = PercentEncoder::encode(url).unwrap();
+/// assert_eq!(
+///     encoded,
+///     "https://www.example.com/data/%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.txt"
+/// );
+/// ```
+pub struct PercentEncoder;
+
+impl PercentEncoder {
+    /// Percent-coding entry.
+    pub fn encode(url: &str) -> Result<String, HttpClientError> {
+        PerEncoder::parse(url).map_err(|e| HttpClientError::from_error(ErrorKind::Other, e))
+    }
+}
+
 pub(crate) struct Message<'a> {
     pub(crate) request: &'a mut Request,
     pub(crate) interceptor: Arc<Interceptors>,
@@ -400,7 +424,7 @@ fn poll_read_cursor(
 
 #[cfg(test)]
 mod ut_client_request {
-    use crate::async_impl::{Body, RequestBuilder};
+    use crate::async_impl::{Body, PercentEncoder, RequestBuilder};
 
     /// UT test cases for `RequestBuilder::default`.
     ///
@@ -467,5 +491,20 @@ mod ut_client_request {
             assert_eq!(v_size, vec![50, 50, 50, 50, 50, 11]);
         });
         ylong_runtime::block_on(handle).unwrap();
+    }
+
+    /// UT test cases for `PercentEncoder::encode`.
+    ///
+    /// # Brief
+    /// 1. Creates a `PercentEncoder`.
+    /// 2. Checks if result is correct.
+    #[test]
+    fn ut_client_percent_encoder_encode() {
+        let url = "https://www.example.com/data/测试文件.txt";
+        let encoded = PercentEncoder::encode(url).unwrap();
+        assert_eq!(
+            encoded,
+            "https://www.example.com/data/%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.txt"
+        );
     }
 }
