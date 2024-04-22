@@ -44,7 +44,7 @@ pub use connector::{Connector, HttpConnector};
 pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
 pub use http_body::HttpBody;
 pub use interceptor::{ConnDetail, ConnProtocol, Interceptor};
-pub use request::{Body, Request, RequestBuilder};
+pub use request::{Body, PercentEncoder, Request, RequestBuilder};
 pub use response::Response;
 pub use uploader::{UploadOperator, Uploader, UploaderBuilder};
 pub use ylong_http::body::{MultiPart, Part};
