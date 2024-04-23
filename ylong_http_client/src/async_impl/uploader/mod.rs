@@ -21,7 +21,6 @@ pub use builder::{UploaderBuilder, WantsReader};
 pub use operator::{Console, UploadOperator};
 use ylong_http::body::{MultiPart, MultiPartBase};
 
-use crate::error::ErrorKind;
 use crate::runtime::{AsyncRead, ReadBuf};
 
 /// An uploader that can help you upload the request body.
@@ -146,9 +145,6 @@ where
             this.config.total_bytes,
         ) {
             Poll::Ready(Ok(())) => {}
-            Poll::Ready(Err(e)) if e.error_kind() == ErrorKind::UserAborted => {
-                return Poll::Ready(Ok(()));
-            }
             // TODO: Consider another way to handle error.
             Poll::Ready(Err(e)) => {
                 return Poll::Ready(Err(std::io::Error::new(
@@ -307,10 +303,18 @@ mod ut_uploader {
 
         let mut user_slice = [0_u8; 12];
         let mut buf = ylong_runtime::io::ReadBuf::new(user_slice.as_mut_slice());
-        ylong_runtime::futures::poll_fn(|cx| Pin::new(&mut uploader).poll_read(cx, &mut buf))
-            .await
-            .unwrap();
-        let size = buf.filled_len();
-        assert_eq!(size, 0);
+        let res =
+            ylong_runtime::futures::poll_fn(|cx| Pin::new(&mut uploader).poll_read(cx, &mut buf))
+                .await;
+        assert_eq!(
+            format!("{:?}", res.err()),
+            format!(
+                "{:?}",
+                Some(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    Box::new(HttpClientError::user_aborted())
+                ))
+            ),
+        );
     }
 }
