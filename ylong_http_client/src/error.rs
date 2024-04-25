@@ -15,6 +15,7 @@
 //! this crate.
 
 use core::fmt::{Debug, Display, Formatter};
+use std::sync::Once;
 use std::{error, io};
 
 /// The structure encapsulates errors that can be encountered when working with
@@ -148,7 +149,21 @@ impl Display for HttpClientError {
     }
 }
 
-impl error::Error for HttpClientError {}
+impl error::Error for HttpClientError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        static mut USER_ABORTED: Option<Box<dyn error::Error>> = None;
+        static ONCE: Once = Once::new();
+
+        ONCE.call_once(|| {
+            unsafe { USER_ABORTED = Some(Box::new(HttpClientError::user_aborted())) };
+        });
+
+        if self.kind == ErrorKind::UserAborted {
+            return unsafe { USER_ABORTED.as_ref().map(|e| e.as_ref()) };
+        }
+        None
+    }
+}
 
 /// Error kinds which can indicate the type of a `HttpClientError`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
