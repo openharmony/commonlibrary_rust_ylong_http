@@ -194,7 +194,14 @@ where
                 Ok(size) => written += size,
                 Err(e) => {
                     conn.shutdown();
-                    return err_from_other!(BodyTransfer, e);
+
+                    let error = e.into();
+                    // When using `Uploader`, here we can get `UserAborted` error.
+                    return if error.source().is_some() {
+                        Err(HttpClientError::user_aborted())
+                    } else {
+                        err_from_other!(BodyTransfer, error)
+                    };
                 }
             }
         }
