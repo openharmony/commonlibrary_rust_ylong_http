@@ -140,20 +140,20 @@ pub(crate) enum Trigger {
 }
 
 const UPDATED_HEADERS: [&str; 8] = [
-    "transfer_encoding",
-    "content_encoding",
-    "content_type",
-    "content_length",
-    "content_language",
-    "content_location",
+    "transfer-encoding",
+    "content-encoding",
+    "content-type",
+    "content-length",
+    "content-language",
+    "content-location",
     "digest",
-    "last_modified",
+    "last-modified",
 ];
 
 const SENSITIVE_HEADERS: [&str; 5] = [
     "authorization",
     "cookie",
     "cookie2",
-    "proxy_authorization",
-    "www_authenticate",
+    "proxy-authorization",
+    "www-authenticate",
 ];
