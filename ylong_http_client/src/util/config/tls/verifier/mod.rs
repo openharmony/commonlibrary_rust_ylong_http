@@ -11,9 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "__c_openssl")]
 mod openssl;
-#[cfg(feature = "__c_openssl")]
 pub use self::openssl::ServerCerts;
 
 /// used to custom verify certs

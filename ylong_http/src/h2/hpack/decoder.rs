@@ -163,7 +163,7 @@ impl<'a> Updater<'a> {
         self.update_literal_without_indexing(name, value)
     }
 
-    fn check_header_list_size(&mut self, key: &Header, value: &String) -> Result<(), H2Error> {
+    fn check_header_list_size(&mut self, key: &Header, value: &str) -> Result<(), H2Error> {
         let line_size = header_line_length(key.len(), value.len());
         self.update_size(line_size);
         if self.lines.header_size > self.header_list_size {

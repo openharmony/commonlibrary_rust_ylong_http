@@ -115,11 +115,11 @@ where
 
 pub(crate) fn build_headers_frame(
     id: u32,
-    part: RequestPart,
+    mut part: RequestPart,
     is_end_stream: bool,
 ) -> Result<Frame, HttpError> {
-    check_connection_specific_headers(id, &part.headers)?;
-    let pseudo = build_pseudo_headers(&part);
+    remove_connection_specific_headers(&mut part.headers)?;
+    let pseudo = build_pseudo_headers(&mut part)?;
     let mut header_part = h2::Parts::new();
     header_part.set_header_lines(part.headers);
     header_part.set_pseudo(pseudo);
@@ -141,7 +141,7 @@ pub(crate) fn build_headers_frame(
 // [`Connection-Specific Headers`] implementation.
 //
 // [`Connection-Specific Headers`]: https://www.rfc-editor.org/rfc/rfc9113.html#name-connection-specific-header-
-fn check_connection_specific_headers(id: u32, headers: &Headers) -> Result<(), HttpError> {
+fn remove_connection_specific_headers(headers: &mut Headers) -> Result<(), HttpError> {
     const CONNECTION_SPECIFIC_HEADERS: &[&str; 5] = &[
         "connection",
         "keep-alive",
@@ -150,21 +150,19 @@ fn check_connection_specific_headers(id: u32, headers: &Headers) -> Result<(), H
         "transfer-encoding",
     ];
     for specific_header in CONNECTION_SPECIFIC_HEADERS.iter() {
-        if headers.get(*specific_header).is_some() {
-            return Err(H2Error::StreamError(id, ErrorCode::ProtocolError).into());
-        }
+        headers.remove(*specific_header);
     }
 
     if let Some(te_ref) = headers.get("te") {
         let te = te_ref.to_string()?;
         if te.as_str() != "trailers" {
-            return Err(H2Error::StreamError(id, ErrorCode::ProtocolError).into());
+            headers.remove("te");
         }
     }
     Ok(())
 }
 
-fn build_pseudo_headers(request_part: &RequestPart) -> PseudoHeaders {
+fn build_pseudo_headers(request_part: &mut RequestPart) -> Result<PseudoHeaders, HttpError> {
     let mut pseudo = PseudoHeaders::default();
     match request_part.uri.scheme() {
         Some(scheme) => {
@@ -179,8 +177,12 @@ fn build_pseudo_headers(request_part: &RequestPart) -> PseudoHeaders {
             .path_and_query()
             .or_else(|| Some(String::from("/"))),
     );
-    pseudo.set_authority(request_part.uri.authority().map(|auth| auth.to_string()));
-    pseudo
+    let host = request_part
+        .headers
+        .remove("host")
+        .and_then(|auth| auth.to_string().ok());
+    pseudo.set_authority(host);
+    Ok(pseudo)
 }
 
 struct TextIo<S> {
@@ -339,7 +341,7 @@ impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
 #[cfg(test)]
 mod ut_http2 {
     use ylong_http::body::TextBody;
-    use ylong_http::h2::{ErrorCode, H2Error, Payload};
+    use ylong_http::h2::Payload;
     use ylong_http::request::RequestBuilder;
 
     use crate::async_impl::conn::http2::build_headers_frame;
@@ -378,11 +380,9 @@ mod ut_http2 {
             Body: "Hi",
         }
         );
-        let frame = build_headers_frame(1, request.part().clone(), false)
-            .expect("headers frame build failed");
+        let frame = build_headers_frame(1, request.part().clone(), false).unwrap();
         assert_eq!(frame.flags().bits(), 0x4);
-        let frame = build_headers_frame(1, request.part().clone(), true)
-            .expect("headers frame build failed");
+        let frame = build_headers_frame(1, request.part().clone(), true).unwrap();
         assert_eq!(frame.stream_id(), 1);
         assert_eq!(frame.flags().bits(), 0x5);
         if let Payload::Headers(headers) = frame.payload() {
@@ -395,20 +395,5 @@ mod ut_http2 {
         } else {
             panic!("Unexpected frame type")
         }
-        let request = build_request!(
-            Request: {
-            Method: "GET",
-            Uri: "http://127.0.0.1:0/data",
-            Version: "HTTP/2.0",
-            Header: "upgrade", "h2",
-            Header: "host", "127.0.0.1:0",
-            Body: "Hi",
-        }
-        );
-        let frame = build_headers_frame(1, request.part().clone(), true);
-        assert_eq!(
-            frame.err(),
-            Some(H2Error::StreamError(1, ErrorCode::ProtocolError).into())
-        );
     }
 }
