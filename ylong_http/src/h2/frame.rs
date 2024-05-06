@@ -347,6 +347,11 @@ impl Data {
     pub fn data(&self) -> &Vec<u8> {
         &self.data
     }
+
+    /// Returns the number of bytes in the `Data` payload.
+    pub fn size(&self) -> usize {
+        self.data.len()
+    }
 }
 
 impl Settings {
@@ -381,6 +386,15 @@ impl Settings {
         let setting_size = 6;
         settings_count * setting_size
     }
+
+    /// Returns a ACK SETTINGS frame.
+    pub fn ack() -> Frame {
+        Frame::new(
+            0,
+            FrameFlags::new(0x1),
+            Payload::Settings(Settings::new(vec![])),
+        )
+    }
 }
 
 impl Setting {
@@ -412,6 +426,12 @@ impl SettingsBuilder {
     /// SETTINGS_ENABLE_PUSH (0x02) setting.
     pub fn enable_push(mut self, is_enable: bool) -> Self {
         self.settings.push(Setting::EnablePush(is_enable));
+        self
+    }
+
+    /// SETTINGS_INITIAL_WINDOW_SIZE(0x04) setting.
+    pub fn initial_window_size(mut self, size: u32) -> Self {
+        self.settings.push(Setting::InitialWindowSize(size));
         self
     }
 
@@ -494,7 +514,7 @@ impl WindowUpdate {
     }
 
     /// Returns the window size increment.
-    pub(crate) fn get_increment(&self) -> u32 {
+    pub fn get_increment(&self) -> u32 {
         self.window_size_increment
     }
 
@@ -543,11 +563,16 @@ impl RstStream {
     }
 
     /// GET the `ErrorCode` of `RstStream`
-    pub fn error(&self, id: u32) -> Result<H2Error, HttpError> {
+    pub fn error(&self, id: u32) -> Result<H2Error, H2Error> {
         Ok(H2Error::StreamError(
             id,
             ErrorCode::try_from(self.error_code)?,
         ))
+    }
+
+    /// Returns whether error code is 0.
+    pub fn is_no_error(&self) -> bool {
+        self.error_code == 0
     }
 }
 
@@ -560,6 +585,11 @@ impl Ping {
     /// Returns the data associated with the Ping.
     pub fn data(&self) -> [u8; 8] {
         self.data
+    }
+
+    /// Returns a ACK PING frame.
+    pub fn ack(ping: Ping) -> Frame {
+        Frame::new(0, FrameFlags::new(0x1), Payload::Ping(ping))
     }
 }
 

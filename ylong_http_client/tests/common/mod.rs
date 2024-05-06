@@ -191,7 +191,7 @@ macro_rules! start_http_server {
                 .expect("Set cert error");
             let acceptor = acceptor.build();
 
-            let (stream, _) = listener.accept().await.expect("TCP listener accpet error");
+            let (stream, _) = listener.accept().await.expect("TCP listener accept error");
             let ssl = openssl::ssl::Ssl::new(acceptor.context()).expect("Ssl Error");
             let mut stream = tokio_openssl::SslStream::new(ssl, stream).expect("SslStream Error");
             core::pin::Pin::new(&mut stream).accept().await.unwrap(); // SSL negotiation finished successfully

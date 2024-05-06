@@ -26,12 +26,17 @@ pub(crate) mod pool;
 pub(crate) mod proxy;
 pub(crate) mod redirect;
 
+#[cfg(feature = "async")]
+pub(crate) mod request;
+
 #[cfg(feature = "__c_openssl")]
 pub(crate) mod c_openssl;
 
 #[cfg(any(feature = "http1_1", feature = "http2"))]
 pub(crate) mod dispatcher;
 
+#[cfg(feature = "http2")]
+pub(crate) mod h2;
 #[cfg(all(test, feature = "ylong_base"))]
 pub(crate) mod test_utils;
 
@@ -43,3 +48,5 @@ pub use c_openssl::{
 #[cfg(feature = "__tls")]
 pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
 pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
+#[cfg(all(feature = "async", feature = "ylong_base", feature = "http2"))]
+pub(crate) use h2::{split, Reader, Writer};

@@ -57,7 +57,7 @@ pub(crate) struct Conns<S> {
     list: Arc<Mutex<Vec<ConnDispatcher<S>>>>,
 
     #[cfg(feature = "http2")]
-    h2_occupation: Arc<crate::AsyncMutex<()>>,
+    h2_occupation: Arc<crate::runtime::AsyncMutex<()>>,
 }
 
 impl<S> Conns<S> {
@@ -66,7 +66,7 @@ impl<S> Conns<S> {
             list: Arc::new(Mutex::new(Vec::new())),
 
             #[cfg(feature = "http2")]
-            h2_occupation: Arc::new(crate::AsyncMutex::new(())),
+            h2_occupation: Arc::new(crate::runtime::AsyncMutex::new(())),
         }
     }
 }
@@ -82,7 +82,7 @@ impl<S> Clone for Conns<S> {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static> Conns<S> {
     async fn conn<F, E>(
         &self,
         config: HttpConfig,
@@ -106,9 +106,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
                     // create tcp connection.
                     let dispatcher = ConnDispatcher::http2(
                         config.http2_config,
-                        connect_fut.await.map_err(|e| {
-                            HttpClientError::from_error(ErrorKind::Connect, Some(e))
-                        })?,
+                        connect_fut
+                            .await
+                            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?,
                     );
                     Ok(self.dispatch_conn(dispatcher))
                 }
@@ -145,6 +145,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conns<S> {
         let mut list = self.list.lock().unwrap();
         let mut conn = None;
         let curr = take(&mut *list);
+        // TODO Distinguish between http2 connections and http1 connections.
         for dispatcher in curr.into_iter() {
             // Discard invalid dispatchers.
             if dispatcher.is_shutdown() {

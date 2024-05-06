@@ -31,6 +31,7 @@ use crate::util::dispatcher::Conn;
 use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
 use crate::util::redirect::{RedirectInfo, Trigger};
+use crate::util::request::RequestArc;
 #[cfg(feature = "__tls")]
 use crate::CertVerifier;
 use crate::Retry;
@@ -139,12 +140,12 @@ impl<C: Connector> Client<C> {
     /// }
     /// ```
     pub async fn request(&self, request: Request) -> Result<Response, HttpClientError> {
-        let mut request = request;
+        let mut request = RequestArc::new(request);
         let mut retries = self.config.retry.times().unwrap_or(0);
         loop {
-            let response = self.send_request(&mut request).await;
+            let response = self.send_request(request.clone()).await;
             if let Err(ref err) = response {
-                if retries > 0 && request.body_mut().reuse() {
+                if retries > 0 && request.ref_mut().body_mut().reuse() {
                     self.interceptors.intercept_retry(err)?;
                     retries -= 1;
                     continue;
@@ -156,17 +157,17 @@ impl<C: Connector> Client<C> {
 }
 
 impl<C: Connector> Client<C> {
-    async fn send_request(&self, request: &mut Request) -> Result<Response, HttpClientError> {
-        let response = self.send_unformatted_request(request).await?;
+    async fn send_request(&self, request: RequestArc) -> Result<Response, HttpClientError> {
+        let response = self.send_unformatted_request(request.clone()).await?;
         self.redirect(response, request).await
     }
 
     async fn send_unformatted_request(
         &self,
-        request: &mut Request,
+        mut request: RequestArc,
     ) -> Result<Response, HttpClientError> {
-        RequestFormatter::new(&mut *request).format()?;
-        let conn = self.connect_to(request.uri()).await?;
+        RequestFormatter::new(request.ref_mut()).format()?;
+        let conn = self.connect_to(request.ref_mut().uri()).await?;
         self.send_request_on_conn(conn, request).await
     }
 
@@ -185,7 +186,7 @@ impl<C: Connector> Client<C> {
     async fn send_request_on_conn(
         &self,
         conn: Conn<C::Stream>,
-        request: &mut Request,
+        request: RequestArc,
     ) -> Result<Response, HttpClientError> {
         let message = Message {
             request,
@@ -201,7 +202,7 @@ impl<C: Connector> Client<C> {
     async fn redirect(
         &self,
         response: Response,
-        request: &mut Request,
+        mut request: RequestArc,
     ) -> Result<Response, HttpClientError> {
         let mut response = response;
         let mut info = RedirectInfo::new();
@@ -210,15 +211,16 @@ impl<C: Connector> Client<C> {
                 .config
                 .redirect
                 .inner()
-                .redirect(request, &response, &mut info)?
+                .redirect(request.ref_mut(), &response, &mut info)?
             {
                 Trigger::NextLink => {
                     // Here the body should be reused.
-                    if !request.body_mut().reuse() {
-                        *request.body_mut() = Body::empty();
+                    if !request.ref_mut().body_mut().reuse() {
+                        *request.ref_mut().body_mut() = Body::empty();
                     }
-                    self.interceptors.intercept_redirect_request(request)?;
-                    response = self.send_unformatted_request(request).await?;
+                    self.interceptors
+                        .intercept_redirect_request(request.ref_mut())?;
+                    response = self.send_unformatted_request(request.clone()).await?;
                     self.interceptors.intercept_redirect_response(&response)?;
                 }
                 Trigger::Stop => {
@@ -460,7 +462,7 @@ impl ClientBuilder {
     /// let config = ClientBuilder::new().set_http2_max_frame_size(2 << 13);
     /// ```
     pub fn set_http2_max_frame_size(mut self, size: u32) -> Self {
-        self.http.http2_config.max_frame_size = size;
+        self.http.http2_config.set_max_frame_size(size);
         self
     }
 
@@ -474,7 +476,7 @@ impl ClientBuilder {
     /// let config = ClientBuilder::new().set_http2_max_header_list_size(16 << 20);
     /// ```
     pub fn set_http2_max_header_list_size(mut self, size: u32) -> Self {
-        self.http.http2_config.max_header_list_size = size;
+        self.http.http2_config.set_max_header_list_size(size);
         self
     }
 
@@ -488,7 +490,37 @@ impl ClientBuilder {
     /// let config = ClientBuilder::new().set_http2_max_header_list_size(4096);
     /// ```
     pub fn set_http2_header_table_size(mut self, size: u32) -> Self {
-        self.http.http2_config.header_table_size = size;
+        self.http.http2_config.set_header_table_size(size);
+        self
+    }
+
+    /// Sets the maximum connection window allowed by the client.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().set_conn_recv_window_size(4096);
+    /// ```
+    pub fn set_conn_recv_window_size(mut self, size: u32) -> Self {
+        assert!(size <= crate::util::h2::MAX_FLOW_CONTROL_WINDOW);
+        self.http.http2_config.set_conn_window_size(size);
+        self
+    }
+
+    /// Sets the `SETTINGS_INITIAL_WINDOW_SIZE`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().set_stream_recv_window_size(4096);
+    /// ```
+    pub fn set_stream_recv_window_size(mut self, size: u32) -> Self {
+        assert!(size <= crate::util::h2::MAX_FLOW_CONTROL_WINDOW);
+        self.http.http2_config.set_stream_window_size(size);
         self
     }
 }
@@ -786,6 +818,7 @@ mod ut_async_impl_client {
         use crate::async_impl::interceptor::IdleInterceptor;
         use crate::async_impl::{ClientBuilder, HttpBody};
         use crate::util::normalizer::BodyLength;
+        use crate::util::request::RequestArc;
         use crate::util::Redirect;
 
         let response_str = "HTTP/1.1 304 \r\nAge: \t 270646 \t \t\r\nLocation: \t http://example3.com:80/foo?a=1 \t \t\r\nDate: \t Mon, 19 Dec 2022 01:46:59 GMT \t \t\r\nEtag:\t \"3147526947+gzip\" \t \t\r\n\r\n".as_bytes();
@@ -803,17 +836,18 @@ mod ut_async_impl_client {
         .unwrap();
         let response = HttpResponse::from_raw_parts(result.0, until_close);
         let response = Response::new(response);
-        let mut request = Request::builder()
+        let request = Request::builder()
             .url("http://example1.com:80/foo?a=1")
             .body(Body::slice("this is a body"))
             .unwrap();
+        let request = RequestArc::new(request);
 
         let client = ClientBuilder::default()
             .redirect(Redirect::limited(2))
             .connect_timeout(Timeout::from_secs(2))
             .build()
             .unwrap();
-        let res = client.redirect(response, &mut request).await;
+        let res = client.redirect(response, request.clone()).await;
         assert!(res.is_ok())
     }
 

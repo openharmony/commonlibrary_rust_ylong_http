@@ -31,10 +31,7 @@ pub(crate) trait StreamData: AsyncRead {
 // TODO: Use structures instead of a function to reuse the io buf.
 // TODO: Maybe `AsyncWrapper<Conn<S>>` ?.
 
-pub(crate) async fn request<S>(
-    conn: Conn<S>,
-    message: Message<'_>,
-) -> Result<Response, HttpClientError>
+pub(crate) async fn request<S>(conn: Conn<S>, message: Message) -> Result<Response, HttpClientError>
 where
     S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
 {

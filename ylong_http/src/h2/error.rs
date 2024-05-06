@@ -29,7 +29,7 @@ use std::convert::{Infallible, TryFrom};
 use crate::error::{ErrorKind, HttpError};
 
 /// The http2 error handle implementation
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum H2Error {
     /// [`Stream Error`] Handling.
     ///
@@ -108,7 +108,7 @@ impl ErrorCode {
 }
 
 impl TryFrom<u32> for ErrorCode {
-    type Error = HttpError;
+    type Error = H2Error;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         let err = match value {
             0x00 => ErrorCode::NoError,
@@ -125,7 +125,7 @@ impl TryFrom<u32> for ErrorCode {
             0x0b => ErrorCode::EnhanceYourCalm,
             0x0c => ErrorCode::InadequateSecurity,
             0x0d => ErrorCode::Http1_1Required,
-            _ => return Err(HttpError::from(ErrorKind::InvalidInput)),
+            _ => return Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
         };
         Ok(err)
     }
