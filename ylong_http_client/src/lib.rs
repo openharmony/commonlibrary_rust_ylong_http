@@ -73,7 +73,7 @@ pub(crate) mod runtime {
         spawn,
         sync::{
             mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-            Mutex as AsyncMutex,
+            Mutex as AsyncMutex, MutexGuard,
         },
     };
     #[cfg(all(feature = "tokio_base", feature = "async"))]
@@ -94,7 +94,7 @@ pub(crate) mod runtime {
         spawn,
         sync::{
             mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-            Mutex as AsyncMutex,
+            Mutex as AsyncMutex, MutexGuard,
         },
     };
 

@@ -11,23 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// TLS Application-Layer Protocol Negotiation (ALPN) Protocol is defined in
-/// [`RFC7301`]. `AlpnProtocol` contains some protocols used in HTTP, which
-/// registered in [`IANA`].
-///
-/// [`RFC7301`]: https://www.rfc-editor.org/rfc/rfc7301.html#section-3
-/// [`IANA`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-///
-/// # Examples
-/// ```
-/// use ylong_http_client::AlpnProtocol;
-///
-/// let alpn = AlpnProtocol::HTTP11;
-/// assert_eq!(alpn.as_use_bytes(), b"\x08http/1.1");
-/// assert_eq!(alpn.id_sequence(), b"http/1.1");
-/// ```
+// TLS Application-Layer Protocol Negotiation (ALPN) Protocol is defined in
+// [`RFC7301`]. `AlpnProtocol` contains some protocols used in HTTP, which
+// registered in [`IANA`].
+//
+// [`RFC7301`]: https://www.rfc-editor.org/rfc/rfc7301.html#section-3
+// [`IANA`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AlpnProtocol(Inner);
+pub(crate) struct AlpnProtocol(Inner);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Inner {
@@ -46,51 +37,51 @@ impl AlpnProtocol {
     /// `HTTP/0.9` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const HTTP09: Self = Self(Inner::HTTP09);
+    pub(crate) const HTTP09: Self = Self(Inner::HTTP09);
 
     /// `HTTP/1.0` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const HTTP10: Self = Self(Inner::HTTP10);
+    pub(crate) const HTTP10: Self = Self(Inner::HTTP10);
 
     /// `HTTP/1.1` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const HTTP11: Self = Self(Inner::HTTP11);
+    pub(crate) const HTTP11: Self = Self(Inner::HTTP11);
 
     /// `SPDY/1` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const SPDY1: Self = Self(Inner::SPDY1);
+    pub(crate) const SPDY1: Self = Self(Inner::SPDY1);
 
     /// `SPDY/2` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const SPDY2: Self = Self(Inner::SPDY2);
+    pub(crate) const SPDY2: Self = Self(Inner::SPDY2);
 
     /// `SPDY/3` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const SPDY3: Self = Self(Inner::SPDY3);
+    pub(crate) const SPDY3: Self = Self(Inner::SPDY3);
 
     /// `HTTP/2 over TLS` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const H2: Self = Self(Inner::H2);
+    pub(crate) const H2: Self = Self(Inner::H2);
 
     /// `HTTP/2 over TCP` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const H2C: Self = Self(Inner::H2C);
+    pub(crate) const H2C: Self = Self(Inner::H2C);
 
     /// `HTTP/3` in [`IANA Registration`].
     ///
     /// [`IANA Registration`]: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-    pub const H3: Self = Self(Inner::H3);
+    pub(crate) const H3: Self = Self(Inner::H3);
 
     /// Gets ALPN “wire format”, which consists protocol name prefixed by its
     /// byte length.
-    pub fn as_use_bytes(&self) -> &[u8] {
+    pub(crate) fn wire_format_bytes(&self) -> &[u8] {
         match *self {
             AlpnProtocol::HTTP09 => b"\x08http/0.9",
             AlpnProtocol::HTTP10 => b"\x08http/1.0",
@@ -103,31 +94,16 @@ impl AlpnProtocol {
             AlpnProtocol::H3 => b"\x02h3",
         }
     }
-
-    /// Gets ALPN protocol name, which also called identification sequence.
-    pub fn id_sequence(&self) -> &[u8] {
-        &self.as_use_bytes()[1..]
-    }
 }
 
 /// `AlpnProtocolList` consists of a sequence of supported protocol names
 /// prefixed by their byte length.
-///
-/// # Examples
-/// ```
-/// use ylong_http_client::{AlpnProtocol, AlpnProtocolList};
-///
-/// let list = AlpnProtocolList::new()
-///     .extend(AlpnProtocol::SPDY1)
-///     .extend(AlpnProtocol::HTTP11);
-/// assert_eq!(list.as_slice(), b"\x06spdy/1\x08http/1.1");
-/// ```
 #[derive(Debug, Default)]
-pub struct AlpnProtocolList(Vec<u8>);
+pub(crate) struct AlpnProtocolList(Vec<u8>);
 
 impl AlpnProtocolList {
     /// Creates a new `AlpnProtocolList`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         AlpnProtocolList(vec![])
     }
 
@@ -136,20 +112,14 @@ impl AlpnProtocolList {
     }
 
     /// Adds an `AlpnProtocol`.
-    pub fn extend(mut self, protocol: AlpnProtocol) -> Self {
-        self.extend_from_slice(protocol.as_use_bytes());
+    pub(crate) fn extend(mut self, protocol: AlpnProtocol) -> Self {
+        self.extend_from_slice(protocol.wire_format_bytes());
         self
-    }
-
-    /// Gets `Vec<u8>` of ALPN “wire format”, which consists of a sequence of
-    /// supported protocol names prefixed by their byte length.
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.0
     }
 
     /// Gets `&[u8]` of ALPN “wire format”, which consists of a sequence of
     /// supported protocol names prefixed by their byte length.
-    pub fn as_slice(&self) -> &[u8] {
+    pub(crate) fn as_slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 }
@@ -158,23 +128,23 @@ impl AlpnProtocolList {
 mod ut_alpn {
     use crate::util::{AlpnProtocol, AlpnProtocolList};
 
-    /// UT test cases for `AlpnProtocol::as_use_bytes`.
+    /// UT test cases for `AlpnProtocol::wire_format_bytes`.
     ///
     /// # Brief
     /// 1. Creates a `AlpnProtocol`.
-    /// 2. Gets `&[u8]` by AlpnProtocol::as_use_bytes.
+    /// 2. Gets `&[u8]` by AlpnProtocol::wire_format_bytes.
     /// 3. Checks whether the result is correct.
     #[test]
     fn ut_alpn_as_use_bytes() {
-        assert_eq!(AlpnProtocol::HTTP09.as_use_bytes(), b"\x08http/0.9");
-        assert_eq!(AlpnProtocol::HTTP10.as_use_bytes(), b"\x08http/1.0");
-        assert_eq!(AlpnProtocol::HTTP11.as_use_bytes(), b"\x08http/1.1");
-        assert_eq!(AlpnProtocol::SPDY1.as_use_bytes(), b"\x06spdy/1");
-        assert_eq!(AlpnProtocol::SPDY2.as_use_bytes(), b"\x06spdy/2");
-        assert_eq!(AlpnProtocol::SPDY3.as_use_bytes(), b"\x06spdy/3");
-        assert_eq!(AlpnProtocol::H2.as_use_bytes(), b"\x02h2");
-        assert_eq!(AlpnProtocol::H2C.as_use_bytes(), b"\x03h2c");
-        assert_eq!(AlpnProtocol::H3.as_use_bytes(), b"\x02h3");
+        assert_eq!(AlpnProtocol::HTTP09.wire_format_bytes(), b"\x08http/0.9");
+        assert_eq!(AlpnProtocol::HTTP10.wire_format_bytes(), b"\x08http/1.0");
+        assert_eq!(AlpnProtocol::HTTP11.wire_format_bytes(), b"\x08http/1.1");
+        assert_eq!(AlpnProtocol::SPDY1.wire_format_bytes(), b"\x06spdy/1");
+        assert_eq!(AlpnProtocol::SPDY2.wire_format_bytes(), b"\x06spdy/2");
+        assert_eq!(AlpnProtocol::SPDY3.wire_format_bytes(), b"\x06spdy/3");
+        assert_eq!(AlpnProtocol::H2.wire_format_bytes(), b"\x02h2");
+        assert_eq!(AlpnProtocol::H2C.wire_format_bytes(), b"\x03h2c");
+        assert_eq!(AlpnProtocol::H3.wire_format_bytes(), b"\x02h3");
     }
 
     /// UT test cases for `AlpnProtocol::clone`.
@@ -186,17 +156,6 @@ mod ut_alpn {
     #[test]
     fn ut_alpn_clone() {
         assert_eq!(AlpnProtocol::HTTP09, AlpnProtocol::HTTP09.clone());
-    }
-
-    /// UT test cases for `AlpnProtocol::id_sequence`.
-    ///
-    /// # Brief
-    /// 1. Creates a `AlpnProtocol`.
-    /// 2. Gets `&[u8]` by AlpnProtocol::id_sequence.
-    /// 3. Checks whether the result is correct.
-    #[test]
-    fn ut_alpn_id_sequence() {
-        assert_eq!(AlpnProtocol::HTTP09.id_sequence(), b"http/0.9");
     }
 
     /// UT test cases for `AlpnProtocolList::new`.
@@ -249,23 +208,6 @@ mod ut_alpn {
                 .extend(AlpnProtocol::HTTP09)
                 .as_slice(),
             b"\x08http/0.9"
-        );
-    }
-
-    /// UT test cases for `AlpnProtocolList::to_bytes`.
-    ///
-    /// # Brief
-    /// 1. Creates a `AlpnProtocolList` and adds several `AlpnProtocol`s.
-    /// 2. Gets bytes by `AlpnProtocolList::to_bytes`.
-    /// 3. Checks whether the result is correct.
-    #[test]
-    fn ut_alpn_list_to_bytes() {
-        assert_eq!(
-            AlpnProtocolList::new()
-                .extend(AlpnProtocol::SPDY1)
-                .extend(AlpnProtocol::HTTP11)
-                .into_bytes(),
-            b"\x06spdy/1\x08http/1.1".to_vec()
         );
     }
 }

@@ -189,6 +189,11 @@ macro_rules! start_http_server {
             acceptor
                 .set_certificate_chain_file("tests/file/cert.pem")
                 .expect("Set cert error");
+            acceptor.set_alpn_protos(b"\x08http/1.1").unwrap();
+            acceptor.set_alpn_select_callback(|_, client| {
+                openssl::ssl::select_next_proto(b"\x08http/1.1", client).ok_or(openssl::ssl::AlpnError::NOACK)
+            });
+
             let acceptor = acceptor.build();
 
             let (stream, _) = listener.accept().await.expect("TCP listener accept error");
@@ -285,7 +290,6 @@ macro_rules! set_server_fn {
                 $(
                     $method => {
                         assert_eq!($method, request.method().as_str(), "Assert request method failed");
-
                         assert_eq!(
                             "/",
                             request.uri().to_string(),

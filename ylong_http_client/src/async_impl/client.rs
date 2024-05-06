@@ -32,7 +32,7 @@ use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
 use crate::util::redirect::{RedirectInfo, Trigger};
 use crate::util::request::RequestArc;
-#[cfg(feature = "__tls")]
+#[cfg(feature = "__c_openssl")]
 use crate::CertVerifier;
 use crate::Retry;
 
@@ -420,10 +420,29 @@ impl ClientBuilder {
     /// let client = ClientBuilder::new().build();
     /// ```
     pub fn build(self) -> Result<Client<HttpConnector>, HttpClientError> {
+        #[cfg(feature = "__c_openssl")]
+        use crate::util::{AlpnProtocol, AlpnProtocolList};
+
+        #[cfg(feature = "__c_openssl")]
+        let origin_builder = self.tls;
+        #[cfg(feature = "__c_openssl")]
+        let tls_builder = match self.http.version {
+            HttpVersion::Http1 => origin_builder,
+            #[cfg(feature = "http2")]
+            HttpVersion::Http2 => origin_builder.alpn_protos(AlpnProtocol::H2.wire_format_bytes()),
+            HttpVersion::Negotiate => {
+                let supported = AlpnProtocolList::new();
+                #[cfg(feature = "http2")]
+                let supported = supported.extend(AlpnProtocol::H2);
+                let supported = supported.extend(AlpnProtocol::HTTP11);
+                origin_builder.alpn_proto_list(supported)
+            }
+        };
+
         let config = ConnectorConfig {
             proxies: self.proxies,
             #[cfg(feature = "__tls")]
-            tls: self.tls.build()?,
+            tls: tls_builder.build()?,
         };
 
         let connector = HttpConnector::new(config);
@@ -448,7 +467,7 @@ impl ClientBuilder {
     /// let builder = ClientBuilder::new().http2_prior_knowledge();
     /// ```
     pub fn http2_prior_knowledge(mut self) -> Self {
-        self.http.version = HttpVersion::Http2PriorKnowledge;
+        self.http.version = HttpVersion::Http2;
         self
     }
 

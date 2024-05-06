@@ -12,7 +12,7 @@
 // limitations under the License.
 
 mod alpn;
-pub use alpn::{AlpnProtocol, AlpnProtocolList};
+pub(crate) use alpn::{AlpnProtocol, AlpnProtocolList};
 
 mod verifier;
 pub(crate) use verifier::DefaultCertVerifier;

@@ -79,10 +79,17 @@ extern "C" {
 
     /// Client sets the list of protocols available to be negotiated.
     pub(crate) fn SSL_CTX_set_alpn_protos(
-        s: *mut SSL_CTX,
+        ctx: *mut SSL_CTX,
         data: *const c_uchar,
         len: c_uint,
     ) -> c_int;
+
+    /// returns the selected protocol. It is not NUL-terminated.
+    pub(crate) fn SSL_get0_alpn_selected(
+        ssl: *const SSL,
+        data: *mut *const c_uchar,
+        len: *mut c_uint,
+    );
 
     /// Sets/replaces the certificate verification storage of ctx to/with store.
     /// If another X509_STORE object is currently set in ctx, it will be
