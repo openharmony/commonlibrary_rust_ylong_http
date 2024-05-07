@@ -29,7 +29,7 @@ use crate::util::base64::encode;
 use crate::util::c_openssl::bio::BioMethod;
 use crate::util::c_openssl::error::VerifyError;
 use crate::util::c_openssl::error::VerifyKind::PubKeyPinning;
-use crate::util::c_openssl::ffi::ssl::{SSL_get1_peer_certificate, SSL};
+use crate::util::c_openssl::ffi::ssl::SSL;
 use crate::util::c_openssl::ffi::x509::{i2d_X509_PUBKEY, X509_free, X509_get_X509_PUBKEY};
 use crate::util::c_openssl::verify::sha256_digest;
 
@@ -254,7 +254,21 @@ pub(crate) enum ShutdownResult {
 
 // TODO The SSLError thrown here is meaningless and has no information.
 fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
-    let certificate = unsafe { SSL_get1_peer_certificate(ssl) };
+    #[cfg(feature = "c_openssl_3_0")]
+    use crate::util::c_openssl::ffi::ssl::SSL_get1_peer_certificate;
+    #[cfg(feature = "c_openssl_1_1")]
+    use crate::util::c_openssl::ffi::ssl::SSL_get_peer_certificate;
+
+    let certificate = unsafe {
+        #[cfg(feature = "c_openssl_3_0")]
+        {
+            SSL_get1_peer_certificate(ssl)
+        }
+        #[cfg(feature = "c_openssl_1_1")]
+        {
+            SSL_get_peer_certificate(ssl)
+        }
+    };
     if certificate.is_null() {
         return Err(SslError {
             code: SslErrorCode::SSL,
