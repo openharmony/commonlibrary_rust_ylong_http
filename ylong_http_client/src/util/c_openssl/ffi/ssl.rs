@@ -149,7 +149,11 @@ extern "C" {
     /// by the peer, if any.
     pub(crate) fn SSL_get_verify_result(ssl: *const SSL) -> c_long;
 
+    #[cfg(feature = "c_openssl_3_0")]
     pub(crate) fn SSL_get1_peer_certificate(ssl: *const SSL) -> *mut C_X509;
+
+    #[cfg(feature = "c_openssl_1_1")]
+    pub(crate) fn SSL_get_peer_certificate(ssl: *const SSL) -> *mut C_X509;
 
     pub(crate) fn SSL_set_bio(ssl: *mut SSL, rbio: *mut BIO, wbio: *mut BIO);
 
