@@ -27,7 +27,6 @@ pub struct PseudoHeaders {
     status: Option<String>,
 }
 
-// TODO: 去掉冗余的方法。
 impl PseudoHeaders {
     /// Create a new `PseudoHeaders`.
     pub(crate) fn new() -> Self {
