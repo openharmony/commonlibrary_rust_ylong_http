@@ -98,6 +98,7 @@ mod no_tls {
                 let peer = stream.peer_addr()?;
                 let detail = ConnDetail {
                     protocol: ConnProtocol::Tcp,
+                    alpn: None,
                     local,
                     peer,
                     addr,
@@ -162,6 +163,7 @@ mod tls {
                     let peer = stream.peer_addr()?;
                     let detail = ConnDetail {
                         protocol: ConnProtocol::Tcp,
+                        alpn: None,
                         local,
                         peer,
                         addr,
@@ -185,18 +187,22 @@ mod tls {
                             .ssl_new(&host_name)
                             .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp, pinned_key))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+                        Pin::new(&mut stream)
+                            .connect()
+                            .await
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+                        let alpn = stream.negotiated_alpn_protocol().map(Vec::from);
                         let detail = ConnDetail {
                             protocol: ConnProtocol::Tcp,
+                            alpn,
                             local,
                             peer,
                             addr,
                             proxy: is_proxy,
                         };
 
-                        Pin::new(&mut stream)
-                            .connect()
-                            .await
-                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
                         Ok(HttpStream::new(MixStream::Https(stream), detail))
                     })
                 }

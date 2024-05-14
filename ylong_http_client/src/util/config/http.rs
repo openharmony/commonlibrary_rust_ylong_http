@@ -26,7 +26,7 @@ impl HttpConfig {
     /// Creates a new, default `HttpConfig`.
     pub(crate) fn new() -> Self {
         Self {
-            version: HttpVersion::Http1,
+            version: HttpVersion::Negotiate,
 
             #[cfg(feature = "http2")]
             http2_config: http2::H2Config::new(),
@@ -47,8 +47,11 @@ pub(crate) enum HttpVersion {
     Http1,
 
     #[cfg(feature = "http2")]
-    /// Enforce `HTTP/2.0` requests without `HTTP/1.1` Upgrade.
-    Http2PriorKnowledge,
+    /// Enforce `HTTP/2.0` requests without `HTTP/1.1` Upgrade or ALPN.
+    Http2,
+
+    /// Negotiate the protocol version through the ALPN.
+    Negotiate,
 }
 
 #[cfg(feature = "http2")]

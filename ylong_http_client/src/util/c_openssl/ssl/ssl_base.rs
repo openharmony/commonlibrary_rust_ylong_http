@@ -12,9 +12,11 @@
 // limitations under the License.
 
 use core::{cmp, ffi, fmt, str};
-use std::ffi::CString;
+use std::ffi::{c_uchar, CString};
 #[cfg(feature = "sync")]
 use std::io::{Read, Write};
+use std::ptr::null;
+use std::slice::from_raw_parts;
 
 use libc::{c_char, c_int, c_long, c_void};
 
@@ -35,7 +37,7 @@ use crate::c_openssl::x509::{
 };
 use crate::util::c_openssl::check_ptr;
 use crate::util::c_openssl::error::ErrorStack;
-use crate::util::c_openssl::ffi::ssl::{SSL_free, SSL_new, SSL};
+use crate::util::c_openssl::ffi::ssl::{SSL_free, SSL_get0_alpn_selected, SSL_new, SSL};
 use crate::util::c_openssl::foreign::Foreign;
 
 foreign_type!(
@@ -138,6 +140,19 @@ impl SslRef {
         match host_name.parse() {
             Ok(ip) => param.set_ip(ip),
             Err(_) => param.set_host(host_name),
+        }
+    }
+
+    pub(crate) fn negotiated_alpn_protocol(&self) -> Option<&[u8]> {
+        let mut data = null() as *const c_uchar;
+        let mut len = 0_u32;
+        unsafe {
+            SSL_get0_alpn_selected(self.as_ptr(), &mut data, &mut len);
+            if data.is_null() {
+                None
+            } else {
+                Some(from_raw_parts(data, len as usize))
+            }
         }
     }
 }

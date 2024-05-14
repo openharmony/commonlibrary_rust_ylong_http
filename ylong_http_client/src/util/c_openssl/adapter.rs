@@ -256,42 +256,24 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Sets the protocols to sent to the server for Application Layer Protocol
-    /// Negotiation (ALPN).
-    ///
-    /// Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
-    ///
-    /// # Examples
-    /// ```
-    /// use ylong_http_client::TlsConfigBuilder;
-    ///
-    /// let protocols = b"\x06spdy/1\x08http/1.1";
-    /// let builder = TlsConfigBuilder::new().alpn_protos(protocols);
-    /// ```
-    pub fn alpn_protos(mut self, protocols: &[u8]) -> Self {
+    // Sets the protocols to sent to the server for Application Layer Protocol
+    // Negotiation (ALPN).
+    //
+    // Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
+    #[cfg(feature = "http2")]
+    pub(crate) fn alpn_protos(mut self, protocols: &[u8]) -> Self {
         self.inner = self
             .inner
             .and_then(|mut builder| builder.set_alpn_protos(protocols).map(|_| builder));
         self
     }
 
-    /// Sets the protocols to sent to the server for Application Layer Protocol
-    /// Negotiation (ALPN).
-    ///
-    /// This method is based on `openssl::SslContextBuilder::set_alpn_protos`.
-    ///
-    /// Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
-    ///
-    /// # Examples
-    /// ```
-    /// use ylong_http_client::{AlpnProtocol, AlpnProtocolList, TlsConfigBuilder};
-    ///
-    /// let protocols = AlpnProtocolList::new()
-    ///     .extend(AlpnProtocol::SPDY1)
-    ///     .extend(AlpnProtocol::HTTP11);
-    /// let builder = TlsConfigBuilder::new().alpn_protos(protocols.as_slice());
-    /// ```
-    pub fn alpn_proto_list(mut self, list: AlpnProtocolList) -> Self {
+    // Sets the protocols to sent to the server for Application Layer Protocol
+    // Negotiation (ALPN).
+    //
+    // This method is based on `openssl::SslContextBuilder::set_alpn_protos`.
+    // Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
+    pub(crate) fn alpn_proto_list(mut self, list: AlpnProtocolList) -> Self {
         self.inner = self
             .inner
             .and_then(|mut builder| builder.set_alpn_protos(list.as_slice()).map(|_| builder));

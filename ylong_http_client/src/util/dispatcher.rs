@@ -154,6 +154,7 @@ pub(crate) mod http2 {
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
+    use ylong_http::error::HttpError;
     use ylong_http::h2::{
         ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, Goaway, H2Error, Payload,
         Settings, SettingsBuilder,
@@ -166,6 +167,7 @@ pub(crate) mod http2 {
     use crate::util::config::H2Config;
     use crate::util::dispatcher::{ConnDispatcher, Dispatcher};
     use crate::util::h2::{ConnManager, FlowControl, RecvData, RequestWrapper, SendData, Streams};
+    use crate::ErrorKind::Request;
     use crate::{ErrorKind, HttpClientError};
 
     const DEFAULT_MAX_STREAM_ID: u32 = u32::MAX >> 1;
@@ -461,9 +463,7 @@ pub(crate) mod http2 {
                         None => err_from_msg!(Request, "Response Receiver Closed !"),
                         Some(message) => match message {
                             RespMessage::Output(frame) => Ok(frame),
-                            RespMessage::OutputExit(_e) => {
-                                err_from_msg!(Request, "Response Recv Failed !")
-                            }
+                            RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),
                         },
                     }
 
@@ -472,9 +472,7 @@ pub(crate) mod http2 {
                         Err(err) => Err(HttpClientError::from_error(ErrorKind::Request, err)),
                         Ok(message) => match message {
                             RespMessage::Output(frame) => Ok(frame),
-                            RespMessage::OutputExit(_e) => {
-                                err_from_msg!(Request, "Response Recv Failed !")
-                            }
+                            RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),
                         },
                     }
                 }
@@ -497,9 +495,7 @@ pub(crate) mod http2 {
                     }
                     Poll::Ready(Some(message)) => match message {
                         RespMessage::Output(frame) => Poll::Ready(Ok(frame)),
-                        RespMessage::OutputExit(_e) => {
-                            Poll::Ready(err_from_msg!(Request, "H2 io manager occurs error !"))
-                        }
+                        RespMessage::OutputExit(e) => Poll::Ready(Err(dispatch_client_error(e))),
                     },
                     Poll::Pending => Poll::Pending,
                 }
@@ -511,9 +507,7 @@ pub(crate) mod http2 {
                     }
                     Poll::Ready(Ok(message)) => match message {
                         RespMessage::Output(frame) => Poll::Ready(Ok(frame)),
-                        RespMessage::OutputExit(_e) => {
-                            Poll::Ready(err_from_msg!(Request, "H2 io manager occurs error !"))
-                        }
+                        RespMessage::OutputExit(e) => Poll::Ready(Err(dispatch_client_error(e))),
                     },
                     Poll::Pending => Poll::Pending,
                 }
@@ -555,6 +549,21 @@ pub(crate) mod http2 {
     impl From<H2Error> for DispatchErrorKind {
         fn from(err: H2Error) -> Self {
             DispatchErrorKind::H2(err)
+        }
+    }
+
+    pub(crate) fn dispatch_client_error(dispatch_error: DispatchErrorKind) -> HttpClientError {
+        match dispatch_error {
+            DispatchErrorKind::H2(e) => HttpClientError::from_error(Request, HttpError::from(e)),
+            DispatchErrorKind::Io(e) => {
+                HttpClientError::from_io_error(Request, std::io::Error::from(e))
+            }
+            DispatchErrorKind::ChannelClosed => {
+                HttpClientError::from_str(Request, "Coroutine channel closed.")
+            }
+            DispatchErrorKind::Disconnect => {
+                HttpClientError::from_str(Request, "remote peer closed.")
+            }
         }
     }
 }
