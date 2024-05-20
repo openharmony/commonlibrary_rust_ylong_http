@@ -1071,27 +1071,15 @@ impl ChunkBodyDecoder {
     fn decode_size<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
         self.stage = Stage::Size;
         if buf.is_empty() {
-            return Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::MetaSize,
-                    size: self.total_size,
-                    extension: ChunkExt::new(),
-                    data: &buf[..0],
-                    trailer: None,
-                },
-                buf,
-            ));
+            return Ok((self.sized_chunk(&buf[..0]), buf));
         }
         self.chunk_flag = false;
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'0' => {
-                    if buf.len() <= i + 1 {
-                        self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
-                        continue;
-                    }
-                    if buf[i + 1] != b';' && buf[i + 1] != b' ' && buf[i + 1] != b'\r' {
+                    if buf.len() <= i + 1
+                        || (buf[i + 1] != b';' && buf[i + 1] != b' ' && buf[i + 1] != b'\r')
+                    {
                         self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
                         continue;
                     }
@@ -1101,61 +1089,65 @@ impl ChunkBodyDecoder {
                         return self.skip_extension(&buf[i..]);
                     } else {
                         self.hex_count = Self::hex_to_decimal(self.hex_count, 0_i64)?;
-                        continue;
                     }
                 }
                 b'1'..=b'9' => {
                     self.hex_count = Self::hex_to_decimal(self.hex_count, b as i64 - '0' as i64)?;
                     self.chunk_flag = true;
                     self.num_flag = true;
-                    continue;
                 }
                 b'a'..=b'f' => {
                     self.hex_count =
                         Self::hex_to_decimal(self.hex_count, b as i64 - 'a' as i64 + 10i64)?;
                     self.chunk_flag = true;
                     self.num_flag = true;
-                    continue;
                 }
                 b'A'..=b'F' => {
                     self.hex_count =
                         Self::hex_to_decimal(self.hex_count, b as i64 - 'A' as i64 + 10i64)?;
                     self.chunk_flag = true;
                     self.num_flag = true;
-                    continue;
                 }
                 b' ' | b'\t' | b';' | b'\r' | b'\n' => {
-                    if self.is_chunk_trailer {
-                        self.num_flag = false;
-                        return self.skip_trailer_crlf(&buf[i..]);
-                    } else {
-                        self.total_size = self.hex_count as usize;
-                        self.hex_count = 0;
-                        self.num_flag = false;
-                        // Decode to the last chunk
-                        return if self.total_size == 0 {
-                            self.is_last_chunk = true;
-                            self.skip_extension(&buf[i..])
-                        } else {
-                            self.rest_size = self.total_size;
-                            self.skip_extension(&buf[i..])
-                        };
-                    }
+                    return self.decode_special_char(&buf[i..]);
                 }
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
-        Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::MetaSize,
-                size: self.total_size,
-                extension: ChunkExt::new(),
-                data: &buf[..0],
-                trailer: None,
-            },
-            &buf[buf.len()..],
-        ))
+        Ok((self.sized_chunk(&buf[..0]), &buf[buf.len()..]))
+    }
+
+    fn sized_chunk<'a>(&self, buf: &'a [u8]) -> Chunk<'a> {
+        Chunk {
+            id: 0,
+            state: ChunkState::MetaSize,
+            size: self.total_size,
+            extension: ChunkExt::new(),
+            data: &buf[..0],
+            trailer: None,
+        }
+    }
+
+    fn decode_special_char<'a>(
+        &mut self,
+        buf: &'a [u8],
+    ) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
+        return if self.is_chunk_trailer {
+            self.num_flag = false;
+            self.skip_trailer_crlf(buf)
+        } else {
+            self.total_size = self.hex_count as usize;
+            self.hex_count = 0;
+            self.num_flag = false;
+            // Decode to the last chunk
+            if self.total_size == 0 {
+                self.is_last_chunk = true;
+                self.skip_extension(buf)
+            } else {
+                self.rest_size = self.total_size;
+                self.skip_extension(buf)
+            }
+        };
     }
 
     fn skip_extension<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {

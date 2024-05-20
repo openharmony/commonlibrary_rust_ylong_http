@@ -194,21 +194,10 @@ where
     let mut end_body = false;
     while !end_body {
         if written < buf.len() {
-            match body.data(&mut buf[written..]).await {
-                Ok(0) => end_body = true,
-                Ok(size) => written += size,
-                Err(e) => {
-                    conn.shutdown();
-
-                    let error = e.into();
-                    // When using `Uploader`, here we can get `UserAborted` error.
-                    return if error.source().is_some() {
-                        Err(HttpClientError::user_aborted())
-                    } else {
-                        err_from_other!(BodyTransfer, error)
-                    };
-                }
-            }
+            let result = body.data(&mut buf[written..]).await;
+            let (read, end) = read_body_result::<S, T>(conn, result)?;
+            written += read;
+            end_body = end;
         }
         if written == buf.len() || end_body {
             if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
@@ -219,6 +208,33 @@ where
         }
     }
     Ok(())
+}
+
+fn read_body_result<S, T>(
+    conn: &mut Http1Conn<S>,
+    result: Result<usize, T::Error>,
+) -> Result<(usize, bool), HttpClientError>
+where
+    T: Body,
+{
+    let mut curr = 0;
+    let mut end_body = false;
+    match result {
+        Ok(0) => end_body = true,
+        Ok(size) => curr = size,
+        Err(e) => {
+            conn.shutdown();
+
+            let error = e.into();
+            // When using `Uploader`, here we can get `UserAborted` error.
+            return if error.source().is_some() {
+                Err(HttpClientError::user_aborted())
+            } else {
+                err_from_other!(BodyTransfer, error)
+            };
+        }
+    }
+    Ok((curr, end_body))
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Http1Conn<S> {

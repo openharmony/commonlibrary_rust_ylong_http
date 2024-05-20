@@ -199,31 +199,34 @@ impl AsyncRead for MultiPart {
             ReadStatus::Finish => return Poll::Ready(Ok(())),
         }
 
-        if let ReadStatus::Reading(ref mut status) = self.status {
-            if buf.initialize_unfilled().is_empty() {
-                return Poll::Ready(Ok(()));
-            }
-            let filled = buf.filled().len();
-            return match Pin::new(status).poll_read(cx, buf) {
-                Poll::Ready(Ok(())) => {
-                    let new_filled = buf.filled().len();
-                    if filled == new_filled {
-                        self.status = ReadStatus::Finish;
-                    }
-                    Poll::Ready(Ok(()))
-                }
-                Poll::Pending => {
-                    let new_filled = buf.filled().len();
-                    return if new_filled != filled {
-                        Poll::Ready(Ok(()))
-                    } else {
-                        Poll::Pending
-                    };
-                }
-                x => x,
-            };
+        let status = if let ReadStatus::Reading(ref mut status) = self.status {
+            status
+        } else {
+            return Poll::Ready(Ok(()));
+        };
+
+        if buf.initialize_unfilled().is_empty() {
+            return Poll::Ready(Ok(()));
         }
-        Poll::Ready(Ok(()))
+        let filled = buf.filled().len();
+        match Pin::new(status).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                let new_filled = buf.filled().len();
+                if filled == new_filled {
+                    self.status = ReadStatus::Finish;
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Pending => {
+                let new_filled = buf.filled().len();
+                if new_filled != filled {
+                    Poll::Ready(Ok(()))
+                } else {
+                    Poll::Pending
+                }
+            }
+            x => x,
+        }
     }
 }
 
@@ -390,39 +393,53 @@ impl MultiPartStates {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        if let Some(mut state) = self.curr.take() {
-            return match state {
-                MultiPartState::Bytes(ref mut bytes) => {
-                    let filled_len = buf.filled().len();
-                    let unfilled = buf.initialize_unfilled();
-                    let unfilled_len = unfilled.len();
-                    let new = std::io::Read::read(bytes, unfilled).unwrap();
-                    buf.set_filled(filled_len + new);
+        let mut state = if let Some(state) = self.curr.take() {
+            state
+        } else {
+            return Poll::Ready(Ok(()));
+        };
+        match state {
+            MultiPartState::Bytes(ref mut bytes) => {
+                let filled_len = buf.filled().len();
+                let unfilled = buf.initialize_unfilled();
+                let unfilled_len = unfilled.len();
+                let new = std::io::Read::read(bytes, unfilled).unwrap();
+                buf.set_filled(filled_len + new);
 
-                    if new >= unfilled_len {
-                        self.curr = Some(state);
-                    }
-                    Poll::Ready(Ok(()))
+                if new >= unfilled_len {
+                    self.curr = Some(state);
                 }
-                MultiPartState::Stream(ref mut stream) => {
-                    let old_len = buf.filled().len();
-                    match stream.as_mut().poll_read(cx, buf) {
-                        Poll::Ready(Ok(())) => {
-                            if old_len != buf.filled().len() {
-                                self.curr = Some(state);
-                            }
-                            Poll::Ready(Ok(()))
-                        }
-                        Poll::Pending => {
-                            self.curr = Some(state);
-                            Poll::Pending
-                        }
-                        x => x,
-                    }
-                }
-            };
+                Poll::Ready(Ok(()))
+            }
+            MultiPartState::Stream(ref mut stream) => {
+                let old_len = buf.filled().len();
+                let result = stream.as_mut().poll_read(cx, buf);
+                let new_len = buf.filled().len();
+                self.poll_result(result, old_len, new_len, state)
+            }
         }
-        Poll::Ready(Ok(()))
+    }
+
+    fn poll_result(
+        &mut self,
+        result: Poll<std::io::Result<()>>,
+        old_len: usize,
+        new_len: usize,
+        state: MultiPartState,
+    ) -> Poll<std::io::Result<()>> {
+        match result {
+            Poll::Ready(Ok(())) => {
+                if old_len != new_len {
+                    self.curr = Some(state);
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Pending => {
+                self.curr = Some(state);
+                Poll::Pending
+            }
+            x => x,
+        }
     }
 }
 

@@ -125,6 +125,7 @@ mod tls {
     use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
+    use crate::TlsConfig;
 
     impl Connector for HttpConnector {
         type Stream = HttpStream<MixStream<TcpStream>>;
@@ -135,8 +136,6 @@ mod tls {
         fn connect(&self, uri: &Uri) -> Self::Future {
             // Make sure all parts of uri is accurate.
             let mut addr = uri.authority().unwrap().to_string();
-            let host = uri.host().unwrap().as_str().to_string();
-            let port = uri.port().unwrap().as_u16().unwrap();
             let mut auth = None;
             let mut is_proxy = false;
 
@@ -150,11 +149,6 @@ mod tls {
                     .and_then(|v| v.to_string().ok());
                 is_proxy = true;
             }
-
-            let host_name = uri
-                .host()
-                .map(|host| host.to_string())
-                .unwrap_or_else(|| "no host in uri".to_string());
 
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
@@ -173,46 +167,59 @@ mod tls {
                     Ok(HttpStream::new(MixStream::Http(stream), detail))
                 }),
                 Scheme::HTTPS => {
+                    let host = uri.host().unwrap().to_string();
+                    let port = uri.port().unwrap().as_u16().unwrap();
                     let config = self.config.tls.clone();
                     Box::pin(async move {
-                        let mut tcp = tcp_stream(&addr).await?;
-                        let local = tcp.local_addr()?;
-                        let peer = tcp.peer_addr()?;
-                        if is_proxy {
-                            tcp = tunnel(tcp, host, port, auth).await?;
-                        };
-
-                        let pinned_key = config.pinning_host_match(addr.as_str());
-                        let mut stream = config
-                            .ssl_new(&host_name)
-                            .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp, pinned_key))
-                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-
-                        Pin::new(&mut stream)
-                            .connect()
-                            .await
-                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-
-                        let alpn = stream.negotiated_alpn_protocol().map(Vec::from);
-                        let detail = ConnDetail {
-                            protocol: ConnProtocol::Tcp,
-                            alpn,
-                            local,
-                            peer,
-                            addr,
-                            proxy: is_proxy,
-                        };
-
-                        Ok(HttpStream::new(MixStream::Https(stream), detail))
+                        https_connect(config, addr, is_proxy, auth, host, port).await
                     })
                 }
             }
         }
     }
 
+    async fn https_connect(
+        config: TlsConfig,
+        addr: String,
+        is_proxy: bool,
+        auth: Option<String>,
+        host: String,
+        port: u16,
+    ) -> Result<HttpStream<MixStream<TcpStream>>, Error> {
+        let mut tcp = tcp_stream(addr.as_str()).await?;
+        let local = tcp.local_addr()?;
+        let peer = tcp.peer_addr()?;
+        if is_proxy {
+            tcp = tunnel(tcp, &host, port, auth).await?;
+        };
+
+        let pinned_key = config.pinning_host_match(addr.as_str());
+        let mut stream = config
+            .ssl_new(&host)
+            .and_then(|ssl| AsyncSslStream::new(ssl.into_inner(), tcp, pinned_key))
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+        Pin::new(&mut stream)
+            .connect()
+            .await
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+        let alpn = stream.negotiated_alpn_protocol().map(Vec::from);
+        let detail = ConnDetail {
+            protocol: ConnProtocol::Tcp,
+            alpn,
+            local,
+            peer,
+            addr,
+            proxy: is_proxy,
+        };
+
+        Ok(HttpStream::new(MixStream::Https(stream), detail))
+    }
+
     async fn tunnel(
         mut conn: TcpStream,
-        host: String,
+        host: &str,
         port: u16,
         auth: Option<String>,
     ) -> Result<TcpStream, Error> {
@@ -355,7 +362,7 @@ mod tls {
                 let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
                 let res = tunnel(
                     tcp,
-                    String::from("ylong_http.com"),
+                    "ylong_http.com",
                     443,
                     Some(String::from("base64 bytes")),
                 )
@@ -388,7 +395,7 @@ mod tls {
                 let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
                 let res = tunnel(
                     tcp,
-                    String::from("ylong_http.com"),
+                    "ylong_http.com",
                     443,
                     Some(String::from("base64 bytes")),
                 )
@@ -424,7 +431,7 @@ mod tls {
                 let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
                 let res = tunnel(
                     tcp,
-                    String::from("ylong_http.com"),
+                    "ylong_http.com",
                     443,
                     Some(String::from("base64 bytes")),
                 )
@@ -468,7 +475,7 @@ mod tls {
                 let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
                 let res = tunnel(
                     tcp,
-                    String::from("ylong_http.com"),
+                    "ylong_http.com",
                     443,
                     Some(String::from("base64 bytes")),
                 )
@@ -513,7 +520,7 @@ mod tls {
                 let tcp = tcp_stream(handle.addr.as_str()).await.unwrap();
                 let res = tunnel(
                     tcp,
-                    String::from("ylong_http.com"),
+                    "ylong_http.com",
                     443,
                     Some(String::from("base64 bytes")),
                 )

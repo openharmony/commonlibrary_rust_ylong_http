@@ -56,16 +56,15 @@ pub(crate) enum HttpVersion {
 
 #[cfg(feature = "http2")]
 pub(crate) mod http2 {
-    const DEFAULT_MAX_FRAME_SIZE: u32 = 2 << 13;
+    const DEFAULT_MAX_FRAME_SIZE: u32 = 16 * 1024;
     const DEFAULT_HEADER_TABLE_SIZE: u32 = 4096;
-    const DEFAULT_MAX_HEADER_LIST_SIZE: u32 = 16 << 20;
+    const DEFAULT_MAX_HEADER_LIST_SIZE: u32 = 16 * 1024;
     // window size at the client connection level
     // The initial value specified in rfc9113 is 64kb,
     // but the default value is 1mb for performance purposes and is synchronized
     // using WINDOW_UPDATE after sending SETTINGS.
-    const DEFAULT_CONN_WINDOW_SIZE: u32 = 1024 * 1024;
-    // TODO Raise the default value size here.
-    const DEFAULT_STREAM_WINDOW_SIZE: u32 = 64 * 1024;
+    const DEFAULT_CONN_WINDOW_SIZE: u32 = 10 * 1024 * 1024;
+    const DEFAULT_STREAM_WINDOW_SIZE: u32 = 2 * 1024 * 1024;
 
     /// Settings which can be used to configure a http2 connection.
     #[derive(Clone)]

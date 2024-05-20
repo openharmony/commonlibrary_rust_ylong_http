@@ -119,26 +119,27 @@ impl<S: AsyncRead + Unpin + Sync + Send + 'static> RecvData<S> {
     fn update_settings(&mut self, frame: &Frame) -> Result<(), H2Error> {
         if let Payload::Settings(_settings) = frame.payload() {
             if frame.flags().is_ack() {
-                {
-                    let connection = self.settings.lock().unwrap();
-                    match &connection.settings {
-                        SettingsState::Acknowledging(settings) => {
-                            for setting in settings.get_settings() {
-                                if let Setting::MaxHeaderListSize(size) = setting {
-                                    self.decoder.set_max_header_list_size(*size as usize);
-                                }
-                                if let Setting::MaxFrameSize(size) = setting {
-                                    self.decoder.set_max_frame_size(*size)?;
-                                }
-                            }
-                        }
-                        SettingsState::Synced => {
-                            return Err(H2Error::ConnectionError(ErrorCode::ConnectError))
-                        }
-                    }
-                }
+                self.update_decoder_settings()?;
             }
         }
         Ok(())
+    }
+
+    fn update_decoder_settings(&mut self) -> Result<(), H2Error> {
+        let connection = self.settings.lock().unwrap();
+        match &connection.settings {
+            SettingsState::Acknowledging(settings) => {
+                for setting in settings.get_settings() {
+                    if let Setting::MaxHeaderListSize(size) = setting {
+                        self.decoder.set_max_header_list_size(*size as usize);
+                    }
+                    if let Setting::MaxFrameSize(size) = setting {
+                        self.decoder.set_max_frame_size(*size)?;
+                    }
+                }
+                Ok(())
+            }
+            SettingsState::Synced => Err(H2Error::ConnectionError(ErrorCode::ConnectError)),
+        }
     }
 }

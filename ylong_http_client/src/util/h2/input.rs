@@ -199,25 +199,27 @@ impl<S: AsyncWrite + Unpin + Sync + Send + 'static> SendData<S> {
     }
 
     fn update_settings(&mut self, frame: &Frame) -> SettingState {
-        if let Payload::Settings(settings) = frame.payload() {
-            // The ack in Writer is sent from the client to the server to confirm the
-            // Settings of the encoder on the client. The ack in Reader is sent
-            // from the server to the client to confirm the Settings of the decoder on the
-            // client
-            return if frame.flags().is_ack() {
-                for setting in settings.get_settings() {
-                    if let Setting::HeaderTableSize(size) = setting {
-                        self.encoder.update_header_table_size(*size as usize);
-                    }
-                    if let Setting::MaxFrameSize(size) = setting {
-                        self.encoder.update_max_frame_size(*size as usize);
-                    }
+        let settings = if let Payload::Settings(settings) = frame.payload() {
+            settings
+        } else {
+            return SettingState::Not;
+        };
+        // The ack in Writer is sent from the client to the server to confirm the
+        // Settings of the encoder on the client. The ack in Reader is sent
+        // from the server to the client to confirm the Settings of the decoder on the
+        // client
+        if frame.flags().is_ack() {
+            for setting in settings.get_settings() {
+                if let Setting::HeaderTableSize(size) = setting {
+                    self.encoder.update_header_table_size(*size as usize);
                 }
-                SettingState::Ack
-            } else {
-                SettingState::Local(settings.clone())
-            };
+                if let Setting::MaxFrameSize(size) = setting {
+                    self.encoder.update_max_frame_size(*size as usize);
+                }
+            }
+            SettingState::Ack
+        } else {
+            SettingState::Local(settings.clone())
         }
-        SettingState::Not
     }
 }

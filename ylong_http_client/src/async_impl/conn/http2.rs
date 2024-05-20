@@ -89,6 +89,15 @@ where
                 headers: fields.clone(),
             }
         }
+        Payload::RstStream(reset) => {
+            return Err(HttpClientError::from_error(
+                ErrorKind::Request,
+                HttpError::from(H2Error::StreamError(
+                    conn.id,
+                    ErrorCode::try_from(reset.error_code()).unwrap_or(ErrorCode::ProtocolError),
+                )),
+            ));
+        }
         _ => {
             return Err(HttpClientError::from_error(
                 ErrorKind::Request,
@@ -98,8 +107,8 @@ where
     };
 
     let text_io = TextIo::new(conn);
-    // TODO Whether HTTP2 can have no Content_Length, only whether the END_STREAM
-    // flag has a Body
+    // TODO Can http2 have no content-length header field and rely only on the
+    // end_stream flag? flag has a Body
     let length = match BodyLengthParser::new(message.request.ref_mut().method(), &part).parse() {
         Ok(length) => length,
         Err(e) => {
@@ -226,6 +235,94 @@ where
             is_closed: false,
         }
     }
+
+    fn match_channel_message(
+        poll_result: Poll<Frame>,
+        text_io: &mut TextIo<S>,
+        buf: &mut HttpReadBuf,
+    ) -> Option<Poll<std::io::Result<()>>> {
+        match poll_result {
+            Poll::Ready(frame) => match frame.payload() {
+                Payload::Headers(_) => {
+                    text_io.remain = Some(frame);
+                    text_io.offset = 0;
+                    Some(Poll::Ready(Ok(())))
+                }
+                Payload::Data(data) => {
+                    let data = data.data();
+                    let unfilled_len = buf.remaining();
+                    let data_len = data.len();
+                    let fill_len = min(data_len, unfilled_len);
+                    if unfilled_len < data_len {
+                        buf.append_slice(&data[..fill_len]);
+                        text_io.offset += fill_len;
+                        text_io.remain = Some(frame);
+                        Some(Poll::Ready(Ok(())))
+                    } else {
+                        buf.append_slice(&data[..fill_len]);
+                        if frame.flags().is_end_stream() {
+                            text_io.is_closed = true;
+                            Some(Poll::Ready(Ok(())))
+                        } else {
+                            None
+                        }
+                    }
+                }
+                Payload::RstStream(reset) => {
+                    if reset.is_no_error() {
+                        text_io.is_closed = true;
+                        Some(Poll::Ready(Ok(())))
+                    } else {
+                        Some(Poll::Ready(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
+                        ))))
+                    }
+                }
+                _ => Some(Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
+                )))),
+            },
+            Poll::Pending => Some(Poll::Pending),
+        }
+    }
+
+    fn read_remaining_data(
+        text_io: &mut TextIo<S>,
+        buf: &mut HttpReadBuf,
+    ) -> Option<Poll<std::io::Result<()>>> {
+        if let Some(frame) = &text_io.remain {
+            return match frame.payload() {
+                Payload::Headers(_) => Some(Poll::Ready(Ok(()))),
+                Payload::Data(data) => {
+                    let data = data.data();
+                    let unfilled_len = buf.remaining();
+                    let data_len = data.len() - text_io.offset;
+                    let fill_len = min(unfilled_len, data_len);
+                    if unfilled_len < data_len {
+                        buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
+                        text_io.offset += fill_len;
+                        Some(Poll::Ready(Ok(())))
+                    } else {
+                        buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
+                        text_io.offset = 0;
+                        if frame.flags().is_end_stream() {
+                            text_io.is_closed = true;
+                            Some(Poll::Ready(Ok(())))
+                        } else {
+                            None
+                        }
+                    }
+                }
+                _ => Some(Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
+                )))),
+            };
+        }
+        None
+    }
 }
 
 impl<S: Sync + Send + Unpin + 'static> StreamData for TextIo<S> {
@@ -247,36 +344,8 @@ impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
             return Poll::Ready(Ok(()));
         }
         while buf.remaining() != 0 {
-            if let Some(frame) = &text_io.remain {
-                match frame.payload() {
-                    Payload::Headers(_) => {
-                        break;
-                    }
-                    Payload::Data(data) => {
-                        let data = data.data();
-                        let unfilled_len = buf.remaining();
-                        let data_len = data.len() - text_io.offset;
-                        let fill_len = min(unfilled_len, data_len);
-                        if unfilled_len < data_len {
-                            buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
-                            text_io.offset += fill_len;
-                            break;
-                        } else {
-                            buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
-                            text_io.offset = 0;
-                            if frame.flags().is_end_stream() {
-                                text_io.is_closed = true;
-                                break;
-                            }
-                        }
-                    }
-                    _ => {
-                        return Poll::Ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                        )))
-                    }
-                }
+            if let Some(result) = Self::read_remaining_data(text_io, &mut buf) {
+                return result;
             }
 
             let poll_result = text_io
@@ -285,52 +354,8 @@ impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
                 .poll_recv(cx)
                 .map_err(|_e| std::io::Error::from(std::io::ErrorKind::Other))?;
 
-            match poll_result {
-                Poll::Ready(frame) => match frame.payload() {
-                    Payload::Headers(_) => {
-                        text_io.remain = Some(frame);
-                        text_io.offset = 0;
-                        break;
-                    }
-                    Payload::Data(data) => {
-                        let data = data.data();
-                        let unfilled_len = buf.remaining();
-                        let data_len = data.len();
-                        let fill_len = min(data_len, unfilled_len);
-                        if unfilled_len < data_len {
-                            buf.append_slice(&data[..fill_len]);
-                            text_io.offset += fill_len;
-                            text_io.remain = Some(frame);
-                            break;
-                        } else {
-                            buf.append_slice(&data[..fill_len]);
-                            if frame.flags().is_end_stream() {
-                                text_io.is_closed = true;
-                                break;
-                            }
-                        }
-                    }
-                    Payload::RstStream(error) => {
-                        if error.is_no_error() {
-                            text_io.is_closed = true;
-                            break;
-                        } else {
-                            return Poll::Ready(Err(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                            )));
-                        }
-                    }
-                    _ => {
-                        return Poll::Ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            HttpError::from(H2Error::ConnectionError(ErrorCode::ProtocolError)),
-                        )))
-                    }
-                },
-                Poll::Pending => {
-                    return Poll::Pending;
-                }
+            if let Some(result) = Self::match_channel_message(poll_result, text_io, &mut buf) {
+                return result;
             }
         }
         Poll::Ready(Ok(()))
