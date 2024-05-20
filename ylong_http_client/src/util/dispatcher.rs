@@ -205,6 +205,7 @@ pub(crate) mod http2 {
         pub(crate) next_stream_id: StreamId,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
         pub(crate) _mark: PhantomData<S>,
     }
 
@@ -291,13 +292,15 @@ pub(crate) mod http2 {
 
             // Error is not possible, so it is not handled for the time
             // being.
+            let mut handles = Vec::with_capacity(3);
             if input_tx.send(settings).is_ok() {
-                Self::launch(controller, req_rx, input_tx, input_rx, io);
+                Self::launch(controller, req_rx, input_tx, input_rx, &mut handles, io);
             }
             Self {
                 next_stream_id,
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
+                handles,
                 _mark: PhantomData,
             }
         }
@@ -307,13 +310,14 @@ pub(crate) mod http2 {
             req_rx: UnboundedReceiver<ReqMessage>,
             input_tx: UnboundedSender<Frame>,
             input_rx: UnboundedReceiver<Frame>,
+            handles: &mut Vec<crate::runtime::JoinHandle<()>>,
             io: S,
         ) {
             let (resp_tx, resp_rx) = unbounded_channel();
             let (read, write) = crate::runtime::split(io);
             let settings_sync = Arc::new(Mutex::new(SettingsSync::default()));
             let send_settings_sync = settings_sync.clone();
-            let _send = crate::runtime::spawn(async move {
+            let send = crate::runtime::spawn(async move {
                 let mut writer = write;
                 if async_send_preface(&mut writer).await.is_ok() {
                     let encoder =
@@ -322,21 +326,24 @@ pub(crate) mod http2 {
                     let _ = Pin::new(&mut send).await;
                 }
             });
+            handles.push(send);
 
             let recv_settings_sync = settings_sync.clone();
-            let _recv = crate::runtime::spawn(async move {
+            let recv = crate::runtime::spawn(async move {
                 let decoder = FrameDecoder::new();
                 let mut recv = RecvData::new(decoder, recv_settings_sync, read, resp_tx);
                 let _ = Pin::new(&mut recv).await;
             });
+            handles.push(recv);
 
-            let _manager = crate::runtime::spawn(async move {
+            let manager = crate::runtime::spawn(async move {
                 let mut conn_manager =
                     ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
                 if let Err(e) = Pin::new(&mut conn_manager).await {
                     conn_manager.exit_with_error(e);
                 }
             });
+            handles.push(manager);
         }
     }
 
@@ -355,6 +362,17 @@ pub(crate) mod http2 {
 
         fn is_shutdown(&self) -> bool {
             self.io_shutdown.load(Ordering::Relaxed)
+        }
+    }
+
+    impl<S> Drop for Http2Dispatcher<S> {
+        fn drop(&mut self) {
+            for handle in &self.handles {
+                #[cfg(feature = "ylong_base")]
+                handle.cancel();
+                #[cfg(feature = "tokio_base")]
+                handle.abort();
+            }
         }
     }
 

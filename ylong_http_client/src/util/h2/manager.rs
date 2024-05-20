@@ -117,12 +117,12 @@ impl ConnManager {
         self.controller
             .streams
             .window_update_streams(&self.input_tx)?;
-        self.poll_recv_request(cx);
+        self.poll_recv_request(cx)?;
         self.poll_input_request(cx)?;
         Poll::Pending
     }
 
-    fn poll_recv_request(&mut self, cx: &mut Context<'_>) {
+    fn poll_recv_request(&mut self, cx: &mut Context<'_>) -> Result<(), DispatchErrorKind> {
         loop {
             #[cfg(feature = "tokio_base")]
             match self.req_rx.poll_recv(cx) {
@@ -137,8 +137,7 @@ impl ConnManager {
                     self.controller.streams.insert(message.id, message.request);
                 }
                 Poll::Ready(None) => {
-                    // TODO May need to close the connection after
-                    // the channel is closed?
+                    return Err(DispatchErrorKind::ChannelClosed);
                 }
                 Poll::Pending => {
                     break;
@@ -157,14 +156,14 @@ impl ConnManager {
                     self.controller.streams.insert(message.id, message.request);
                 }
                 Poll::Ready(Err(_e)) => {
-                    // TODO May need to close the connection after
-                    // the channel is closed?
+                    return Err(DispatchErrorKind::ChannelClosed);
                 }
                 Poll::Pending => {
                     break;
                 }
             }
         }
+        Ok(())
     }
 
     fn poll_input_request(&mut self, cx: &mut Context<'_>) -> Result<(), DispatchErrorKind> {
