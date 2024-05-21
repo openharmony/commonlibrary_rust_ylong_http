@@ -14,6 +14,8 @@
 use std::mem::take;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "http2")]
+use ylong_http::request::uri::Scheme;
 use ylong_http::request::uri::Uri;
 
 use crate::async_impl::connector::ConnInfo;
@@ -92,101 +94,19 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
     where
         C: Connector<Stream = S>,
     {
-        #[cfg(feature = "http2")]
-        use ylong_http::request::uri::Scheme;
-
         match config.version {
             #[cfg(feature = "http2")]
-            HttpVersion::Http2 => {
-                {
-                    // The lock `h2_occupation` is used to prevent multiple coroutines from sending
-                    // Requests at the same time under concurrent conditions,
-                    // resulting in the creation of multiple tcp connections
-                    let mut lock = self.h2_conn.lock().await;
-
-                    if let Some(conn) = Self::exist_h2_conn(&mut lock) {
-                        return Ok(conn);
-                    }
-                    let stream = connector
-                        .connect(url)
-                        .await
-                        .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
-                    let details = stream.conn_detail();
-                    let tls = if let Some(scheme) = url.scheme() {
-                        *scheme == Scheme::HTTPS
-                    } else {
-                        false
-                    };
-                    match details.alpn() {
-                        None if tls => {
-                            return err_from_msg!(Connect, "The peer does not support http/2.")
-                        }
-                        Some(protocol) if protocol != b"h2" => {
-                            return err_from_msg!(
-                                Connect,
-                                "Alpn negotiate a wrong protocol version."
-                            )
-                        }
-                        _ => {}
-                    }
-
-                    Ok(Self::dispatch_h2_conn(
-                        config.http2_config,
-                        stream,
-                        &mut lock,
-                    ))
-                }
-            }
+            HttpVersion::Http2 => self.conn_h2(connector, url, config.http2_config).await,
             #[cfg(feature = "http1_1")]
             HttpVersion::Http1 => self.conn_h1(connector, url).await,
             HttpVersion::Negotiate => {
-                #[cfg(all(feature = "http2", feature = "http1_1"))]
-                match *url.scheme().unwrap() {
-                    Scheme::HTTPS => {
-                        let mut lock = self.h2_conn.lock().await;
-
-                        if let Some(conn) = Self::exist_h2_conn(&mut lock) {
-                            return Ok(conn);
-                        }
-
-                        if let Some(conn) = self.get_exist_conn() {
-                            return Ok(conn);
-                        }
-
-                        let stream = connector
-                            .connect(url)
-                            .await
-                            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
-                        let details = stream.conn_detail();
-                        match details.alpn() {
-                            None => {
-                                let dispatcher = ConnDispatcher::http1(stream);
-                                Ok(self.dispatch_h1_conn(dispatcher))
-                            }
-                            Some(protocol) => {
-                                if protocol == b"http/1.1" {
-                                    let dispatcher = ConnDispatcher::http1(stream);
-                                    Ok(self.dispatch_h1_conn(dispatcher))
-                                } else if protocol == b"h2" {
-                                    Ok(Self::dispatch_h2_conn(
-                                        config.http2_config,
-                                        stream,
-                                        &mut lock,
-                                    ))
-                                } else {
-                                    err_from_msg!(
-                                        Connect,
-                                        "Alpn negotiate a wrong protocol version."
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Scheme::HTTP => self.conn_h1(connector, url).await,
-                }
-
                 #[cfg(all(feature = "http1_1", not(feature = "http2")))]
-                self.conn_h1(connector, url).await
+                return self.conn_h1(connector, url).await;
+
+                #[cfg(all(feature = "http2", feature = "http1_1"))]
+                return self
+                    .conn_negotiate(connector, url, config.http2_config)
+                    .await;
             }
         }
     }
@@ -195,7 +115,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
     where
         C: Connector<Stream = S>,
     {
-        if let Some(conn) = self.get_exist_conn() {
+        if let Some(conn) = self.exist_h1_conn() {
             return Ok(conn);
         }
         let dispatcher = ConnDispatcher::http1(
@@ -205,6 +125,93 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?,
         );
         Ok(self.dispatch_h1_conn(dispatcher))
+    }
+
+    #[cfg(feature = "http2")]
+    async fn conn_h2<C>(
+        &self,
+        connector: Arc<C>,
+        url: &Uri,
+        config: H2Config,
+    ) -> Result<Conn<S>, HttpClientError>
+    where
+        C: Connector<Stream = S>,
+    {
+        // The lock `h2_occupation` is used to prevent multiple coroutines from sending
+        // Requests at the same time under concurrent conditions,
+        // resulting in the creation of multiple tcp connections
+        let mut lock = self.h2_conn.lock().await;
+
+        if let Some(conn) = Self::exist_h2_conn(&mut lock) {
+            return Ok(conn);
+        }
+        let stream = connector
+            .connect(url)
+            .await
+            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
+        let details = stream.conn_detail();
+        let tls = if let Some(scheme) = url.scheme() {
+            *scheme == Scheme::HTTPS
+        } else {
+            false
+        };
+        match details.alpn() {
+            None if tls => return err_from_msg!(Connect, "The peer does not support http/2."),
+            Some(protocol) if protocol != b"h2" => {
+                return err_from_msg!(Connect, "Alpn negotiate a wrong protocol version.")
+            }
+            _ => {}
+        }
+
+        Ok(Self::dispatch_h2_conn(config, stream, &mut lock))
+    }
+
+    #[cfg(all(feature = "http2", feature = "http1_1"))]
+    async fn conn_negotiate<C>(
+        &self,
+        connector: Arc<C>,
+        url: &Uri,
+        config: H2Config,
+    ) -> Result<Conn<S>, HttpClientError>
+    where
+        C: Connector<Stream = S>,
+    {
+        match *url.scheme().unwrap() {
+            Scheme::HTTPS => {
+                let mut lock = self.h2_conn.lock().await;
+
+                if let Some(conn) = Self::exist_h2_conn(&mut lock) {
+                    return Ok(conn);
+                }
+
+                if let Some(conn) = self.exist_h1_conn() {
+                    return Ok(conn);
+                }
+
+                let stream = connector
+                    .connect(url)
+                    .await
+                    .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
+                let details = stream.conn_detail();
+
+                let protocol = if let Some(bytes) = details.alpn() {
+                    bytes
+                } else {
+                    let dispatcher = ConnDispatcher::http1(stream);
+                    return Ok(self.dispatch_h1_conn(dispatcher));
+                };
+
+                if protocol == b"http/1.1" {
+                    let dispatcher = ConnDispatcher::http1(stream);
+                    Ok(self.dispatch_h1_conn(dispatcher))
+                } else if protocol == b"h2" {
+                    Ok(Self::dispatch_h2_conn(config, stream, &mut lock))
+                } else {
+                    err_from_msg!(Connect, "Alpn negotiate a wrong protocol version.")
+                }
+            }
+            Scheme::HTTP => self.conn_h1(connector, url).await,
+        }
     }
 
     fn dispatch_h1_conn(&self, dispatcher: ConnDispatcher<S>) -> Conn<S> {
@@ -228,7 +235,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         conn
     }
 
-    fn get_exist_conn(&self) -> Option<Conn<S>> {
+    fn exist_h1_conn(&self) -> Option<Conn<S>> {
         let mut list = self.list.lock().unwrap();
         let mut conn = None;
         let curr = take(&mut *list);

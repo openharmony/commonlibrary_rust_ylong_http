@@ -30,7 +30,7 @@ use crate::util::c_openssl::bio::BioMethod;
 use crate::util::c_openssl::error::VerifyError;
 use crate::util::c_openssl::error::VerifyKind::PubKeyPinning;
 use crate::util::c_openssl::ffi::ssl::SSL;
-use crate::util::c_openssl::ffi::x509::{i2d_X509_PUBKEY, X509_free, X509_get_X509_PUBKEY};
+use crate::util::c_openssl::ffi::x509::{i2d_X509_PUBKEY, X509_free, X509_get_X509_PUBKEY, C_X509};
 use crate::util::c_openssl::verify::sha256_digest;
 
 /// A TLS session over a stream.
@@ -298,9 +298,17 @@ fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError>
     // sha256 length.
     let mut digest = [0u8; 32];
     unsafe { sha256_digest(key.as_slice(), size_2, &mut digest)? }
-    let base64_digest = encode(&digest);
 
-    let mut user_bytes = pinned_key.as_bytes();
+    compare_pinned_digest(&digest, pinned_key.as_bytes(), certificate)
+}
+
+fn compare_pinned_digest(
+    digest: &[u8],
+    pinned_key: &[u8],
+    certificate: *mut C_X509,
+) -> Result<(), SslError> {
+    let base64_digest = encode(digest);
+    let mut user_bytes = pinned_key;
 
     let mut begin;
     let mut end;

@@ -476,6 +476,7 @@ pub(crate) mod http2 {
                         },
                     }
                 }
+                // this will not happen.
                 None => Err(HttpClientError::from_str(
                     ErrorKind::Request,
                     "Invalid Frame Receiver !",

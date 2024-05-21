@@ -151,18 +151,19 @@ impl PercentEncoder {
     fn parse_authority<'a>(&mut self, mut origin: UrlChars<'a>) -> Result<UrlChars<'a>, HttpError> {
         loop {
             let chars = origin.clone();
-            if let Some(c) = origin.next() {
-                match c {
-                    '/' | '?' | '#' => {
-                        origin = chars;
-                        break;
-                    }
-                    _ => {
-                        self.normalized.push(c);
-                    }
-                }
+            let c = if let Some(ch) = origin.next() {
+                ch
             } else {
                 break;
+            };
+            match c {
+                '/' | '?' | '#' => {
+                    origin = chars;
+                    break;
+                }
+                _ => {
+                    self.normalized.push(c);
+                }
             }
         }
         Ok(origin)
@@ -171,21 +172,23 @@ impl PercentEncoder {
     fn parse_path<'a>(&mut self, mut origin: UrlChars<'a>) -> Result<UrlChars<'a>, HttpError> {
         loop {
             let chars = origin.clone();
-            if let Some((ch, u8_str)) = origin.next_u8() {
-                match ch {
-                    '/' => {
-                        self.normalized.push(ch);
-                    }
-                    '#' | '?' => {
-                        origin = chars;
-                        break;
-                    }
-                    _ => {
-                        self.normalized.percent_encoding_push((ch, u8_str), PATH);
-                    }
-                }
+
+            let (ch, u8_str) = if let Some((ch, u8_str)) = origin.next_u8() {
+                (ch, u8_str)
             } else {
                 break;
+            };
+            match ch {
+                '/' => {
+                    self.normalized.push(ch);
+                }
+                '#' | '?' => {
+                    origin = chars;
+                    break;
+                }
+                _ => {
+                    self.normalized.percent_encoding_push((ch, u8_str), PATH);
+                }
             }
         }
 
@@ -253,28 +256,31 @@ impl Normalized {
     pub(crate) fn percent_encoding_push(&mut self, u8_ch: Utf8Char, char_set: &[u8]) {
         let (ch, u8_str) = u8_ch;
         if !matches!(ch, '\t' | '\r' | '\n') {
-            let mut start = 0;
-            for (index, &byte) in u8_str.as_bytes().iter().enumerate() {
-                if should_percent_encoding(byte, char_set) {
-                    if start < index {
-                        let unencoded =
-                            unsafe { str::from_utf8_unchecked(&u8_str.as_bytes()[start..index]) };
-                        self.url.push_str(unencoded);
-                    }
-                    let encoded = percent_hex(byte);
-                    self.url.push('%');
-                    self.url.push_str(encoded);
+            self.percent_encoding_char(u8_str, char_set);
+        }
+    }
 
-                    start = index + 1;
+    pub(crate) fn percent_encoding_char(&mut self, u8_str: &str, char_set: &[u8]) {
+        let mut start = 0;
+        for (index, &byte) in u8_str.as_bytes().iter().enumerate() {
+            if should_percent_encoding(byte, char_set) {
+                if start < index {
+                    let unencoded =
+                        unsafe { str::from_utf8_unchecked(&u8_str.as_bytes()[start..index]) };
+                    self.url.push_str(unencoded);
                 }
-            }
+                let encoded = percent_hex(byte);
+                self.url.push('%');
+                self.url.push_str(encoded);
 
-            let ch_len = u8_str.len();
-            if start < ch_len {
-                let unencoded =
-                    unsafe { str::from_utf8_unchecked(&u8_str.as_bytes()[start..ch_len]) };
-                self.url.push_str(unencoded);
+                start = index + 1;
             }
+        }
+
+        let ch_len = u8_str.len();
+        if start < ch_len {
+            let unencoded = unsafe { str::from_utf8_unchecked(&u8_str.as_bytes()[start..ch_len]) };
+            self.url.push_str(unencoded);
         }
     }
 

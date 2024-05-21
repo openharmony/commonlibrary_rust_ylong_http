@@ -23,11 +23,11 @@ use crate::runtime::UnboundedSender;
 use crate::util::dispatcher::http2::{DispatchErrorKind, RespMessage};
 use crate::util::h2::buffer::{FlowControl, RecvWindow, SendWindow};
 use crate::util::h2::data_ref::BodyDataRef;
-use crate::util::h2::streams::StreamState::{LocalHalfClosed, Open, RemoteHalfClosed};
 
 const INITIAL_MAX_SEND_STREAM_ID: u32 = u32::MAX >> 1;
 const INITIAL_MAX_RECV_STREAM_ID: u32 = u32::MAX >> 1;
 const INITIAL_LATEST_REMOTE_ID: u32 = 0;
+const DEFAULT_MAX_CONCURRENT_STREAMS: u32 = 100;
 
 pub(crate) enum FrameRecvState {
     OK,
@@ -78,7 +78,7 @@ pub(crate) enum StreamEndState {
 //     `----------------------->|        |<----------------------'
 //                              +--------+
 #[derive(Clone, Debug)]
-pub(crate) enum StreamState {
+pub(crate) enum H2StreamState {
     Idle,
     // When response does not depend on request,
     // the server can send response directly without waiting for the request to finish receiving.
@@ -115,7 +115,7 @@ pub(crate) enum ActiveState {
 pub(crate) struct Stream {
     pub(crate) recv_window: RecvWindow,
     pub(crate) send_window: SendWindow,
-    pub(crate) state: StreamState,
+    pub(crate) state: H2StreamState,
     pub(crate) header: Option<Frame>,
     pub(crate) data: BodyDataRef,
 }
@@ -145,6 +145,36 @@ pub(crate) struct Streams {
     pub(crate) stream_map: HashMap<u32, Stream>,
 }
 
+macro_rules! change_stream_state {
+    (Idle: $eos: expr, $state: expr) => {
+        $state = if $eos {
+            H2StreamState::RemoteHalfClosed(ActiveState::WaitHeaders)
+        } else {
+            H2StreamState::Open {
+                send: ActiveState::WaitHeaders,
+                recv: ActiveState::WaitData,
+            }
+        };
+    };
+    (Open: $eos: expr, $state: expr, $send: expr) => {
+        $state = if $eos {
+            H2StreamState::RemoteHalfClosed($send.clone())
+        } else {
+            H2StreamState::Open {
+                send: $send.clone(),
+                recv: ActiveState::WaitData,
+            }
+        };
+    };
+    (HalfClosed: $eos: expr, $state: expr) => {
+        $state = if $eos {
+            H2StreamState::Closed(CloseReason::EndStream)
+        } else {
+            H2StreamState::LocalHalfClosed(ActiveState::WaitData)
+        };
+    };
+}
+
 impl Streams {
     pub(crate) fn new(
         recv_window_size: u32,
@@ -155,7 +185,7 @@ impl Streams {
             max_send_id: INITIAL_MAX_SEND_STREAM_ID,
             max_recv_id: INITIAL_MAX_RECV_STREAM_ID,
             latest_remote_id: INITIAL_LATEST_REMOTE_ID,
-            max_concurrent_streams: u32::MAX,
+            max_concurrent_streams: DEFAULT_MAX_CONCURRENT_STREAMS,
             current_concurrent_streams: 0,
             stream_recv_window_size: recv_window_size,
             stream_send_window_size: send_window_size,
@@ -256,7 +286,7 @@ impl Streams {
     pub(crate) fn is_closed(&self) -> bool {
         for (_id, stream) in self.stream_map.iter() {
             match stream.state {
-                StreamState::Closed(_) => {}
+                H2StreamState::Closed(_) => {}
                 _ => {
                     return false;
                 }
@@ -351,9 +381,8 @@ impl Streams {
         loop {
             match self.window_updating_streams.pop_front() {
                 None => return Ok(()),
-                Some(id) => match self.stream_map.get_mut(&id) {
-                    None => {}
-                    Some(stream) => {
+                Some(id) => {
+                    if let Some(stream) = self.stream_map.get_mut(&id) {
                         if !stream.is_init_or_active_flow_control() {
                             return Ok(());
                         }
@@ -363,7 +392,7 @@ impl Streams {
                                 .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
                         }
                     }
-                },
+                }
             }
         }
     }
@@ -372,13 +401,13 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
             Some(stream) => match stream.state {
-                StreamState::Closed(_) => Ok(None),
+                H2StreamState::Closed(_) => Ok(None),
                 _ => Ok(stream.header.take()),
             },
         }
     }
 
-    pub(crate) fn poll_data(
+    pub(crate) fn poll_read_body(
         &mut self,
         cx: &mut Context<'_>,
         id: u32,
@@ -391,7 +420,7 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
             Some(stream) => match stream.state {
-                StreamState::Closed(_) => Ok(DataReadState::Closed),
+                H2StreamState::Closed(_) => Ok(DataReadState::Closed),
                 _ => {
                     let stream_send_vacant = stream.send_window.size_available() as usize;
                     if stream_send_vacant == 0 {
@@ -408,38 +437,51 @@ impl Streams {
                     let len = min(available, DEFAULT_MAX_FRAME_SIZE);
 
                     let mut buf = [0u8; DEFAULT_MAX_FRAME_SIZE];
-
-                    match stream.data.poll_read(cx, &mut buf[..len])? {
-                        Poll::Ready(size) => {
-                            if size > 0 {
-                                stream.send_window.send_data(size as u32);
-                                self.flow_control.send_data(size as u32);
-                                let data_vec = Vec::from(&buf[..size]);
-                                let flag = FrameFlags::new(0);
-
-                                Ok(DataReadState::Ready(Frame::new(
-                                    id as usize,
-                                    flag,
-                                    Payload::Data(Data::new(data_vec)),
-                                )))
-                            } else {
-                                let data_vec = vec![];
-                                let mut flag = FrameFlags::new(1);
-                                flag.set_end_stream(true);
-                                Ok(DataReadState::Finish(Frame::new(
-                                    id as usize,
-                                    flag,
-                                    Payload::Data(Data::new(data_vec)),
-                                )))
-                            }
-                        }
-                        Poll::Pending => {
-                            self.push_back_pending_send(id);
-                            Ok(DataReadState::Pending)
-                        }
-                    }
+                    self.poll_sized_data(cx, id, &mut buf[..len])
                 }
             },
+        }
+    }
+
+    fn poll_sized_data(
+        &mut self,
+        cx: &mut Context<'_>,
+        id: u32,
+        buf: &mut [u8],
+    ) -> Result<DataReadState, H2Error> {
+        let stream = if let Some(stream) = self.stream_map.get_mut(&id) {
+            stream
+        } else {
+            return Err(H2Error::ConnectionError(ErrorCode::IntervalError));
+        };
+        match stream.data.poll_read(cx, buf)? {
+            Poll::Ready(size) => {
+                if size > 0 {
+                    stream.send_window.send_data(size as u32);
+                    self.flow_control.send_data(size as u32);
+                    let data_vec = Vec::from(&buf[..size]);
+                    let flag = FrameFlags::new(0);
+
+                    Ok(DataReadState::Ready(Frame::new(
+                        id as usize,
+                        flag,
+                        Payload::Data(Data::new(data_vec)),
+                    )))
+                } else {
+                    let data_vec = vec![];
+                    let mut flag = FrameFlags::new(1);
+                    flag.set_end_stream(true);
+                    Ok(DataReadState::Finish(Frame::new(
+                        id as usize,
+                        flag,
+                        Payload::Data(Data::new(data_vec)),
+                    )))
+                }
+            }
+            Poll::Pending => {
+                self.push_back_pending_send(id);
+                Ok(DataReadState::Pending)
+            }
         }
     }
 
@@ -448,15 +490,15 @@ impl Streams {
         for (id, unsent_stream) in self.stream_map.iter_mut() {
             if *id >= last_stream_id {
                 match unsent_stream.state {
-                    StreamState::Closed(_) => {}
-                    StreamState::Idle => {
-                        unsent_stream.state = StreamState::Closed(CloseReason::RemoteGoAway);
+                    H2StreamState::Closed(_) => {}
+                    H2StreamState::Idle => {
+                        unsent_stream.state = H2StreamState::Closed(CloseReason::RemoteGoAway);
                         unsent_stream.header = None;
                         unsent_stream.data.clear();
                     }
                     _ => {
                         self.current_concurrent_streams -= 1;
-                        unsent_stream.state = StreamState::Closed(CloseReason::RemoteGoAway);
+                        unsent_stream.state = H2StreamState::Closed(CloseReason::RemoteGoAway);
                         unsent_stream.header = None;
                         unsent_stream.data.clear();
                     }
@@ -474,11 +516,11 @@ impl Streams {
     ) {
         for (id, stream) in self.stream_map.iter_mut() {
             match stream.state {
-                StreamState::Closed(_) => {}
+                H2StreamState::Closed(_) => {}
                 _ => {
                     stream.header = None;
                     stream.data.clear();
-                    stream.state = StreamState::Closed(CloseReason::LocalGoAway);
+                    stream.state = H2StreamState::Closed(CloseReason::LocalGoAway);
                     if let Some(sender) = senders.get_mut(id) {
                         sender.send(RespMessage::OutputExit(error.clone())).ok();
                     }
@@ -496,18 +538,18 @@ impl Streams {
         return match self.stream_map.get_mut(&id) {
             None => StreamEndState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match stream.state {
-                StreamState::Closed(
+                H2StreamState::Closed(
                     CloseReason::LocalRst
                     | CloseReason::LocalGoAway
                     | CloseReason::RemoteRst
                     | CloseReason::RemoteGoAway,
                 ) => StreamEndState::Ignore,
-                StreamState::Closed(CloseReason::EndStream) => {
-                    stream.state = StreamState::Closed(CloseReason::LocalRst);
+                H2StreamState::Closed(CloseReason::EndStream) => {
+                    stream.state = H2StreamState::Closed(CloseReason::LocalRst);
                     StreamEndState::Ignore
                 }
                 _ => {
-                    stream.state = StreamState::Closed(CloseReason::LocalRst);
+                    stream.state = H2StreamState::Closed(CloseReason::LocalRst);
                     stream.header = None;
                     stream.data.clear();
                     self.decrease_current_concurrency();
@@ -521,35 +563,35 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
-                StreamState::Idle => {
+                H2StreamState::Idle => {
                     stream.state = if eos {
-                        StreamState::LocalHalfClosed(ActiveState::WaitHeaders)
+                        H2StreamState::LocalHalfClosed(ActiveState::WaitHeaders)
                     } else {
-                        StreamState::Open {
+                        H2StreamState::Open {
                             send: ActiveState::WaitData,
                             recv: ActiveState::WaitHeaders,
                         }
                     };
                 }
-                StreamState::Open {
+                H2StreamState::Open {
                     send: ActiveState::WaitHeaders,
                     recv,
                 } => {
                     stream.state = if eos {
-                        StreamState::LocalHalfClosed(recv.clone())
+                        H2StreamState::LocalHalfClosed(recv.clone())
                     } else {
-                        StreamState::Open {
+                        H2StreamState::Open {
                             send: ActiveState::WaitData,
                             recv: recv.clone(),
                         }
                     };
                 }
-                StreamState::RemoteHalfClosed(ActiveState::WaitHeaders) => {
+                H2StreamState::RemoteHalfClosed(ActiveState::WaitHeaders) => {
                     stream.state = if eos {
                         self.current_concurrent_streams -= 1;
-                        StreamState::Closed(CloseReason::EndStream)
+                        H2StreamState::Closed(CloseReason::EndStream)
                     } else {
-                        StreamState::RemoteHalfClosed(ActiveState::WaitData)
+                        H2StreamState::RemoteHalfClosed(ActiveState::WaitData)
                     };
                 }
                 _ => {
@@ -564,18 +606,18 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
-                StreamState::Open {
+                H2StreamState::Open {
                     send: ActiveState::WaitData,
                     recv,
                 } => {
                     if eos {
-                        stream.state = StreamState::LocalHalfClosed(recv.clone());
+                        stream.state = H2StreamState::LocalHalfClosed(recv.clone());
                     }
                 }
-                StreamState::RemoteHalfClosed(ActiveState::WaitData) => {
+                H2StreamState::RemoteHalfClosed(ActiveState::WaitData) => {
                     if eos {
                         self.current_concurrent_streams -= 1;
-                        stream.state = StreamState::Closed(CloseReason::EndStream);
+                        stream.state = H2StreamState::Closed(CloseReason::EndStream);
                     }
                 }
                 _ => {
@@ -593,9 +635,9 @@ impl Streams {
         return match self.stream_map.get_mut(&id) {
             None => StreamEndState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match stream.state {
-                StreamState::Closed(..) => StreamEndState::Ignore,
+                H2StreamState::Closed(..) => StreamEndState::Ignore,
                 _ => {
-                    stream.state = StreamState::Closed(CloseReason::RemoteRst);
+                    stream.state = H2StreamState::Closed(CloseReason::RemoteRst);
                     stream.header = None;
                     stream.data.clear();
                     self.decrease_current_concurrency();
@@ -613,48 +655,28 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
-                StreamState::Idle => {
-                    stream.state = if eos {
-                        RemoteHalfClosed(ActiveState::WaitHeaders)
-                    } else {
-                        Open {
-                            send: ActiveState::WaitHeaders,
-                            recv: ActiveState::WaitData,
-                        }
-                    };
+                H2StreamState::Idle => {
+                    change_stream_state!(Idle: eos, stream.state);
                 }
-                StreamState::ReservedRemote => {
+                H2StreamState::ReservedRemote => {
+                    change_stream_state!(HalfClosed: eos, stream.state);
                     if eos {
-                        stream.state = StreamState::Closed(CloseReason::EndStream);
-                        // Whether the number of concurrency is required here for PUSH_PROMISE
-                        // frame.
                         self.decrease_current_concurrency();
-                    } else {
-                        stream.state = LocalHalfClosed(ActiveState::WaitData);
                     }
                 }
-                StreamState::Open {
+                H2StreamState::Open {
                     send,
                     recv: ActiveState::WaitHeaders,
                 } => {
-                    stream.state = if eos {
-                        RemoteHalfClosed(send.clone())
-                    } else {
-                        Open {
-                            send: send.clone(),
-                            recv: ActiveState::WaitData,
-                        }
-                    }
+                    change_stream_state!(Open: eos, stream.state, send);
                 }
-                StreamState::LocalHalfClosed(ActiveState::WaitHeaders) => {
+                H2StreamState::LocalHalfClosed(ActiveState::WaitHeaders) => {
+                    change_stream_state!(HalfClosed: eos, stream.state);
                     if eos {
-                        stream.state = StreamState::Closed(CloseReason::EndStream);
                         self.decrease_current_concurrency();
-                    } else {
-                        stream.state = StreamState::LocalHalfClosed(ActiveState::WaitData);
                     }
                 }
-                StreamState::Closed(CloseReason::LocalGoAway | CloseReason::LocalRst) => {
+                H2StreamState::Closed(CloseReason::LocalGoAway | CloseReason::LocalRst) => {
                     return FrameRecvState::Ignore;
                 }
                 _ => {
@@ -672,21 +694,21 @@ impl Streams {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
-                StreamState::Open {
+                H2StreamState::Open {
                     send,
                     recv: ActiveState::WaitData,
                 } => {
                     if eos {
-                        stream.state = RemoteHalfClosed(send.clone());
+                        stream.state = H2StreamState::RemoteHalfClosed(send.clone());
                     }
                 }
-                StreamState::LocalHalfClosed(ActiveState::WaitData) => {
+                H2StreamState::LocalHalfClosed(ActiveState::WaitData) => {
                     if eos {
-                        stream.state = StreamState::Closed(CloseReason::EndStream);
+                        stream.state = H2StreamState::Closed(CloseReason::EndStream);
                         self.decrease_current_concurrency();
                     }
                 }
-                StreamState::Closed(CloseReason::LocalGoAway | CloseReason::LocalRst) => {
+                H2StreamState::Closed(CloseReason::LocalGoAway | CloseReason::LocalRst) => {
                     return FrameRecvState::Ignore;
                 }
                 _ => {
@@ -708,7 +730,7 @@ impl Stream {
         Self {
             recv_window,
             send_window,
-            state: StreamState::Idle,
+            state: H2StreamState::Idle,
             header: Some(headers),
             data,
         }
@@ -717,12 +739,12 @@ impl Stream {
     pub(crate) fn is_init_or_active_flow_control(&self) -> bool {
         matches!(
             self.state,
-            StreamState::Idle
-                | StreamState::Open {
+            H2StreamState::Idle
+                | H2StreamState::Open {
                     recv: ActiveState::WaitData,
                     ..
                 }
-                | StreamState::LocalHalfClosed(ActiveState::WaitData)
+                | H2StreamState::LocalHalfClosed(ActiveState::WaitData)
         )
     }
 }

@@ -41,20 +41,20 @@ impl BodyDataRef {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, H2Error>> {
-        match self.body {
-            None => Poll::Ready(Ok(0)),
-            Some(ref mut request) => {
-                let data = request.ref_mut().body_mut();
-                let mut read_buf = ReadBuf::new(buf);
-                let data = Pin::new(data);
-                match data.poll_read(cx, &mut read_buf) {
-                    Poll::Ready(Err(_e)) => {
-                        Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::IntervalError)))
-                    }
-                    Poll::Ready(Ok(_)) => Poll::Ready(Ok(read_buf.filled().len())),
-                    Poll::Pending => Poll::Pending,
-                }
+        let request = if let Some(ref mut request) = self.body {
+            request
+        } else {
+            return Poll::Ready(Ok(0));
+        };
+        let data = request.ref_mut().body_mut();
+        let mut read_buf = ReadBuf::new(buf);
+        let data = Pin::new(data);
+        match data.poll_read(cx, &mut read_buf) {
+            Poll::Ready(Err(_e)) => {
+                Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::IntervalError)))
             }
+            Poll::Ready(Ok(_)) => Poll::Ready(Ok(read_buf.filled().len())),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
