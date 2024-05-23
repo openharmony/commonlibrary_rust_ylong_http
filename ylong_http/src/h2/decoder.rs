@@ -755,6 +755,7 @@ impl FrameDecoder {
         if fragment_start_index > fragment_end_index {
             return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
         }
+        self.hpack.hpack_decode(buf)?;
         let promised_stream_id = if is_padded {
             get_stream_id(&buf[1..5])
         } else {
@@ -763,9 +764,15 @@ impl FrameDecoder {
         if is_connection_frame(promised_stream_id as usize) {
             return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
         }
+        self.push_promise_framing(end_headers, promised_stream_id)
+    }
+
+    fn push_promise_framing(
+        &mut self,
+        end_headers: bool,
+        promised_stream_id: u32,
+    ) -> Result<FrameKind, H2Error> {
         if end_headers {
-            self.hpack
-                .hpack_decode(&buf[fragment_start_index..fragment_end_index])?;
             let headers = self.hpack.hpack_finish()?;
             let frame = Frame::new(
                 self.header.stream_id,
@@ -781,8 +788,6 @@ impl FrameDecoder {
             self.continuations.is_end_headers = false;
             self.continuations.stream_id = self.header.stream_id;
             self.continuations.promised_stream_id = promised_stream_id;
-            self.hpack
-                .hpack_decode(&buf[fragment_start_index..fragment_end_index])?;
             Ok(FrameKind::Partial)
         }
     }

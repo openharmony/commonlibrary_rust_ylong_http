@@ -12,18 +12,21 @@
 // limitations under the License.
 
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use ylong_http::body::async_impl::Body;
 use ylong_http::body::{ChunkBody, TextBody};
 use ylong_http::h1::{RequestEncoder, ResponseDecoder};
 use ylong_http::request::uri::Scheme;
+use ylong_http::response::ResponsePart;
 use ylong_http::version::Version;
 
 use super::StreamData;
 use crate::async_impl::connector::ConnInfo;
+use crate::async_impl::interceptor::Interceptors;
 use crate::async_impl::request::Message;
-use crate::async_impl::{HttpBody, Response};
+use crate::async_impl::{HttpBody, Request, Response};
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use crate::util::dispatcher::http1::Http1Conn;
@@ -46,66 +49,14 @@ where
         .intercept_request(message.request.ref_mut())?;
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
 
-    // Encodes and sends Request-line and Headers(non-body fields).
-    let mut part_encoder = RequestEncoder::new(message.request.ref_mut().part().clone());
-    if conn.raw_mut().is_proxy() && message.request.ref_mut().uri().scheme() == Some(&Scheme::HTTP)
-    {
-        part_encoder.absolute_uri(true);
-    }
-    loop {
-        match part_encoder.encode(&mut buf[..]) {
-            Ok(0) => break,
-            Ok(written) => {
-                message.interceptor.intercept_input(&buf[..written])?;
-                // RequestEncoder writes `buf` as much as possible.
-                if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
-                    conn.shutdown();
-                    return err_from_io!(Request, e);
-                }
-            }
-            Err(e) => {
-                conn.shutdown();
-                return err_from_other!(Request, e);
-            }
-        }
-    }
-
-    let content_length = message
-        .request
-        .ref_mut()
-        .part()
-        .headers
-        .get("Content-Length")
-        .and_then(|v| v.to_string().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .is_some();
-
-    let transfer_encoding = message
-        .request
-        .ref_mut()
-        .part()
-        .headers
-        .get("Transfer-Encoding")
-        .and_then(|v| v.to_string().ok())
-        .map(|v| v.contains("chunked"))
-        .unwrap_or(false);
-
-    let body = message.request.ref_mut().body_mut();
-
-    match (content_length, transfer_encoding) {
-        (_, true) => {
-            let body = ChunkBody::from_async_reader(body);
-            encode_body(&mut conn, body, &mut buf).await?;
-        }
-        (true, false) => {
-            let body = TextBody::from_async_reader(body);
-            encode_body(&mut conn, body, &mut buf).await?;
-        }
-        (false, false) => {
-            let body = TextBody::from_async_reader(body);
-            encode_body(&mut conn, body, &mut buf).await?;
-        }
-    };
+    encode_request_part(
+        message.request.ref_mut(),
+        &message.interceptor,
+        &mut conn,
+        &mut buf,
+    )
+    .await?;
+    encode_various_body(message.request.ref_mut(), &mut conn, &mut buf).await?;
 
     // Decodes response part.
     let (part, pre) = {
@@ -135,6 +86,95 @@ where
         }
     };
 
+    decode_response(message, part, conn, pre)
+}
+
+async fn encode_various_body<S>(
+    request: &mut Request,
+    conn: &mut Http1Conn<S>,
+    buf: &mut [u8],
+) -> Result<(), HttpClientError>
+where
+    S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
+{
+    let content_length = request
+        .part()
+        .headers
+        .get("Content-Length")
+        .and_then(|v| v.to_string().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some();
+
+    let transfer_encoding = request
+        .part()
+        .headers
+        .get("Transfer-Encoding")
+        .and_then(|v| v.to_string().ok())
+        .map(|v| v.contains("chunked"))
+        .unwrap_or(false);
+
+    let body = request.body_mut();
+
+    match (content_length, transfer_encoding) {
+        (_, true) => {
+            let body = ChunkBody::from_async_reader(body);
+            encode_body(conn, body, buf).await?;
+        }
+        (true, false) => {
+            let body = TextBody::from_async_reader(body);
+            encode_body(conn, body, buf).await?;
+        }
+        (false, false) => {
+            let body = TextBody::from_async_reader(body);
+            encode_body(conn, body, buf).await?;
+        }
+    };
+    Ok(())
+}
+
+async fn encode_request_part<S>(
+    request: &Request,
+    interceptor: &Arc<Interceptors>,
+    conn: &mut Http1Conn<S>,
+    buf: &mut [u8],
+) -> Result<(), HttpClientError>
+where
+    S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
+{
+    // Encodes and sends Request-line and Headers(non-body fields).
+    let mut part_encoder = RequestEncoder::new(request.part().clone());
+    if conn.raw_mut().is_proxy() && request.uri().scheme() == Some(&Scheme::HTTP) {
+        part_encoder.absolute_uri(true);
+    }
+    loop {
+        match part_encoder.encode(&mut buf[..]) {
+            Ok(0) => break,
+            Ok(written) => {
+                interceptor.intercept_input(&buf[..written])?;
+                // RequestEncoder writes `buf` as much as possible.
+                if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
+                    conn.shutdown();
+                    return err_from_io!(Request, e);
+                }
+            }
+            Err(e) => {
+                conn.shutdown();
+                return err_from_other!(Request, e);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_response<S>(
+    mut message: Message,
+    part: ResponsePart,
+    conn: Http1Conn<S>,
+    pre: &[u8],
+) -> Result<Response, HttpClientError>
+where
+    S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
+{
     // The shutdown function only sets the current connection to the closed state
     // and does not release the connection immediately.
     // Instead, the connection will be completely closed

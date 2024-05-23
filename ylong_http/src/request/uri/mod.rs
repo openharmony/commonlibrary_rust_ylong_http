@@ -645,13 +645,15 @@ impl Authority {
             return Err(InvalidUri::UriMissAuthority);
         }
         let (authority, rest) = authority_token(bytes)?;
-        if !rest.is_empty() || authority.is_none() {
-            return Err(InvalidUri::InvalidAuthority);
+        if rest.is_empty() {
+            if let Some(auth) = authority {
+                return Ok(auth);
+            }
         }
-        Ok(authority.unwrap())
+        Err(InvalidUri::InvalidAuthority)
     }
 
-    /// Gets a immutable reference to `Host`.
+    /// Gets an immutable reference to `Host`.
     ///
     /// # Examples
     ///
@@ -1046,6 +1048,16 @@ fn authority_token(bytes: &[u8]) -> Result<(Option<Authority>, &[u8]), InvalidUr
             }
         }
     }
+    authority_parse(bytes, end, colon_num, left_bracket, right_bracket)
+}
+
+fn authority_parse(
+    bytes: &[u8],
+    end: usize,
+    colon_num: i32,
+    left_bracket: bool,
+    right_bracket: bool,
+) -> Result<(Option<Authority>, &[u8]), InvalidUri> {
     // The authority does not exist.
     if end == 0 {
         return Ok((None, &bytes[end..]));

@@ -227,13 +227,9 @@ impl NoProxy {
     }
 
     fn contains_ip(&self, ip: IpAddr) -> bool {
-        for block_ip in self.ips.iter() {
-            match block_ip {
-                Ip::Address(i) => {
-                    if &ip == i {
-                        return true;
-                    }
-                }
+        for Ip::Address(i) in self.ips.iter() {
+            if &ip == i {
+                return true;
             }
         }
         false
