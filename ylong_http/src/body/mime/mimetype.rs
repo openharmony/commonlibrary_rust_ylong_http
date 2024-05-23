@@ -581,13 +581,7 @@ impl MimeTypeTag {
                 }
             }
             b'a' => {
-                // application
-                if b[1..].eq_ignore_ascii_case(b"pplication") {
-                    return Ok(Self::Application);
-                // audio
-                } else if b[1..].eq_ignore_ascii_case(b"udio") {
-                    return Ok(Self::Audio);
-                }
+                return Self::mime_byte_a(b);
             }
             b'f' => {
                 // font
@@ -602,16 +596,7 @@ impl MimeTypeTag {
                 }
             }
             b'm' => {
-                // message
-                if b[1..].eq_ignore_ascii_case(b"essage") {
-                    return Ok(Self::Message);
-                // model
-                } else if b[1..].eq_ignore_ascii_case(b"odel") {
-                    return Ok(Self::Model);
-                // multipart
-                } else if b[1..].eq_ignore_ascii_case(b"ultipart") {
-                    return Ok(Self::Multipart);
-                }
+                return Self::mime_byte_m(b);
             }
             b't' => {
                 // text
@@ -629,6 +614,32 @@ impl MimeTypeTag {
         };
 
         Err(ErrorKind::InvalidInput.into())
+    }
+
+    fn mime_byte_a(b: &[u8]) -> Result<MimeTypeTag, HttpError> {
+        // application
+        if b[1..].eq_ignore_ascii_case(b"pplication") {
+            Ok(Self::Application)
+            // audio
+        } else if b[1..].eq_ignore_ascii_case(b"udio") {
+            Ok(Self::Audio)
+        } else {
+            Err(ErrorKind::InvalidInput.into())
+        }
+    }
+    fn mime_byte_m(b: &[u8]) -> Result<MimeTypeTag, HttpError> {
+        // message
+        if b[1..].eq_ignore_ascii_case(b"essage") {
+            Ok(Self::Message)
+            // model
+        } else if b[1..].eq_ignore_ascii_case(b"odel") {
+            Ok(Self::Model)
+            // multipart
+        } else if b[1..].eq_ignore_ascii_case(b"ultipart") {
+            Ok(Self::Multipart)
+        } else {
+            Err(ErrorKind::InvalidInput.into())
+        }
     }
 }
 

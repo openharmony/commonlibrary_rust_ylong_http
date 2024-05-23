@@ -279,76 +279,64 @@ pub(crate) mod http2 {
             flow.setup_recv_window(config.conn_window_size());
 
             let streams = Streams::new(config.stream_window_size(), DEFAULT_WINDOW_SIZE, flow);
-
-            let encoder = FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE);
-            let decoder = FrameDecoder::new();
-
-            let (read, write) = crate::runtime::split(io);
-
             let shutdown_flag = Arc::new(AtomicBool::new(false));
-            let settings_sync = Arc::new(Mutex::new(SettingsSync::default()));
-
             let controller = StreamController::new(streams, shutdown_flag.clone());
 
             // The id of the client stream, starting from 1
             let next_stream_id = StreamId {
                 id: AtomicU32::new(1),
             };
-
             let (input_tx, input_rx) = unbounded_channel();
-            let (resp_tx, resp_rx) = unbounded_channel();
             let (req_tx, req_rx) = unbounded_channel();
 
-            match input_tx.send(settings) {
-                Ok(_) => {
-                    let send_settings_sync = settings_sync.clone();
-                    let _send = crate::runtime::spawn(async move {
-                        let mut writer = write;
-                        match async_send_preface(&mut writer).await {
-                            Ok(_) => {
-                                let mut send =
-                                    SendData::new(encoder, send_settings_sync, writer, input_rx);
-                                match Pin::new(&mut send).await {
-                                    Ok(_) => {}
-                                    Err(_e) => {}
-                                }
-                            }
-                            Err(_e) => {}
-                        }
-                    });
-
-                    let recv_settings_sync = settings_sync.clone();
-                    let _recv = crate::runtime::spawn(async move {
-                        let mut recv = RecvData::new(decoder, recv_settings_sync, read, resp_tx);
-                        match Pin::new(&mut recv).await {
-                            Ok(_) => {}
-                            Err(_e) => {}
-                        }
-                    });
-
-                    let _manager = crate::runtime::spawn(async move {
-                        let mut conn_manager =
-                            ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
-                        match Pin::new(&mut conn_manager).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                conn_manager.exit_with_error(e);
-                            }
-                        }
-                    });
-                }
-                Err(_e) => {
-                    // Error is not possible, so it is not handled for the time
-                    // being.
-                }
+            // Error is not possible, so it is not handled for the time
+            // being.
+            if input_tx.send(settings).is_ok() {
+                Self::launch(controller, req_rx, input_tx, input_rx, io);
             }
-
             Self {
                 next_stream_id,
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
                 _mark: PhantomData,
             }
+        }
+
+        fn launch(
+            controller: StreamController,
+            req_rx: UnboundedReceiver<ReqMessage>,
+            input_tx: UnboundedSender<Frame>,
+            input_rx: UnboundedReceiver<Frame>,
+            io: S,
+        ) {
+            let (resp_tx, resp_rx) = unbounded_channel();
+            let (read, write) = crate::runtime::split(io);
+            let settings_sync = Arc::new(Mutex::new(SettingsSync::default()));
+            let send_settings_sync = settings_sync.clone();
+            let _send = crate::runtime::spawn(async move {
+                let mut writer = write;
+                if async_send_preface(&mut writer).await.is_ok() {
+                    let encoder =
+                        FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE);
+                    let mut send = SendData::new(encoder, send_settings_sync, writer, input_rx);
+                    let _ = Pin::new(&mut send).await;
+                }
+            });
+
+            let recv_settings_sync = settings_sync.clone();
+            let _recv = crate::runtime::spawn(async move {
+                let decoder = FrameDecoder::new();
+                let mut recv = RecvData::new(decoder, recv_settings_sync, read, resp_tx);
+                let _ = Pin::new(&mut recv).await;
+            });
+
+            let _manager = crate::runtime::spawn(async move {
+                let mut conn_manager =
+                    ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
+                if let Err(e) = Pin::new(&mut conn_manager).await {
+                    conn_manager.exit_with_error(e);
+                }
+            });
         }
     }
 

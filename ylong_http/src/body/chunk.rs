@@ -167,6 +167,10 @@ impl<T: Read> ChunkBody<FromReader<T>> {
 }
 
 impl<T: AsyncRead + Unpin + Send + Sync> ChunkBody<FromAsyncReader<T>> {
+    fn chunk_encode(&mut self, dst: &mut [u8]) -> usize {
+        self.chunk_encode_reader(dst)
+    }
+
     /// Creates a new `ChunkBody` by `async reader`.
     ///
     /// # Examples
@@ -187,8 +191,30 @@ impl<T: AsyncRead + Unpin + Send + Sync> ChunkBody<FromAsyncReader<T>> {
         }
     }
 
-    fn chunk_encode(&mut self, dst: &mut [u8]) -> usize {
-        self.chunk_encode_reader(dst)
+    fn poll_partial(
+        &mut self,
+        _cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, Error>> {
+        if !self.encode_status.get_flag() {
+            let mut read_buf = ReadBuf::new(&mut self.chunk_data.chunk_buf);
+
+            match Pin::new(&mut *self.from).poll_read(_cx, &mut read_buf) {
+                Poll::Ready(Ok(())) => {
+                    let size = read_buf.filled().len();
+                    self.encode_status.set_flag(true);
+                    // chunk idx reset zero
+                    self.encode_status.set_chunk_idx(0);
+                    self.chunk_data.chunk_last = size;
+                    let data_size = self.chunk_encode(buf);
+                    Poll::Ready(Ok(data_size))
+                }
+                Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                Poll::Pending => Poll::Pending,
+            }
+        } else {
+            Poll::Ready(Ok(self.chunk_encode(buf)))
+        }
     }
 }
 
@@ -274,27 +300,7 @@ impl<T: AsyncRead + Unpin + Send + Sync> async_impl::Body for ChunkBody<FromAsyn
         let mut count = 0;
         while count != buf.len() {
             let encode_size = match chunk_body.data_status {
-                DataState::Partial => {
-                    if !chunk_body.encode_status.get_flag() {
-                        let mut read_buf = ReadBuf::new(&mut chunk_body.chunk_data.chunk_buf);
-
-                        match Pin::new(&mut *chunk_body.from).poll_read(_cx, &mut read_buf) {
-                            Poll::Ready(Ok(())) => {
-                                let size = read_buf.filled().len();
-                                chunk_body.encode_status.set_flag(true);
-                                // chunk idx reset zero
-                                chunk_body.encode_status.set_chunk_idx(0);
-                                chunk_body.chunk_data.chunk_last = size;
-                                let data_size = chunk_body.chunk_encode(&mut buf[count..]);
-                                Poll::Ready(data_size)
-                            }
-                            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                            Poll::Pending => Poll::Pending,
-                        }
-                    } else {
-                        Poll::Ready(chunk_body.chunk_encode(&mut buf[count..]))
-                    }
-                }
+                DataState::Partial => chunk_body.poll_partial(_cx, &mut buf[count..])?,
                 DataState::Complete => Poll::Ready(chunk_body.trailer_encode(&mut buf[count..])),
                 DataState::Finish => {
                     return Poll::Ready(Ok(count));
@@ -972,37 +978,52 @@ impl ChunkBodyDecoder {
             }
 
             remains = rest;
-            match (chunk.is_complete(), self.is_last_chunk) {
-                (false, _) => {
-                    if self.is_chunk_trailer
-                        && (chunk.state == ChunkState::Data || chunk.state == ChunkState::DataCrlf)
-                    {
-                        results.push(chunk);
-                        self.chunk_num += 1;
-                        if remains.is_empty() {
-                            break;
-                        }
-                    } else {
-                        results.push(chunk);
-                        break;
-                    }
-                }
-                (true, true) => {
-                    results.push(chunk);
-                    self.is_last_chunk = false;
-                    self.chunk_num = 0;
-                    break;
-                }
-                (true, false) => {
-                    results.push(chunk);
-                    self.chunk_num += 1;
-                    if remains.is_empty() {
-                        break;
-                    }
-                }
+            if self
+                .match_decode_result(chunk, &mut results, remains)
+                .is_some()
+            {
+                break;
             }
         }
         Ok((results, remains))
+    }
+
+    fn match_decode_result<'b, 'a: 'b>(
+        &mut self,
+        chunk: Chunk<'a>,
+        results: &mut Chunks<'b>,
+        remains: &[u8],
+    ) -> Option<()> {
+        match (chunk.is_complete(), self.is_last_chunk) {
+            (false, _) => {
+                if self.is_chunk_trailer
+                    && (chunk.state == ChunkState::Data || chunk.state == ChunkState::DataCrlf)
+                {
+                    results.push(chunk);
+                    self.chunk_num += 1;
+                    if remains.is_empty() {
+                        return Some(());
+                    }
+                } else {
+                    results.push(chunk);
+                    return Some(());
+                }
+            }
+            (true, true) => {
+                results.push(chunk);
+                self.is_last_chunk = false;
+                self.chunk_num = 0;
+                return Some(());
+            }
+            (true, false) => {
+                results.push(chunk);
+                self.chunk_num += 1;
+                if remains.is_empty() {
+                    return Some(());
+                }
+            }
+        }
+        None
     }
 
     /// Get trailer headers.
@@ -1071,7 +1092,10 @@ impl ChunkBodyDecoder {
     fn decode_size<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
         self.stage = Stage::Size;
         if buf.is_empty() {
-            return Ok((self.sized_chunk(&buf[..0]), buf));
+            return Ok((
+                Self::sized_chunk(&buf[..0], None, self.total_size, ChunkState::MetaSize),
+                buf,
+            ));
         }
         self.chunk_flag = false;
         for (i, &b) in buf.iter().enumerate() {
@@ -1114,17 +1138,25 @@ impl ChunkBodyDecoder {
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
-        Ok((self.sized_chunk(&buf[..0]), &buf[buf.len()..]))
+        Ok((
+            Self::sized_chunk(&buf[..0], None, self.total_size, ChunkState::MetaSize),
+            &buf[buf.len()..],
+        ))
     }
 
-    fn sized_chunk<'a>(&self, buf: &'a [u8]) -> Chunk<'a> {
+    fn sized_chunk<'a>(
+        data: &'a [u8],
+        trailer: Option<&'a [u8]>,
+        size: usize,
+        state: ChunkState,
+    ) -> Chunk<'a> {
         Chunk {
             id: 0,
-            state: ChunkState::MetaSize,
-            size: self.total_size,
+            state,
+            size,
             extension: ChunkExt::new(),
-            data: &buf[..0],
-            trailer: None,
+            data,
+            trailer,
         }
     }
 
@@ -1153,69 +1185,55 @@ impl ChunkBodyDecoder {
     fn skip_extension<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
         self.stage = Stage::Extension;
         if self.is_chunk_trailer {
-            for (i, &b) in buf.iter().enumerate() {
-                match b {
-                    b'\r' => {
-                        if self.cr_meet {
-                            return Err(ErrorKind::InvalidInput.into());
-                        }
-                        self.cr_meet = true;
-                        return self.skip_trailer_crlf(&buf[i + 1..]);
-                    }
-                    b'\n' => {
-                        if !self.cr_meet {
-                            return Err(ErrorKind::InvalidInput.into());
-                        }
-                        self.cr_meet = false;
-
-                        return self.skip_trailer_crlf(&buf[i..]);
-                    }
-                    _ => {}
-                }
-            }
-            Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::MetaExt,
-                    size: self.total_size,
-                    extension: ChunkExt::new(),
-                    data: &buf[..0],
-                    trailer: Some(&buf[..0]),
-                },
-                &buf[buf.len()..],
-            ))
+            self.skip_trailer_ext(buf)
         } else {
-            for (i, &b) in buf.iter().enumerate() {
-                match b {
-                    b'\r' => {
-                        if self.cr_meet {
-                            return Err(ErrorKind::InvalidInput.into());
-                        }
-                        self.cr_meet = true;
-                        return self.skip_crlf(&buf[i + 1..]);
-                    }
-                    b'\n' => {
-                        if !self.cr_meet {
-                            return Err(ErrorKind::InvalidInput.into());
-                        }
-                        self.cr_meet = false;
-                        return self.skip_crlf(&buf[i..]);
-                    }
-                    _ => {}
-                }
-            }
-            Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::MetaExt,
-                    size: self.total_size,
-                    extension: ChunkExt::new(),
-                    data: &buf[..0],
-                    trailer: None,
-                },
-                &buf[buf.len()..],
-            ))
+            self.skip_chunk_ext(buf)
         }
+    }
+
+    fn skip_trailer_ext<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
+        for (i, &b) in buf.iter().enumerate() {
+            match b {
+                b'\r' => {
+                    self.decode_cr()?;
+                    return self.skip_trailer_crlf(&buf[i + 1..]);
+                }
+                b'\n' => {
+                    self.decode_lf()?;
+                    return self.skip_trailer_crlf(&buf[i..]);
+                }
+                _ => {}
+            }
+        }
+        Ok((
+            Self::sized_chunk(
+                &buf[..0],
+                Some(&buf[..0]),
+                self.total_size,
+                ChunkState::MetaExt,
+            ),
+            &buf[buf.len()..],
+        ))
+    }
+
+    fn skip_chunk_ext<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
+        for (i, &b) in buf.iter().enumerate() {
+            match b {
+                b'\r' => {
+                    self.decode_cr()?;
+                    return self.skip_crlf(&buf[i + 1..]);
+                }
+                b'\n' => {
+                    self.decode_lf()?;
+                    return self.skip_crlf(&buf[i..]);
+                }
+                _ => {}
+            }
+        }
+        Ok((
+            Self::sized_chunk(&buf[..0], None, self.total_size, ChunkState::MetaExt),
+            &buf[buf.len()..],
+        ))
     }
 
     fn skip_crlf<'a>(&mut self, buf: &'a [u8]) -> Result<(Chunk<'a>, &'a [u8]), HttpError> {
@@ -1223,32 +1241,17 @@ impl ChunkBodyDecoder {
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'\r' => {
-                    if self.cr_meet {
-                        // TODO Check whether the state machine needs to be reused after the parsing
-                        // fails and whether the state machine status needs to be adjusted.
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
+                    self.decode_cr()?;
                 }
                 b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
+                    self.decode_lf()?;
                     return self.decode_data(&buf[i + 1..]);
                 }
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
         Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::MetaCrlf,
-                size: self.total_size,
-                extension: ChunkExt::new(),
-                data: &buf[..0],
-                trailer: None,
-            },
+            Self::sized_chunk(&buf[..0], None, self.total_size, ChunkState::MetaCrlf),
             &buf[buf.len()..],
         ))
     }
@@ -1258,16 +1261,10 @@ impl ChunkBodyDecoder {
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'\r' => {
-                    if self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
+                    self.decode_cr()?;
                 }
                 b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
+                    self.decode_lf()?;
                     self.is_trailer_crlf = true;
                     return self.decode_trailer_data(&buf[i + 1..]);
                 }
@@ -1275,16 +1272,30 @@ impl ChunkBodyDecoder {
             }
         }
         Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::MetaCrlf,
-                size: self.total_size,
-                extension: ChunkExt::new(),
-                data: &buf[..0],
-                trailer: Some(&buf[..0]),
-            },
+            Self::sized_chunk(
+                &buf[..0],
+                Some(&buf[..0]),
+                self.total_size,
+                ChunkState::MetaCrlf,
+            ),
             &buf[buf.len()..],
         ))
+    }
+
+    fn decode_cr(&mut self) -> Result<(), HttpError> {
+        if self.cr_meet {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+        self.cr_meet = true;
+        Ok(())
+    }
+
+    fn decode_lf(&mut self) -> Result<(), HttpError> {
+        if !self.cr_meet {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+        self.cr_meet = false;
+        Ok(())
     }
 
     fn decode_trailer_data<'a>(
@@ -1294,14 +1305,7 @@ impl ChunkBodyDecoder {
         self.stage = Stage::TrailerData;
         if buf.is_empty() {
             return Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::Data,
-                    size: 0,
-                    extension: ChunkExt::new(),
-                    data: &buf[..0],
-                    trailer: Some(&buf[..0]),
-                },
+                Self::sized_chunk(&buf[..0], Some(&buf[..0]), 0, ChunkState::Data),
                 &buf[buf.len()..],
             ));
         }
@@ -1313,32 +1317,20 @@ impl ChunkBodyDecoder {
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'\r' => {
-                    if self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
+                    self.decode_cr()?;
                     return self.skip_trailer_last_crlf(&buf[..i], &buf[i + 1..]);
                 }
                 b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
+                    self.decode_lf()?;
                     return self.skip_trailer_last_crlf(&buf[..i], &buf[i..]);
                 }
                 _ => {}
             }
         }
         self.is_trailer_crlf = false;
+
         Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::Data,
-                size: 0,
-                extension: ChunkExt::new(),
-                data: &buf[..0],
-                trailer: Some(buf),
-            },
+            Self::sized_chunk(&buf[..0], Some(buf), 0, ChunkState::Data),
             &buf[buf.len()..],
         ))
     }
@@ -1347,14 +1339,7 @@ impl ChunkBodyDecoder {
         self.stage = Stage::Data;
         if buf.is_empty() {
             return Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::Data,
-                    size: self.total_size,
-                    extension: ChunkExt::new(),
-                    data: &buf[..0],
-                    trailer: None,
-                },
+                Self::sized_chunk(&buf[..0], None, self.total_size, ChunkState::Data),
                 &buf[buf.len()..],
             ));
         }
@@ -1367,14 +1352,7 @@ impl ChunkBodyDecoder {
         } else {
             self.rest_size -= buf.len();
             Ok((
-                Chunk {
-                    id: 0,
-                    state: ChunkState::Data,
-                    size: self.total_size,
-                    extension: ChunkExt::new(),
-                    data: buf,
-                    trailer: None,
-                },
+                Self::sized_chunk(buf, None, self.total_size, ChunkState::Data),
                 &buf[buf.len()..],
             ))
         }
@@ -1389,57 +1367,30 @@ impl ChunkBodyDecoder {
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'\r' => {
-                    if self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
+                    self.decode_cr()?;
                 }
                 b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
+                    self.decode_lf()?;
                     return if self.is_last_chunk {
                         self.stage = Stage::TrailerEndCrlf;
                         Ok((
-                            Chunk {
-                                id: 0,
-                                state: ChunkState::Finish,
-                                size: 0,
-                                extension: ChunkExt::new(),
-                                data: &buf[..0],
-                                trailer: Some(&buf[..0]),
-                            },
+                            Self::sized_chunk(&buf[..0], Some(&buf[..0]), 0, ChunkState::Finish),
                             &buf[i + 1..],
                         ))
                     } else {
                         self.cr_meet = false;
                         self.is_trailer_crlf = true;
                         self.stage = Stage::TrailerData;
-                        let complete_chunk = Chunk {
-                            id: 0,
-                            state: ChunkState::DataCrlf,
-                            size: 0,
-                            extension: ChunkExt::new(),
-                            data: &data[..0],
-                            trailer: Some(data),
-                        };
+                        let complete_chunk =
+                            Self::sized_chunk(&data[..0], Some(data), 0, ChunkState::DataCrlf);
                         return Ok((complete_chunk, &buf[i + 1..]));
                     };
                 }
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
-
         Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::DataCrlf,
-                size: 0,
-                extension: ChunkExt::new(),
-                data: &data[..0],
-                trailer: Some(data),
-            },
+            Self::sized_chunk(&data[..0], Some(data), 0, ChunkState::DataCrlf),
             &buf[buf.len()..],
         ))
     }
@@ -1453,25 +1404,13 @@ impl ChunkBodyDecoder {
         for (i, &b) in buf.iter().enumerate() {
             match b {
                 b'\r' => {
-                    if self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = true;
+                    self.decode_cr()?;
                 }
                 b'\n' => {
-                    if !self.cr_meet {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    self.cr_meet = false;
+                    self.decode_lf()?;
                     self.stage = Stage::Size;
-                    let complete_chunk = Chunk {
-                        id: 0,
-                        state: ChunkState::Finish,
-                        size: self.total_size,
-                        extension: ChunkExt::new(),
-                        data,
-                        trailer: None,
-                    };
+                    let complete_chunk =
+                        Self::sized_chunk(data, None, self.total_size, ChunkState::Finish);
                     self.total_size = 0;
                     return Ok((complete_chunk, &buf[i + 1..]));
                 }
@@ -1479,14 +1418,7 @@ impl ChunkBodyDecoder {
             }
         }
         Ok((
-            Chunk {
-                id: 0,
-                state: ChunkState::DataCrlf,
-                size: self.total_size,
-                extension: ChunkExt::new(),
-                data,
-                trailer: None,
-            },
+            Self::sized_chunk(data, None, self.total_size, ChunkState::DataCrlf),
             &buf[buf.len()..],
         ))
     }

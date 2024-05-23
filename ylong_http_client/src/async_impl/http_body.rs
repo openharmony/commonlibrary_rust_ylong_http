@@ -208,9 +208,7 @@ impl UntilClose {
         if buf.is_empty() {
             return Poll::Ready(Ok(0));
         }
-
         let mut read = 0;
-
         if let Some(pre) = self.pre.as_mut() {
             // Here cursor read never failed.
             let this_read = Read::read(pre, buf).unwrap();
@@ -222,38 +220,49 @@ impl UntilClose {
         }
 
         if !buf[read..].is_empty() {
-            if let Some(mut io) = self.io.take() {
-                let mut read_buf = ReadBuf::new(&mut buf[read..]);
-                return match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
-                    // Disconnected.
-                    Poll::Ready(Ok(())) => {
-                        let filled = read_buf.filled().len();
-                        if filled == 0 {
-                            io.shutdown();
-                        } else {
-                            self.interceptors
-                                .intercept_output(&buf[read..(read + filled)])?;
-                            self.io = Some(io);
-                        }
-                        read += filled;
-                        Poll::Ready(Ok(read))
-                    }
-                    Poll::Pending => {
-                        self.io = Some(io);
-                        if read != 0 {
-                            return Poll::Ready(Ok(read));
-                        }
-                        Poll::Pending
-                    }
-                    Poll::Ready(Err(e)) => {
-                        // If IO error occurs, shutdowns `io` before return.
-                        io.shutdown();
-                        return Poll::Ready(err_from_io!(BodyTransfer, e));
-                    }
-                };
+            if let Some(io) = self.io.take() {
+                return self.poll_read_io(cx, io, read, buf);
             }
         }
         Poll::Ready(Ok(read))
+    }
+
+    fn poll_read_io(
+        &mut self,
+        cx: &mut Context<'_>,
+        mut io: BoxStreamData,
+        read: usize,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, HttpClientError>> {
+        let mut read = read;
+        let mut read_buf = ReadBuf::new(&mut buf[read..]);
+        match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
+            // Disconnected.
+            Poll::Ready(Ok(())) => {
+                let filled = read_buf.filled().len();
+                if filled == 0 {
+                    io.shutdown();
+                } else {
+                    self.interceptors
+                        .intercept_output(&buf[read..(read + filled)])?;
+                    self.io = Some(io);
+                }
+                read += filled;
+                Poll::Ready(Ok(read))
+            }
+            Poll::Pending => {
+                self.io = Some(io);
+                if read != 0 {
+                    return Poll::Ready(Ok(read));
+                }
+                Poll::Pending
+            }
+            Poll::Ready(Err(e)) => {
+                // If IO error occurs, shutdowns `io` before return.
+                io.shutdown();
+                Poll::Ready(err_from_io!(BodyTransfer, e))
+            }
+        }
     }
 }
 
@@ -299,70 +308,90 @@ impl Text {
                 self.pre = None;
             } else {
                 read += this_read;
-                let (text, rem) = self.decoder.decode(&buf[..read]);
-
-                // Contains redundant `rem`, return error.
-                match (text.is_complete(), rem.is_empty()) {
-                    (true, false) => {
-                        if let Some(io) = self.io.take() {
-                            io.shutdown();
-                        };
-                        return Poll::Ready(err_from_msg!(BodyDecode, "Not eof"));
-                    }
-                    (true, true) => {
-                        self.io = None;
-                        return Poll::Ready(Ok(read));
-                    }
-                    // TextBodyDecoder decodes as much as possible here.
-                    _ => {}
+                if let Some(result) = self.read_remaining(buf, read) {
+                    return result;
                 }
             }
         }
 
         if !buf[read..].is_empty() {
-            if let Some(mut io) = self.io.take() {
-                let mut read_buf = ReadBuf::new(&mut buf[read..]);
-                match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
-                    // Disconnected.
-                    Poll::Ready(Ok(())) => {
-                        let filled = read_buf.filled().len();
-                        if filled == 0 {
-                            io.shutdown();
-                            return Poll::Ready(err_from_msg!(
-                                BodyDecode,
-                                "Response body incomplete"
-                            ));
-                        }
-                        let (text, rem) = self.decoder.decode(read_buf.filled());
-                        self.interceptors.intercept_output(read_buf.filled())?;
-                        read += filled;
-                        // Contains redundant `rem`, return error.
-                        match (text.is_complete(), rem.is_empty()) {
-                            (true, false) => {
-                                io.shutdown();
-                                return Poll::Ready(err_from_msg!(BodyDecode, "Not eof"));
-                            }
-                            (true, true) => return Poll::Ready(Ok(read)),
-                            _ => {}
-                        }
-                        self.io = Some(io);
-                    }
-                    Poll::Pending => {
-                        self.io = Some(io);
-                        if read != 0 {
-                            return Poll::Ready(Ok(read));
-                        }
-                        return Poll::Pending;
-                    }
-                    Poll::Ready(Err(e)) => {
-                        // If IO error occurs, shutdowns `io` before return.
-                        io.shutdown();
-                        return Poll::Ready(err_from_io!(BodyDecode, e));
-                    }
-                }
+            if let Some(io) = self.io.take() {
+                return self.poll_read_io(cx, buf, io, read);
             }
         }
         Poll::Ready(Ok(read))
+    }
+
+    fn read_remaining(
+        &mut self,
+        buf: &mut [u8],
+        read: usize,
+    ) -> Option<Poll<Result<usize, HttpClientError>>> {
+        let (text, rem) = self.decoder.decode(&buf[..read]);
+
+        // Contains redundant `rem`, return error.
+        match (text.is_complete(), rem.is_empty()) {
+            (true, false) => {
+                if let Some(io) = self.io.take() {
+                    io.shutdown();
+                };
+                Some(Poll::Ready(err_from_msg!(BodyDecode, "Not eof")))
+            }
+            (true, true) => {
+                self.io = None;
+                Some(Poll::Ready(Ok(read)))
+            }
+            // TextBodyDecoder decodes as much as possible here.
+            _ => None,
+        }
+    }
+
+    fn poll_read_io(
+        &mut self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+        mut io: BoxStreamData,
+        read: usize,
+    ) -> Poll<Result<usize, HttpClientError>> {
+        let mut read = read;
+        let mut read_buf = ReadBuf::new(&mut buf[read..]);
+        match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
+            // Disconnected.
+            Poll::Ready(Ok(())) => {
+                let filled = read_buf.filled().len();
+                if filled == 0 {
+                    io.shutdown();
+                    return Poll::Ready(err_from_msg!(BodyDecode, "Response body incomplete"));
+                }
+                let (text, rem) = self.decoder.decode(read_buf.filled());
+                self.interceptors.intercept_output(read_buf.filled())?;
+                read += filled;
+                // Contains redundant `rem`, return error.
+                match (text.is_complete(), rem.is_empty()) {
+                    (true, false) => {
+                        io.shutdown();
+                        Poll::Ready(err_from_msg!(BodyDecode, "Not eof"))
+                    }
+                    (true, true) => Poll::Ready(Ok(read)),
+                    _ => {
+                        self.io = Some(io);
+                        Poll::Ready(Ok(read))
+                    }
+                }
+            }
+            Poll::Pending => {
+                self.io = Some(io);
+                if read != 0 {
+                    return Poll::Ready(Ok(read));
+                }
+                Poll::Pending
+            }
+            Poll::Ready(Err(e)) => {
+                // If IO error occurs, shutdowns `io` before return.
+                io.shutdown();
+                Poll::Ready(err_from_io!(BodyDecode, e))
+            }
+        }
     }
 }
 

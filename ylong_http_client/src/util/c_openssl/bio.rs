@@ -229,6 +229,25 @@ unsafe extern "C" fn destroy<S>(bio: *mut BIO) -> c_int {
     1
 }
 
+macro_rules! catch_unwind_bio {
+    ($io: expr, $flag: expr, $bio: expr, $state: expr) => {
+        match catch_unwind(AssertUnwindSafe(|| $io)) {
+            Ok(Err(err)) => {
+                if retry_error(&err) {
+                    BIO_set_flags($bio, BIO_FLAGS_SHOULD_RETRY | $flag)
+                }
+                $state.error = Some(err);
+                -1
+            }
+            Ok(Ok(len)) => len as c_int,
+            Err(err) => {
+                $state.panic = Some(err);
+                -1
+            }
+        }
+    };
+}
+
 unsafe extern "C" fn bwrite<S: Write>(bio: *mut BIO, buf: *const c_char, len: c_int) -> c_int {
     BIO_clear_flags(bio, BIO_FLAGS_SHOULD_RETRY | BIO_FLAGS_RWS);
 
@@ -239,21 +258,7 @@ unsafe extern "C" fn bwrite<S: Write>(bio: *mut BIO, buf: *const c_char, len: c_
     }
 
     let buf = slice::from_raw_parts(buf as *const _, len as usize);
-
-    match catch_unwind(AssertUnwindSafe(|| state.stream.write(buf))) {
-        Ok(Err(err)) => {
-            if retry_error(&err) {
-                BIO_set_flags(bio, BIO_FLAGS_SHOULD_RETRY | BIO_FLAGS_WRITE)
-            }
-            state.error = Some(err);
-            -1
-        }
-        Ok(Ok(len)) => len as c_int,
-        Err(err) => {
-            state.panic = Some(err);
-            -1
-        }
-    }
+    catch_unwind_bio!(state.stream.write(buf), BIO_FLAGS_WRITE, bio, state)
 }
 
 unsafe extern "C" fn bread<S: Read>(bio: *mut BIO, buf: *mut c_char, len: c_int) -> c_int {
@@ -262,20 +267,7 @@ unsafe extern "C" fn bread<S: Read>(bio: *mut BIO, buf: *mut c_char, len: c_int)
     let state = get_state::<S>(bio);
     let buf = slice::from_raw_parts_mut(buf as *mut _, len as usize);
 
-    match catch_unwind(AssertUnwindSafe(|| state.stream.read(buf))) {
-        Ok(Err(err)) => {
-            if retry_error(&err) {
-                BIO_set_flags(bio, BIO_FLAGS_SHOULD_RETRY | BIO_FLAGS_READ)
-            }
-            state.error = Some(err);
-            -1
-        }
-        Ok(Ok(len)) => len as c_int,
-        Err(err) => {
-            state.panic = Some(err);
-            -1
-        }
-    }
+    catch_unwind_bio!(state.stream.read(buf), BIO_FLAGS_READ, bio, state)
 }
 
 unsafe extern "C" fn bputs<S: Write>(bio: *mut BIO, buf: *const c_char) -> c_int {

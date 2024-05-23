@@ -148,16 +148,8 @@ impl SslContextBuilder {
     where
         P: AsRef<Path>,
     {
-        let path = match file.as_ref().as_os_str().to_str() {
-            Some(path) => path,
-            None => return Err(ErrorStack::get()),
-        };
-        let file = match CString::new(path) {
-            Ok(path) => path,
-            Err(_) => return Err(ErrorStack::get()),
-        };
+        let file = Self::get_c_file(file)?;
         let ptr = self.as_ptr_mut();
-
         check_ret(unsafe {
             SSL_CTX_load_verify_locations(ptr, file.as_ptr() as *const _, ptr::null())
         })
@@ -200,16 +192,8 @@ impl SslContextBuilder {
     where
         P: AsRef<Path>,
     {
-        let path = match file.as_ref().as_os_str().to_str() {
-            Some(path) => path,
-            None => return Err(ErrorStack::get()),
-        };
-        let file = match CString::new(path) {
-            Ok(path) => path,
-            Err(_) => return Err(ErrorStack::get()),
-        };
+        let file = Self::get_c_file(file)?;
         let ptr = self.as_ptr_mut();
-
         check_ret(unsafe {
             SSL_CTX_use_certificate_file(ptr, file.as_ptr() as *const _, file_type.as_raw())
         })
@@ -225,18 +209,24 @@ impl SslContextBuilder {
     where
         P: AsRef<Path>,
     {
+        let file = Self::get_c_file(file)?;
+        let ptr = self.as_ptr_mut();
+        check_ret(unsafe { SSL_CTX_use_certificate_chain_file(ptr, file.as_ptr() as *const _) })
+            .map(|_| ())
+    }
+
+    pub(crate) fn get_c_file<P>(file: P) -> Result<CString, ErrorStack>
+    where
+        P: AsRef<Path>,
+    {
         let path = match file.as_ref().as_os_str().to_str() {
             Some(path) => path,
             None => return Err(ErrorStack::get()),
         };
-        let file = match CString::new(path) {
-            Ok(path) => path,
-            Err(_) => return Err(ErrorStack::get()),
-        };
-        let ptr = self.as_ptr_mut();
-
-        check_ret(unsafe { SSL_CTX_use_certificate_chain_file(ptr, file.as_ptr() as *const _) })
-            .map(|_| ())
+        match CString::new(path) {
+            Ok(path) => Ok(path),
+            Err(_) => Err(ErrorStack::get()),
+        }
     }
 
     /// Sets the protocols to sent to the server for Application Layer Protocol

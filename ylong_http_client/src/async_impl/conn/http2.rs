@@ -260,12 +260,7 @@ where
                         Some(Poll::Ready(Ok(())))
                     } else {
                         buf.append_slice(&data[..fill_len]);
-                        if frame.flags().is_end_stream() {
-                            text_io.is_closed = true;
-                            Some(Poll::Ready(Ok(())))
-                        } else {
-                            None
-                        }
+                        Self::end_read(text_io, frame.flags().is_end_stream())
                     }
                 }
                 Payload::RstStream(reset) => {
@@ -285,6 +280,15 @@ where
                 )))),
             },
             Poll::Pending => Some(Poll::Pending),
+        }
+    }
+
+    fn end_read(text_io: &mut TextIo<S>, end_stream: bool) -> Option<Poll<std::io::Result<()>>> {
+        if end_stream {
+            text_io.is_closed = true;
+            Some(Poll::Ready(Ok(())))
+        } else {
+            None
         }
     }
 

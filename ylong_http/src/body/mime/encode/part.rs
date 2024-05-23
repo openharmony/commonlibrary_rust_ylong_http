@@ -16,6 +16,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::io::Read;
 
+use crate::body::async_impl::Body;
 use crate::body::mime::common::{data_copy, SizeResult, TokenStatus};
 use crate::body::mime::{EncodeHeaders, MixFrom, PartStatus};
 use crate::body::{async_impl, sync_impl, MimePart};
@@ -199,20 +200,7 @@ impl async_impl::Body for MimePartEncoder<'_> {
                 PartStatus::Start => Poll::Ready(self.start_encode()),
                 PartStatus::Headers => Poll::Ready(self.headers_encode(&mut buf[count..])),
                 PartStatus::Crlf => Poll::Ready(self.crlf_encode(&mut buf[count..])),
-                PartStatus::Body => match &mut self.body {
-                    Some(body) => {
-                        let poll_result = Pin::new(body).poll_data(cx, &mut buf[count..]);
-                        if let Poll::Ready(Ok(0)) = poll_result {
-                            // complete async read body
-                            self.check_next();
-                        };
-                        poll_result
-                    }
-                    _ => {
-                        self.check_next();
-                        Poll::Ready(Ok(0))
-                    }
-                },
+                PartStatus::Body => self.poll_mime_body(cx, &mut buf[count..]),
                 PartStatus::End => return Poll::Ready(Ok(count)),
             };
 
@@ -223,6 +211,29 @@ impl async_impl::Body for MimePartEncoder<'_> {
             }
         }
         Poll::Ready(Ok(count))
+    }
+}
+
+impl MimePartEncoder<'_> {
+    fn poll_mime_body(
+        &mut self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        match self.body {
+            Some(ref mut body) => {
+                let poll_result = Pin::new(body).poll_data(cx, buf);
+                if let Poll::Ready(Ok(0)) = poll_result {
+                    // complete async read body
+                    self.check_next();
+                };
+                poll_result
+            }
+            _ => {
+                self.check_next();
+                Poll::Ready(Ok(0))
+            }
+        }
     }
 }
 

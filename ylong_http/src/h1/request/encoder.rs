@@ -532,70 +532,80 @@ impl EncodeHeader {
 
     fn encode(&mut self, buf: &mut [u8]) -> TokenResult<usize> {
         match self.status.take().unwrap() {
-            HeaderStatus::Name => {
-                let name = self.name.as_bytes();
-                let mut task = WriteData::new(name, &mut self.name_idx, buf);
-                match task.write()? {
-                    TokenStatus::Complete(size) => {
-                        self.status = Some(HeaderStatus::Colon);
-                        Ok(TokenStatus::Partial(size))
-                    }
-                    TokenStatus::Partial(size) => {
-                        self.status = Some(HeaderStatus::Name);
-                        Ok(TokenStatus::Partial(size))
-                    }
-                }
-            }
-            HeaderStatus::Colon => {
-                let colon = ":".as_bytes();
-                let mut task = WriteData::new(colon, &mut self.colon_idx, buf);
-                match task.write()? {
-                    TokenStatus::Complete(size) => {
-                        self.status = Some(HeaderStatus::Value);
-                        Ok(TokenStatus::Partial(size))
-                    }
-                    TokenStatus::Partial(size) => {
-                        self.status = Some(HeaderStatus::Colon);
-                        Ok(TokenStatus::Partial(size))
-                    }
-                }
-            }
-            HeaderStatus::Value => {
-                let value = self.value.as_slice();
-                let mut task = WriteData::new(value, &mut self.value_idx, buf);
-                match task.write()? {
-                    TokenStatus::Complete(size) => {
-                        let crlf = EncodeCrlf::new();
-                        self.status = Some(HeaderStatus::Crlf(crlf));
-                        Ok(TokenStatus::Partial(size))
-                    }
-                    TokenStatus::Partial(size) => {
-                        self.status = Some(HeaderStatus::Value);
-                        Ok(TokenStatus::Partial(size))
-                    }
-                }
-            }
-            HeaderStatus::Crlf(mut crlf) => match crlf.encode(buf)? {
-                TokenStatus::Complete(size) => {
-                    if let Some(iter) = self.inner.next() {
-                        let (header_name, header_value) = iter;
-                        self.status = Some(HeaderStatus::Name);
-                        self.name = header_name;
-                        self.value = header_value.to_string().unwrap().into_bytes();
-                        self.name_idx = 0;
-                        self.colon_idx = 0;
-                        self.value_idx = 0;
-                        Ok(TokenStatus::Partial(size))
-                    } else {
-                        Ok(TokenStatus::Complete(size))
-                    }
-                }
-                TokenStatus::Partial(size) => {
-                    self.status = Some(HeaderStatus::Crlf(crlf));
-                    Ok(TokenStatus::Partial(size))
-                }
-            },
+            HeaderStatus::Name => self.encode_name(buf),
+            HeaderStatus::Colon => self.encode_colon(buf),
+            HeaderStatus::Value => self.encode_value(buf),
+            HeaderStatus::Crlf(crlf) => self.encode_crlf(buf, crlf),
             HeaderStatus::EmptyHeader => Ok(TokenStatus::Complete(0)),
+        }
+    }
+
+    fn encode_name(&mut self, buf: &mut [u8]) -> TokenResult<usize> {
+        let name = self.name.as_bytes();
+        let mut task = WriteData::new(name, &mut self.name_idx, buf);
+        match task.write()? {
+            TokenStatus::Complete(size) => {
+                self.status = Some(HeaderStatus::Colon);
+                Ok(TokenStatus::Partial(size))
+            }
+            TokenStatus::Partial(size) => {
+                self.status = Some(HeaderStatus::Name);
+                Ok(TokenStatus::Partial(size))
+            }
+        }
+    }
+
+    fn encode_colon(&mut self, buf: &mut [u8]) -> TokenResult<usize> {
+        let colon = ":".as_bytes();
+        let mut task = WriteData::new(colon, &mut self.colon_idx, buf);
+        match task.write()? {
+            TokenStatus::Complete(size) => {
+                self.status = Some(HeaderStatus::Value);
+                Ok(TokenStatus::Partial(size))
+            }
+            TokenStatus::Partial(size) => {
+                self.status = Some(HeaderStatus::Colon);
+                Ok(TokenStatus::Partial(size))
+            }
+        }
+    }
+
+    fn encode_value(&mut self, buf: &mut [u8]) -> TokenResult<usize> {
+        let value = self.value.as_slice();
+        let mut task = WriteData::new(value, &mut self.value_idx, buf);
+        match task.write()? {
+            TokenStatus::Complete(size) => {
+                let crlf = EncodeCrlf::new();
+                self.status = Some(HeaderStatus::Crlf(crlf));
+                Ok(TokenStatus::Partial(size))
+            }
+            TokenStatus::Partial(size) => {
+                self.status = Some(HeaderStatus::Value);
+                Ok(TokenStatus::Partial(size))
+            }
+        }
+    }
+
+    fn encode_crlf(&mut self, buf: &mut [u8], mut crlf: EncodeCrlf) -> TokenResult<usize> {
+        match crlf.encode(buf)? {
+            TokenStatus::Complete(size) => {
+                if let Some(iter) = self.inner.next() {
+                    let (header_name, header_value) = iter;
+                    self.status = Some(HeaderStatus::Name);
+                    self.name = header_name;
+                    self.value = header_value.to_string().unwrap().into_bytes();
+                    self.name_idx = 0;
+                    self.colon_idx = 0;
+                    self.value_idx = 0;
+                    Ok(TokenStatus::Partial(size))
+                } else {
+                    Ok(TokenStatus::Complete(size))
+                }
+            }
+            TokenStatus::Partial(size) => {
+                self.status = Some(HeaderStatus::Crlf(crlf));
+                Ok(TokenStatus::Partial(size))
+            }
         }
     }
 }
