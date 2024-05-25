@@ -25,6 +25,7 @@ ohos_rust_shared_library("ylong_http_client_inner") {
     "async",
     "c_openssl_3_0",
     "http1_1",
+    "http2",
     "ylong_base",
     "__c_openssl",
     "__tls",
@@ -48,6 +49,7 @@ ohos_rust_unittest("rust_ylong_http_client_test_ut") {
   rustflags = [
     "--cfg=feature=\"async\"",
     "--cfg=feature=\"http1_1\"",
+    "--cfg=feature=\"http2\"",
     "--cfg=feature=\"c_openssl_3_0\"",
     "--cfg=feature=\"__tls\"",
     "--cfg=feature=\"__c_openssl\"",

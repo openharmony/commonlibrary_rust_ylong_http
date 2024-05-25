@@ -75,6 +75,7 @@ pub(crate) mod runtime {
             mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
             Mutex as AsyncMutex, MutexGuard,
         },
+        task::JoinHandle,
     };
     #[cfg(all(feature = "tokio_base", feature = "async"))]
     pub(crate) use tokio::{
@@ -96,6 +97,7 @@ pub(crate) mod runtime {
             mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
             Mutex as AsyncMutex, MutexGuard,
         },
+        task::JoinHandle,
     };
 
     #[cfg(all(feature = "ylong_base", feature = "http2"))]

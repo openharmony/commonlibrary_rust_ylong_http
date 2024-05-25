@@ -33,7 +33,7 @@ async fn client_send() -> Result<(), HttpClientError> {
 
     // Creates a `Request`.
     let request = Request::builder()
-        .url("https://sf3-cn.feishucdn.com/obj/ee-appcenter/47273f95/Feishu-win32_ia32-7.9.7-signed.exe")
+        .url("https://www.example.com")
         .body(Body::empty())?;
 
     // Sends request and receives a `Response`.

@@ -23,6 +23,8 @@ ohos_rust_static_library("ylong_http") {
 
   features = [
     "http1_1",
+    "huffman",
+    "http2",
     "ylong_base",
   ]
 
@@ -35,6 +37,8 @@ ohos_rust_unittest("rust_ylong_http_test_ut") {
 
   rustflags = [
     "--cfg=feature=\"http1_1\"",
+    "--cfg=feature=\"huffman\"",
+    "--cfg=feature=\"http2\"",
     "--cfg=feature=\"ylong_base\"",
   ]
 

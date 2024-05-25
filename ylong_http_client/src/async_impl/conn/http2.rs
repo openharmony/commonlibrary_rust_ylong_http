@@ -260,7 +260,7 @@ where
                         Some(Poll::Ready(Ok(())))
                     } else {
                         buf.append_slice(&data[..fill_len]);
-                        Self::end_read(text_io, frame.flags().is_end_stream())
+                        Self::end_read(text_io, frame.flags().is_end_stream(), data_len)
                     }
                 }
                 Payload::RstStream(reset) => {
@@ -283,12 +283,19 @@ where
         }
     }
 
-    fn end_read(text_io: &mut TextIo<S>, end_stream: bool) -> Option<Poll<std::io::Result<()>>> {
+    fn end_read(
+        text_io: &mut TextIo<S>,
+        end_stream: bool,
+        data_len: usize,
+    ) -> Option<Poll<std::io::Result<()>>> {
         if end_stream {
             text_io.is_closed = true;
             Some(Poll::Ready(Ok(())))
-        } else {
+        } else if data_len == 0 {
+            // no data read and is not end stream.
             None
+        } else {
+            Some(Poll::Ready(Ok(())))
         }
     }
 
@@ -311,12 +318,7 @@ where
                     } else {
                         buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
                         text_io.offset = 0;
-                        if frame.flags().is_end_stream() {
-                            text_io.is_closed = true;
-                            Some(Poll::Ready(Ok(())))
-                        } else {
-                            None
-                        }
+                        Self::end_read(text_io, frame.flags().is_end_stream(), data_len)
                     }
                 }
                 _ => Some(Poll::Ready(Err(std::io::Error::new(
