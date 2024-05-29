@@ -283,26 +283,29 @@ impl<'a> WriteVarint<'a> {
 /// Returns how many bytes it would take to encode `v` as a variable-length
 /// integer.
 pub const fn varint_len(v: u64) -> usize {
-    if v <= 63 {
-        1
-    } else if v <= 16383 {
-        2
-    } else if v <= 1_073_741_823 {
-        4
-    } else if v <= 4_611_686_018_427_387_903 {
-        8
-    } else {
-        unreachable!()
+    match v {
+        0..=63 => {
+            1
+        }
+        64..=16383 => {
+            2
+        }
+        16384..=1_073_741_823 => {
+            4
+        }
+        1_073_741_824..=4_611_686_018_427_387_903 => {
+            8
+        }
+        _ => {unreachable!()}
     }
 }
 
 /// Returns how long the variable-length integer is, given its first byte.
-pub const fn varint_parse_len(first: u8) -> usize {
-    match first >> 6 {
-        0 => 1,
-        1 => 2,
-        2 => 4,
-        3 => 8,
-        _ => unreachable!(),
+pub const fn varint_parse_len(byte: u8) -> usize {
+    let byte = byte >> 6;
+    if byte <= 3 {
+        1 << byte
+    } else {
+        unreachable!()
     }
 }
