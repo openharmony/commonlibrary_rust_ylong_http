@@ -45,8 +45,10 @@ pub use c_openssl::{
     Cert, Certificate, PubKeyPins, PubKeyPinsBuilder, TlsConfig, TlsConfigBuilder, TlsFileType,
     TlsVersion,
 };
+#[cfg(feature = "__c_openssl")]
+pub(crate) use config::{AlpnProtocol, AlpnProtocolList};
 #[cfg(feature = "__tls")]
-pub use config::{AlpnProtocol, AlpnProtocolList, CertVerifier, ServerCerts};
+pub use config::{CertVerifier, ServerCerts};
 pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 #[cfg(all(feature = "async", feature = "ylong_base", feature = "http2"))]
 pub(crate) use h2::{split, Reader, Writer};

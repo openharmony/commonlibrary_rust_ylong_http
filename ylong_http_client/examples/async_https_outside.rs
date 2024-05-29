@@ -50,7 +50,7 @@ async fn req() -> Result<(), HttpClientError> {
 
     // Creates a `Request`.
     let request = Request::builder()
-        .url("https://www.baidu.com")
+        .url("https://www.example.com")
         .body(Body::empty())?;
 
     // Sends request and receives a `Response`.

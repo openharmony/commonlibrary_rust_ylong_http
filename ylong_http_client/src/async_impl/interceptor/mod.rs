@@ -36,6 +36,7 @@ pub enum ConnProtocol {
 pub struct ConnDetail {
     /// Transport layer protocol type.
     pub(crate) protocol: ConnProtocol,
+    pub(crate) alpn: Option<Vec<u8>>,
     /// local socket address.
     pub(crate) local: SocketAddr,
     /// peer socket address.
@@ -70,6 +71,11 @@ impl ConnDetail {
     /// Whether to use proxy.
     pub fn proxy(&self) -> bool {
         self.proxy
+    }
+
+    /// Whether to use tls.
+    pub fn alpn(&self) -> Option<&[u8]> {
+        self.alpn.as_deref()
     }
 }
 
