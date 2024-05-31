@@ -24,6 +24,8 @@ use crate::error::HttpClientError;
 use crate::runtime::timeout;
 #[cfg(feature = "__c_openssl")]
 use crate::util::c_openssl::verify::PubKeyPins;
+#[cfg(all(target_os = "linux", feature = "ylong_base"))]
+use crate::util::config::FchownConfig;
 use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
 };
@@ -257,6 +259,10 @@ pub struct ClientBuilder {
     /// Options and flags that is related to `Proxy`.
     proxies: Proxies,
 
+    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    /// Fchown configuration.
+    fchown: Option<FchownConfig>,
+
     interceptors: Arc<Interceptors>,
 
     /// Options and flags that is related to `TLS`.
@@ -279,6 +285,8 @@ impl ClientBuilder {
             http: HttpConfig::default(),
             client: ClientConfig::default(),
             proxies: Proxies::default(),
+            #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+            fchown: None,
             interceptors: Arc::new(IdleInterceptor),
             #[cfg(feature = "__tls")]
             tls: crate::util::TlsConfig::builder(),
@@ -349,6 +357,23 @@ impl ClientBuilder {
     /// ```
     pub fn redirect(mut self, redirect: Redirect) -> Self {
         self.client.redirect = redirect;
+        self
+    }
+
+    /// Sets a `Fchown` for this client.
+    ///
+    /// Default will not set the owner of the file descriptor.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().sockets_owner(1000, 1000);
+    /// ```
+    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    pub fn sockets_owner(mut self, uid: u32, gid: u32) -> Self {
+        self.fchown = Some(FchownConfig::new(uid, gid));
         self
     }
 
@@ -441,6 +466,8 @@ impl ClientBuilder {
 
         let config = ConnectorConfig {
             proxies: self.proxies,
+            #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+            fchown: self.fchown,
             #[cfg(feature = "__tls")]
             tls: tls_builder.build()?,
         };

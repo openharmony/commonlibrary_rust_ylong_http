@@ -124,6 +124,8 @@ mod tls {
     use crate::async_impl::connector::stream::HttpStream;
     use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
+    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    use crate::config::FchownConfig;
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
     use crate::TlsConfig;
 
@@ -149,10 +151,16 @@ mod tls {
                     .and_then(|v| v.to_string().ok());
                 is_proxy = true;
             }
-
+            #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+            let fchown = self.config.fchown.clone();
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
                     let stream = tcp_stream(&addr).await?;
+                    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+                    if let Some(fchown) = fchown {
+                        let _ = stream.fchown(fchown.uid, fchown.gid);
+                    }
+
                     let local = stream.local_addr()?;
                     let peer = stream.peer_addr()?;
                     let detail = ConnDetail {
@@ -171,7 +179,14 @@ mod tls {
                     let port = uri.port().unwrap().as_u16().unwrap();
                     let config = self.config.tls.clone();
                     Box::pin(async move {
-                        https_connect(config, addr, is_proxy, auth, host, port).await
+                        #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+                        {
+                            https_connect(config, addr, is_proxy, auth, host, port, fchown).await
+                        }
+                        #[cfg(not(all(target_os = "linux", feature = "ylong_base")))]
+                        {
+                            https_connect(config, addr, is_proxy, auth, host, port).await
+                        }
                     })
                 }
             }
@@ -185,8 +200,13 @@ mod tls {
         auth: Option<String>,
         host: String,
         port: u16,
+        #[cfg(all(target_os = "linux", feature = "ylong_base"))] fchown: Option<FchownConfig>,
     ) -> Result<HttpStream<MixStream<TcpStream>>, Error> {
         let mut tcp = tcp_stream(addr.as_str()).await?;
+        #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+        if let Some(fchown) = fchown {
+            let _ = tcp.fchown(fchown.uid, fchown.gid);
+        }
         let local = tcp.local_addr()?;
         let peer = tcp.peer_addr()?;
         if is_proxy {
