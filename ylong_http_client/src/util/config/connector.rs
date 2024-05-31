@@ -13,11 +13,16 @@
 
 //! Connector configure module.
 
+ #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+use super::FchownConfig;
 use crate::util::proxy::Proxies;
 
 #[derive(Default)]
 pub(crate) struct ConnectorConfig {
     pub(crate) proxies: Proxies,
+
+     #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    pub(crate) fchown: Option<FchownConfig>,
 
     #[cfg(feature = "__tls")]
     pub(crate) tls: crate::util::TlsConfig,
