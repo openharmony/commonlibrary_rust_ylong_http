@@ -395,7 +395,8 @@ impl TlsConfigBuilder {
     pub fn build(mut self) -> Result<TlsConfig, HttpClientError> {
         for cert in self.certs_list {
             self.inner = self.inner.and_then(|mut builder| {
-                { Ok(builder.cert_store_mut()).map(|store| store.add_cert(cert.0)) }
+                Ok(builder.cert_store_mut())
+                    .and_then(|store| store.add_cert(cert.0))
                     .map(|_| builder)
             });
         }
@@ -403,7 +404,9 @@ impl TlsConfigBuilder {
         #[cfg(feature = "c_openssl_3_0")]
         for path in self.paths_list {
             self.inner = self.inner.and_then(|mut builder| {
-                { Ok(builder.cert_store_mut()).map(|store| store.add_path(path)) }.map(|_| builder)
+                Ok(builder.cert_store_mut())
+                    .and_then(|store| store.add_path(path))
+                    .map(|_| builder)
             });
         }
 
