@@ -20,7 +20,7 @@ use ylong_http::request::uri::Uri;
 
 use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::Connector;
-use crate::error::{ErrorKind, HttpClientError};
+use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncWrite};
 #[cfg(feature = "http2")]
 use crate::util::config::H2Config;
@@ -118,12 +118,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         if let Some(conn) = self.exist_h1_conn() {
             return Ok(conn);
         }
-        let dispatcher = ConnDispatcher::http1(
-            connector
-                .connect(url)
-                .await
-                .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?,
-        );
+        let dispatcher = ConnDispatcher::http1(connector.connect(url).await?);
         Ok(self.dispatch_h1_conn(dispatcher))
     }
 
@@ -145,10 +140,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         if let Some(conn) = Self::exist_h2_conn(&mut lock) {
             return Ok(conn);
         }
-        let stream = connector
-            .connect(url)
-            .await
-            .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
+        let stream = connector.connect(url).await?;
         let details = stream.conn_detail();
         let tls = if let Some(scheme) = url.scheme() {
             *scheme == Scheme::HTTPS
@@ -188,10 +180,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                     return Ok(conn);
                 }
 
-                let stream = connector
-                    .connect(url)
-                    .await
-                    .map_err(|e| HttpClientError::from_error(ErrorKind::Connect, e))?;
+                let stream = connector.connect(url).await?;
                 let details = stream.conn_detail();
 
                 let protocol = if let Some(bytes) = details.alpn() {

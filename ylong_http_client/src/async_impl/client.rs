@@ -24,7 +24,7 @@ use crate::error::HttpClientError;
 use crate::runtime::timeout;
 #[cfg(feature = "__c_openssl")]
 use crate::util::c_openssl::verify::PubKeyPins;
-#[cfg(all(target_os = "linux", feature = "ylong_base"))]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
 use crate::util::config::FchownConfig;
 use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
@@ -259,7 +259,7 @@ pub struct ClientBuilder {
     /// Options and flags that is related to `Proxy`.
     proxies: Proxies,
 
-    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
     /// Fchown configuration.
     fchown: Option<FchownConfig>,
 
@@ -285,7 +285,7 @@ impl ClientBuilder {
             http: HttpConfig::default(),
             client: ClientConfig::default(),
             proxies: Proxies::default(),
-            #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
             fchown: None,
             interceptors: Arc::new(IdleInterceptor),
             #[cfg(feature = "__tls")]
@@ -371,7 +371,7 @@ impl ClientBuilder {
     ///
     /// let builder = ClientBuilder::new().sockets_owner(1000, 1000);
     /// ```
-    #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
     pub fn sockets_owner(mut self, uid: u32, gid: u32) -> Self {
         self.fchown = Some(FchownConfig::new(uid, gid));
         self
@@ -466,7 +466,7 @@ impl ClientBuilder {
 
         let config = ConnectorConfig {
             proxies: self.proxies,
-            #[cfg(all(target_os = "linux", feature = "ylong_base"))]
+            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
             fchown: self.fchown,
             #[cfg(feature = "__tls")]
             tls: tls_builder.build()?,
