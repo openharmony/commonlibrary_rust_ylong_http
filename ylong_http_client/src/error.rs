@@ -104,6 +104,32 @@ impl HttpClientError {
             _ => None,
         }
     }
+
+    /// Check whether the cause of the error is dns error
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::HttpClientError;
+    ///
+    /// assert!(!HttpClientError::user_aborted().is_dns_error())
+    /// ```
+    pub fn is_dns_error(&self) -> bool {
+        matches!(self.cause, Cause::Dns(_))
+    }
+
+    /// Check whether the cause of the error is tls connection error
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::HttpClientError;
+    ///
+    /// assert!(!HttpClientError::user_aborted().is_tls_error())
+    /// ```
+    pub fn is_tls_error(&self) -> bool {
+        matches!(self.cause, Cause::Tls(_))
+    }
 }
 
 impl HttpClientError {
@@ -114,6 +140,17 @@ impl HttpClientError {
         Self {
             kind,
             cause: Cause::Other(err.into()),
+        }
+    }
+
+    #[cfg(feature = "__c_openssl")]
+    pub(crate) fn from_tls_error<T>(kind: ErrorKind, err: T) -> Self
+    where
+        T: Into<Box<dyn error::Error + Send + Sync>>,
+    {
+        Self {
+            kind,
+            cause: Cause::Tls(err.into()),
         }
     }
 
@@ -128,6 +165,13 @@ impl HttpClientError {
         Self {
             kind,
             cause: Cause::Io(err),
+        }
+    }
+
+    pub(crate) fn from_dns_error(kind: ErrorKind, err: io::Error) -> Self {
+        Self {
+            kind,
+            cause: Cause::Dns(err),
         }
     }
 }
@@ -227,6 +271,9 @@ impl ErrorKind {
 
 pub(crate) enum Cause {
     NoReason,
+    Dns(io::Error),
+    #[cfg(feature = "__c_openssl")]
+    Tls(Box<dyn error::Error + Send + Sync>),
     Io(io::Error),
     Msg(&'static str),
     Other(Box<dyn error::Error + Send + Sync>),
@@ -236,6 +283,9 @@ impl Debug for Cause {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoReason => write!(f, "No reason"),
+            Self::Dns(err) => Debug::fmt(err, f),
+            #[cfg(feature = "__c_openssl")]
+            Self::Tls(err) => Debug::fmt(err, f),
             Self::Io(err) => Debug::fmt(err, f),
             Self::Msg(msg) => write!(f, "{}", msg),
             Self::Other(err) => Debug::fmt(err, f),
@@ -247,6 +297,9 @@ impl Display for Cause {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoReason => write!(f, "No reason"),
+            Self::Dns(err) => Display::fmt(err, f),
+            #[cfg(feature = "__c_openssl")]
+            Self::Tls(err) => Display::fmt(err, f),
             Self::Io(err) => Display::fmt(err, f),
             Self::Msg(msg) => write!(f, "{}", msg),
             Self::Other(err) => Display::fmt(err, f),
@@ -267,6 +320,14 @@ macro_rules! err_from_io {
         use crate::error::{ErrorKind, HttpClientError};
 
         Err(HttpClientError::from_io_error(ErrorKind::$kind, $err))
+    }};
+}
+
+macro_rules! err_from_dns {
+    ($kind: ident, $err: expr) => {{
+        use crate::error::{ErrorKind, HttpClientError};
+
+        Err(HttpClientError::from_dns_error(ErrorKind::$kind, $err))
     }};
 }
 
