@@ -127,6 +127,7 @@ impl HttpClientError {
     ///
     /// assert!(!HttpClientError::user_aborted().is_tls_error())
     /// ```
+    #[cfg(feature = "__c_openssl")]
     pub fn is_tls_error(&self) -> bool {
         matches!(self.cause, Cause::Tls(_))
     }
@@ -320,14 +321,6 @@ macro_rules! err_from_io {
         use crate::error::{ErrorKind, HttpClientError};
 
         Err(HttpClientError::from_io_error(ErrorKind::$kind, $err))
-    }};
-}
-
-macro_rules! err_from_dns {
-    ($kind: ident, $err: expr) => {{
-        use crate::error::{ErrorKind, HttpClientError};
-
-        Err(HttpClientError::from_dns_error(ErrorKind::$kind, $err))
     }};
 }
 

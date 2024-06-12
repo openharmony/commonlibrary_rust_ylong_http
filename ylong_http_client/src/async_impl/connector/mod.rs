@@ -60,15 +60,22 @@ impl HttpConnector {
 async fn tcp_stream(addr: &str) -> Result<TcpStream, HttpClientError> {
     TcpStream::connect(addr)
         .await
-        .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))
+        .map_err(|e| {
+            #[cfg(target_os = "linux")]
+            if format!("{}", e).contains("failed to lookup address information") {
+                return HttpClientError::from_dns_error(crate::ErrorKind::Connect, e)
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(code) = e.raw_os_error() {
+                if (0x2329..=0x26B2).contains(&code) || code == 0x2AF9 {
+                    return HttpClientError::from_dns_error(crate::ErrorKind::Connect, e)
+                }
+            }
+            HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
+        })
         .and_then(|stream| match stream.set_nodelay(true) {
             Ok(()) => Ok(stream),
             Err(e) => {
-                if let Some(code) = e.raw_os_error() {
-                    if (0x2329..=0x26B2).contains(&code) {
-                        return err_from_dns!(Connect, e);
-                    }
-                }
                 err_from_io!(Connect, e)
             }
         })
