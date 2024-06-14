@@ -14,11 +14,13 @@
 mod builder;
 mod operator;
 
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 pub use builder::{UploaderBuilder, WantsReader};
 pub use operator::{Console, UploadOperator};
+use ylong_http::body::async_impl::ReusableReader;
 use ylong_http::body::{MultiPart, MultiPartBase};
 
 use crate::runtime::{AsyncRead, ReadBuf};
@@ -90,7 +92,7 @@ pub struct Uploader<R, T> {
     info: Option<UploadInfo>,
 }
 
-impl<R: AsyncRead + Unpin> Uploader<R, Console> {
+impl<R: ReusableReader + Unpin> Uploader<R, Console> {
     /// Creates an `Uploader` with a `Console` operator which displays process
     /// on console.
     ///
@@ -123,7 +125,7 @@ impl Uploader<(), ()> {
 
 impl<R, T> AsyncRead for Uploader<R, T>
 where
-    R: AsyncRead + Unpin,
+    R: ReusableReader + Unpin,
     T: UploadOperator + Unpin,
 {
     fn poll_read(
@@ -159,7 +161,23 @@ where
     }
 }
 
-impl<T: UploadOperator + Unpin> MultiPartBase for Uploader<MultiPart, T> {
+impl<R, T> ReusableReader for Uploader<R, T>
+where
+    R: ReusableReader + Unpin,
+    T: UploadOperator + Unpin + Sync,
+{
+    fn reuse<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + Sync + 'a>>
+    where
+        Self: 'a,
+    {
+        self.info = None;
+        self.reader.reuse()
+    }
+}
+
+impl<T: UploadOperator + Unpin + Sync> MultiPartBase for Uploader<MultiPart, T> {
     fn multipart(&self) -> &MultiPart {
         &self.reader
     }

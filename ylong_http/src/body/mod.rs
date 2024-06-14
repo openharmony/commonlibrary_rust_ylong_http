@@ -46,6 +46,7 @@ mod empty;
 mod mime;
 mod text;
 
+pub use async_impl::ReusableReader;
 pub use chunk::{Chunk, ChunkBody, ChunkBodyDecoder, ChunkExt, ChunkState, Chunks};
 pub use empty::EmptyBody;
 pub use mime::{
@@ -397,6 +398,40 @@ pub mod async_impl {
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let fut = self.get_mut();
             Pin::new(&mut *fut.body).poll_data(cx, fut.buf)
+        }
+    }
+
+    /// The reuse trait of request body.
+    pub trait ReusableReader: AsyncRead + Sync {
+        /// Reset body state, Ensure that the body can be re-read.
+        fn reuse<'a>(
+            &'a mut self,
+        ) -> Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + Sync + 'a>>
+        where
+            Self: 'a;
+    }
+
+    impl ReusableReader for crate::File {
+        fn reuse<'a>(
+            &'a mut self,
+        ) -> Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + Sync + 'a>>
+        where
+            Self: 'a,
+        {
+            use crate::AsyncSeekExt;
+
+            Box::pin(async { self.rewind().await.map(|_| ()) })
+        }
+    }
+
+    impl ReusableReader for &[u8] {
+        fn reuse<'a>(
+            &'a mut self,
+        ) -> Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + Sync + 'a>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async { Ok(()) })
         }
     }
 }
