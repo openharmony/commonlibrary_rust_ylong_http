@@ -210,7 +210,7 @@ impl error::Error for HttpClientError {
     }
 }
 
-/// Error kinds which can indicate the type of a `HttpClientError`.
+/// Error kinds which can indicate the type of `HttpClientError`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     /// Errors for decoding response body.

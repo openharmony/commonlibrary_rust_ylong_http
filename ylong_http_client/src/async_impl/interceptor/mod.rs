@@ -108,7 +108,7 @@ pub trait Interceptor {
     }
 
     /// Intercepts the response that is eventually returned.
-    fn intercept_response(&self, _request: &Response) -> Result<(), HttpClientError> {
+    fn intercept_response(&self, _response: &Response) -> Result<(), HttpClientError> {
         Ok(())
     }
 
