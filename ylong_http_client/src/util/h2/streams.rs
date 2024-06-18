@@ -226,7 +226,6 @@ impl Streams {
                     stream.send_window.increase_size(excess)?;
                 }
                 for id in self.pending_stream_window.iter() {
-                    // self.push_back_pending_send(*id);
                     self.pending_send.push_back(*id);
                 }
                 self.pending_stream_window.clear();

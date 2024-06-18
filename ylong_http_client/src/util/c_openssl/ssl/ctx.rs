@@ -37,6 +37,7 @@ use crate::util::config::tls::DefaultCertVerifier;
 
 const SSL_CTRL_SET_MIN_PROTO_VERSION: c_int = 123;
 const SSL_CTRL_SET_MAX_PROTO_VERSION: c_int = 124;
+const SSL_CTRL_SET_SIGALGS_LIST: c_int = 98;
 
 foreign_type!(
     type CStruct = SSL_CTX;
@@ -91,8 +92,9 @@ impl SslContextBuilder {
         let mut builder = Self::from_ptr(ptr);
         builder.set_verify(SSL_VERIFY_PEER);
         builder.set_cipher_list(
-            "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
+            "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK:!SHA1:!CBC",
         )?;
+        builder.set_sigalgs_list()?;
 
         Ok(builder)
     }
@@ -265,5 +267,47 @@ impl SslContextBuilder {
     pub(crate) fn cert_store_mut(&mut self) -> &mut X509StoreRef {
         let ptr = self.as_ptr_mut();
         unsafe { X509StoreRef::from_ptr_mut(SSL_CTX_get_cert_store(ptr)) }
+    }
+
+    pub(crate) fn set_sigalgs_list(&mut self) -> Result<(), ErrorStack> {
+        // Allowed signature algorithms:
+        // ecdsa_secp256r1_sha256 (0x0403)
+        // ecdsa_secp384r1_sha384 (0x0503)
+        // ecdsa_secp521r1_sha512 (0x0603)
+        // ed25519 (0x0807)
+        // ed448 (0x0808)
+        // rsa_pss_pss_sha256 (0x0809)
+        // rsa_pss_pss_sha384 (0x080a)
+        // rsa_pss_pss_sha512 (0x080b)
+        // rsa_pss_rsae_sha256 (0x0804)
+        // rsa_pss_rsae_sha384 (0x0805)
+        // rsa_pss_rsae_sha512 (0x0806)
+        // rsa_pkcs1_sha256 (0x0401)
+        // rsa_pkcs1_sha384 (0x0501)
+        // rsa_pkcs1_sha512 (0x0601)
+        // SHA256 DSA (0x0402)
+        // SHA384 DSA (0x0502)
+        // SHA512 DSA (0x0602)
+        const SUPPORT_SIGNATURE_ALGORITHMS: &str = "\
+        ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:ed25519:\
+        ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:\
+        rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:\
+        rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512:DSA+SHA256:DSA+SHA384:DSA+SHA512";
+        let list = match CString::new(SUPPORT_SIGNATURE_ALGORITHMS) {
+            Ok(cstr) => cstr,
+            Err(_) => return Err(ErrorStack::get()),
+        };
+
+        let ptr = self.as_ptr_mut();
+
+        check_ret(unsafe {
+            SSL_CTX_ctrl(
+                ptr,
+                SSL_CTRL_SET_SIGALGS_LIST,
+                0,
+                list.as_ptr() as *const c_void as *mut c_void,
+            )
+        } as c_int)
+        .map(|_| ())
     }
 }
