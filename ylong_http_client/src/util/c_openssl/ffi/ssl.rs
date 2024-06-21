@@ -125,6 +125,7 @@ extern "C" {
         callback: extern "C" fn(*mut X509_STORE_CTX, *mut c_void) -> c_int,
         arg: *mut c_void,
     );
+
 }
 
 /// This is the main SSL/TLS structure which is created by a server or client
