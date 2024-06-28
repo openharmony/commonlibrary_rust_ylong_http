@@ -288,6 +288,8 @@ where
         end_stream: bool,
         data_len: usize,
     ) -> Option<Poll<std::io::Result<()>>> {
+        text_io.offset = 0;
+        text_io.remain = None;
         if end_stream {
             text_io.is_closed = true;
             Some(Poll::Ready(Ok(())))
@@ -311,13 +313,14 @@ where
                     let unfilled_len = buf.remaining();
                     let data_len = data.len() - text_io.offset;
                     let fill_len = min(unfilled_len, data_len);
+                    // The peripheral function already ensures that the remaing of buf will not be
+                    // 0.
                     if unfilled_len < data_len {
                         buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
                         text_io.offset += fill_len;
                         Some(Poll::Ready(Ok(())))
                     } else {
                         buf.append_slice(&data[text_io.offset..text_io.offset + fill_len]);
-                        text_io.offset = 0;
                         Self::end_read(text_io, frame.flags().is_end_stream(), data_len)
                     }
                 }
