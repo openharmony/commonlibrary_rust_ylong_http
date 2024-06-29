@@ -95,12 +95,16 @@ impl<S: AsyncWrite + Unpin + Sync + Send + 'static> Future for SendData<S> {
                     } else {
                         frame
                     };
-                    sender.encoder.set_frame(frame);
+                    // This error will never happen.
+                    sender.encoder.set_frame(frame).map_err(|_| {
+                        DispatchErrorKind::H2(H2Error::ConnectionError(ErrorCode::IntervalError))
+                    })?;
                     sender.state = InputState::WriteFrame;
                 }
                 InputState::WriteFrame => {
                     match sender.poll_writer_frame(cx) {
-                        Poll::Ready(_) => {}
+                        Poll::Ready(Ok(())) => {}
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
                         Poll::Pending => return Poll::Pending,
                     };
                     sender.state = InputState::RecvFrame;

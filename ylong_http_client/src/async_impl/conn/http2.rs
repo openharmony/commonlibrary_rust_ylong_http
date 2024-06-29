@@ -430,4 +430,69 @@ mod ut_http2 {
             panic!("Unexpected frame type")
         }
     }
+
+    /// UT for ensure that the response body(data frame) can read ends normally.
+    ///
+    /// # Brief
+    /// 1. Creates three data frames, one greater than buf, one less than buf,
+    ///    and the last one equal to and finished with buf.
+    /// 2. The response body data is read from TextIo using a buf of 10 bytes.
+    /// 3. The body is all read, and the size is the same as the default.
+    /// 5. Checks that result.
+    #[cfg(feature = "ylong_base")]
+    #[test]
+    fn ut_http2_body_poll_read() {
+        use std::pin::Pin;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+
+        use ylong_http::h2::{Data, Frame, FrameFlags};
+        use ylong_runtime::futures::poll_fn;
+        use ylong_runtime::io::{AsyncRead, ReadBuf};
+
+        use crate::async_impl::conn::http2::TextIo;
+        use crate::util::dispatcher::http2::Http2Conn;
+
+        let (resp_tx, resp_rx) = crate::runtime::unbounded_channel();
+        let (req_tx, _req_rx) = crate::runtime::unbounded_channel();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut conn: Http2Conn<()> = Http2Conn::new(1, shutdown, req_tx);
+        conn.receiver.set_receiver(resp_rx);
+        let mut text_io = TextIo::new(conn);
+        let data_1 = Frame::new(
+            1,
+            FrameFlags::new(0),
+            Payload::Data(Data::new(vec![b'a'; 128])),
+        );
+        let data_2 = Frame::new(
+            1,
+            FrameFlags::new(0),
+            Payload::Data(Data::new(vec![b'a'; 2])),
+        );
+        let data_3 = Frame::new(
+            1,
+            FrameFlags::new(1),
+            Payload::Data(Data::new(vec![b'a'; 10])),
+        );
+        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_1));
+        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_2));
+        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_3));
+        ylong_runtime::block_on(async {
+            let mut buf = [0_u8; 10];
+            let mut output_vec = vec![];
+
+            let mut size = buf.len();
+            // `output_vec < 1024` in order to be able to exit normally in case of an
+            // exception.
+            while size != 0 && output_vec.len() < 1024 {
+                let mut buffer = ReadBuf::new(buf.as_mut_slice());
+                poll_fn(|cx| Pin::new(&mut text_io).poll_read(cx, &mut buffer))
+                    .await
+                    .unwrap();
+                size = buffer.filled_len();
+                output_vec.extend_from_slice(&buf[..size]);
+            }
+            assert_eq!(output_vec.len(), 140);
+        })
+    }
 }
