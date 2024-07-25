@@ -70,8 +70,11 @@ ohos_rust_unittest("rust_ylong_http_client_test_ut") {
 
 group("unittest") {
   testonly = true
-  deps = [
-    ":rust_ylong_http_client_test_ut",
-    "../ylong_http:rust_ylong_http_test_ut",
-  ]
+  deps = []
+  if (!use_clang_coverage) {
+    deps += [
+      ":rust_ylong_http_client_test_ut",
+      "../ylong_http:rust_ylong_http_test_ut",
+    ]
+  }
 }
