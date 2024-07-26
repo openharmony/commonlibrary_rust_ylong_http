@@ -75,6 +75,7 @@ pub(crate) mod http2 {
         init_conn_window_size: u32,
         init_stream_window_size: u32,
         enable_push: bool,
+        allow_cached_frame_num: usize,
     }
 
     impl H2Config {
@@ -106,6 +107,10 @@ pub(crate) mod http2 {
             self.init_stream_window_size = size;
         }
 
+        pub(crate) fn set_allow_cached_frame_num(&mut self, num: usize) {
+            self.allow_cached_frame_num = num;
+        }
+
         /// Gets the SETTINGS_MAX_FRAME_SIZE.
         pub(crate) fn max_frame_size(&self) -> u32 {
             self.max_frame_size
@@ -132,6 +137,10 @@ pub(crate) mod http2 {
         pub(crate) fn stream_window_size(&self) -> u32 {
             self.init_stream_window_size
         }
+
+        pub(crate) fn allow_cached_frame_num(&self) -> usize {
+            self.allow_cached_frame_num
+        }
     }
 
     impl Default for H2Config {
@@ -143,6 +152,7 @@ pub(crate) mod http2 {
                 init_conn_window_size: DEFAULT_CONN_WINDOW_SIZE,
                 init_stream_window_size: DEFAULT_STREAM_WINDOW_SIZE,
                 enable_push: false,
+                allow_cached_frame_num: 5,
             }
         }
     }

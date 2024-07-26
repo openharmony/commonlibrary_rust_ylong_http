@@ -498,6 +498,20 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets allowed max size of local cached frame.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().allow_cached_frame_num(10);
+    /// ```
+    pub fn allow_cached_frame_num(mut self, num: usize) -> Self {
+        self.http.http2_config.set_allow_cached_frame_num(num);
+        self
+    }
+
     /// Sets the `SETTINGS_MAX_FRAME_SIZE`.
     ///
     /// # Examples
@@ -575,7 +589,7 @@ impl ClientBuilder {
 impl ClientBuilder {
     /// Sets the maximum allowed TLS version for connections.
     ///
-    /// By default there's no maximum.
+    /// By default, there's no maximum.
     ///
     /// # Examples
     ///
@@ -592,7 +606,7 @@ impl ClientBuilder {
 
     /// Sets the minimum required TLS version for connections.
     ///
-    /// By default the TLS backend's own default is used.
+    /// By default, the TLS backend's own default is used.
     ///
     /// # Examples
     ///

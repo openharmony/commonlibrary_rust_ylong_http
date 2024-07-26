@@ -72,7 +72,11 @@ pub(crate) mod runtime {
         io::{split, ReadHalf, WriteHalf},
         spawn,
         sync::{
-            mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+            mpsc::{
+                channel as bounded_channel, error::SendError, unbounded_channel,
+                Receiver as BoundedReceiver, Sender as BoundedSender, UnboundedReceiver,
+                UnboundedSender,
+            },
             Mutex as AsyncMutex, MutexGuard,
         },
         task::JoinHandle,
@@ -94,7 +98,11 @@ pub(crate) mod runtime {
     pub(crate) use ylong_runtime::{
         spawn,
         sync::{
-            mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+            error::SendError,
+            mpsc::{
+                bounded_channel, unbounded_channel, BoundedReceiver, BoundedSender,
+                UnboundedReceiver, UnboundedSender,
+            },
             Mutex as AsyncMutex, MutexGuard,
         },
         task::JoinHandle,
