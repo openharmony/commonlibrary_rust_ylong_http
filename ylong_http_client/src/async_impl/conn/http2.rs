@@ -453,10 +453,10 @@ mod ut_http2 {
         use crate::async_impl::conn::http2::TextIo;
         use crate::util::dispatcher::http2::Http2Conn;
 
-        let (resp_tx, resp_rx) = crate::runtime::unbounded_channel();
+        let (resp_tx, resp_rx) = ylong_runtime::sync::mpsc::bounded_channel(20);
         let (req_tx, _req_rx) = crate::runtime::unbounded_channel();
         let shutdown = Arc::new(AtomicBool::new(false));
-        let mut conn: Http2Conn<()> = Http2Conn::new(1, shutdown, req_tx);
+        let mut conn: Http2Conn<()> = Http2Conn::new(1, 20, shutdown, req_tx);
         conn.receiver.set_receiver(resp_rx);
         let mut text_io = TextIo::new(conn);
         let data_1 = Frame::new(
@@ -474,9 +474,19 @@ mod ut_http2 {
             FrameFlags::new(1),
             Payload::Data(Data::new(vec![b'a'; 10])),
         );
-        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_1));
-        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_2));
-        let _ = resp_tx.send(crate::util::dispatcher::http2::RespMessage::Output(data_3));
+
+        ylong_runtime::block_on(async {
+            let _ = resp_tx
+                .send(crate::util::dispatcher::http2::RespMessage::Output(data_1))
+                .await;
+            let _ = resp_tx
+                .send(crate::util::dispatcher::http2::RespMessage::Output(data_2))
+                .await;
+            let _ = resp_tx
+                .send(crate::util::dispatcher::http2::RespMessage::Output(data_3))
+                .await;
+        });
+
         ylong_runtime::block_on(async {
             let mut buf = [0_u8; 10];
             let mut output_vec = vec![];

@@ -20,12 +20,12 @@ use std::task::{Context, Poll};
 use ylong_http::h2::{Data, ErrorCode, Frame, FrameFlags, H2Error, Payload};
 
 use crate::runtime::UnboundedSender;
-use crate::util::dispatcher::http2::{DispatchErrorKind, RespMessage};
+use crate::util::dispatcher::http2::DispatchErrorKind;
 use crate::util::h2::buffer::{FlowControl, RecvWindow, SendWindow};
 use crate::util::h2::data_ref::BodyDataRef;
 
-const INITIAL_MAX_SEND_STREAM_ID: u32 = u32::MAX >> 1;
-const INITIAL_MAX_RECV_STREAM_ID: u32 = u32::MAX >> 1;
+pub(crate) const INITIAL_MAX_SEND_STREAM_ID: u32 = u32::MAX >> 1;
+pub(crate) const INITIAL_MAX_RECV_STREAM_ID: u32 = u32::MAX >> 1;
 const INITIAL_LATEST_REMOTE_ID: u32 = 0;
 const DEFAULT_MAX_CONCURRENT_STREAMS: u32 = 100;
 
@@ -77,7 +77,7 @@ pub(crate) enum StreamEndState {
 //     | recv R                 | closed |               recv R   |
 //     `----------------------->|        |<----------------------'
 //                              +--------+
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum H2StreamState {
     Idle,
     // When response does not depend on request,
@@ -97,7 +97,7 @@ pub(crate) enum H2StreamState {
     Closed(CloseReason),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum CloseReason {
     LocalRst,
     RemoteRst,
@@ -106,7 +106,7 @@ pub(crate) enum CloseReason {
     EndStream,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum ActiveState {
     WaitHeaders,
     WaitData,
@@ -128,7 +128,7 @@ pub(crate) struct RequestWrapper {
 pub(crate) struct Streams {
     // Records the received goaway last_stream_id.
     pub(crate) max_send_id: u32,
-    // Records the sent goaway last_stream_id.
+    // Records the send goaway last_stream_id.
     pub(crate) max_recv_id: u32,
     // Currently the client doesn't support push promise, so this value is always 0.
     pub(crate) latest_remote_id: u32,
@@ -294,6 +294,10 @@ impl Streams {
         true
     }
 
+    pub(crate) fn stream_state(&self, id: u32) -> Option<H2StreamState> {
+        self.stream_map.get(&id).map(|stream| stream.state)
+    }
+
     pub(crate) fn insert(&mut self, id: u32, request: RequestWrapper) {
         let send_window = SendWindow::new(self.stream_send_window_size as i32);
         let recv_window = RecvWindow::new(self.stream_recv_window_size as i32);
@@ -310,8 +314,12 @@ impl Streams {
         self.pending_concurrency.push_back(id);
     }
 
-    pub(crate) fn next_stream(&mut self) -> Option<u32> {
+    pub(crate) fn next_pending_stream(&mut self) -> Option<u32> {
         self.pending_send.pop_front()
+    }
+
+    pub(crate) fn pending_stream_num(&self) -> usize {
+        self.pending_send.len()
     }
 
     pub(crate) fn try_consume_pending_concurrency(&mut self) {
@@ -489,6 +497,7 @@ impl Streams {
         for (id, unsent_stream) in self.stream_map.iter_mut() {
             if *id >= last_stream_id {
                 match unsent_stream.state {
+                    // TODO Whether the close state needs to be selected.
                     H2StreamState::Closed(_) => {}
                     H2StreamState::Idle => {
                         unsent_stream.state = H2StreamState::Closed(CloseReason::RemoteGoAway);
@@ -508,11 +517,8 @@ impl Streams {
         ids
     }
 
-    pub(crate) fn go_away_all_streams(
-        &mut self,
-        senders: &mut HashMap<u32, UnboundedSender<RespMessage>>,
-        error: DispatchErrorKind,
-    ) {
+    pub(crate) fn get_all_unclosed_streams(&mut self) -> Vec<u32> {
+        let mut ids = vec![];
         for (id, stream) in self.stream_map.iter_mut() {
             match stream.state {
                 H2StreamState::Closed(_) => {}
@@ -520,12 +526,14 @@ impl Streams {
                     stream.header = None;
                     stream.data.clear();
                     stream.state = H2StreamState::Closed(CloseReason::LocalGoAway);
-                    if let Some(sender) = senders.get_mut(id) {
-                        sender.send(RespMessage::OutputExit(error.clone())).ok();
-                    }
+                    ids.push(*id);
                 }
             }
         }
+        ids
+    }
+
+    pub(crate) fn clear_streams_states(&mut self) {
         self.window_updating_streams.clear();
         self.pending_stream_window.clear();
         self.pending_send.clear();
@@ -577,11 +585,11 @@ impl Streams {
                     recv,
                 } => {
                     stream.state = if eos {
-                        H2StreamState::LocalHalfClosed(recv.clone())
+                        H2StreamState::LocalHalfClosed(*recv)
                     } else {
                         H2StreamState::Open {
                             send: ActiveState::WaitData,
-                            recv: recv.clone(),
+                            recv: *recv,
                         }
                     };
                 }
@@ -610,7 +618,7 @@ impl Streams {
                     recv,
                 } => {
                     if eos {
-                        stream.state = H2StreamState::LocalHalfClosed(recv.clone());
+                        stream.state = H2StreamState::LocalHalfClosed(*recv);
                     }
                 }
                 H2StreamState::RemoteHalfClosed(ActiveState::WaitData) => {
@@ -698,7 +706,7 @@ impl Streams {
                     recv: ActiveState::WaitData,
                 } => {
                     if eos {
-                        stream.state = H2StreamState::RemoteHalfClosed(send.clone());
+                        stream.state = H2StreamState::RemoteHalfClosed(*send);
                     }
                 }
                 H2StreamState::LocalHalfClosed(ActiveState::WaitData) => {
