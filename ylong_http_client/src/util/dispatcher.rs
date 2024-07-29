@@ -176,7 +176,6 @@ pub(crate) mod http2 {
 
     const DEFAULT_MAX_STREAM_ID: u32 = u32::MAX >> 1;
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
-    const DEFAULT_MAX_HEADER_LIST_SIZE: usize = 16 << 20;
     const DEFAULT_WINDOW_SIZE: u32 = 65535;
 
     pub(crate) type ManagerSendFut =
@@ -210,7 +209,7 @@ pub(crate) mod http2 {
     // threads according to HTTP2 syntax.
     pub(crate) struct Http2Dispatcher<S> {
         pub(crate) next_stream_id: StreamId,
-        pub(crate) allow_cached_frames: usize,
+        pub(crate) allowed_cache: usize,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
         pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
@@ -305,18 +304,18 @@ pub(crate) mod http2 {
             let mut handles = Vec::with_capacity(3);
             if input_tx.send(settings).is_ok() {
                 Self::launch(
-                    config.allow_cached_frame_num(),
+                    config.allowed_cache_frame_size(),
+                    config.use_huffman_coding(),
                     controller,
+                    (input_tx, input_rx),
                     req_rx,
-                    input_tx,
-                    input_rx,
                     &mut handles,
                     io,
                 );
             }
             Self {
                 next_stream_id,
-                allow_cached_frames: config.allow_cached_frame_num(),
+                allowed_cache: config.allowed_cache_frame_size(),
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
                 handles,
@@ -326,10 +325,10 @@ pub(crate) mod http2 {
 
         fn launch(
             allow_num: usize,
+            use_huffman: bool,
             controller: StreamController,
+            input_channel: (UnboundedSender<Frame>, UnboundedReceiver<Frame>),
             req_rx: UnboundedReceiver<ReqMessage>,
-            input_tx: UnboundedSender<Frame>,
-            input_rx: UnboundedReceiver<Frame>,
             handles: &mut Vec<crate::runtime::JoinHandle<()>>,
             io: S,
         ) {
@@ -340,9 +339,9 @@ pub(crate) mod http2 {
             let send = crate::runtime::spawn(async move {
                 let mut writer = write;
                 if async_send_preface(&mut writer).await.is_ok() {
-                    let encoder =
-                        FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE);
-                    let mut send = SendData::new(encoder, send_settings_sync, writer, input_rx);
+                    let encoder = FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, use_huffman);
+                    let mut send =
+                        SendData::new(encoder, send_settings_sync, writer, input_channel.1);
                     let _ = Pin::new(&mut send).await;
                 }
             });
@@ -358,7 +357,7 @@ pub(crate) mod http2 {
 
             let manager = crate::runtime::spawn(async move {
                 let mut conn_manager =
-                    ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
+                    ConnManager::new(settings_sync, input_channel.0, resp_rx, req_rx, controller);
                 let _ = Pin::new(&mut conn_manager).await;
             });
             handles.push(manager);
@@ -374,12 +373,7 @@ pub(crate) mod http2 {
                 return None;
             }
             let sender = self.sender.clone();
-            let handle = Http2Conn::new(
-                id,
-                self.allow_cached_frames,
-                self.io_shutdown.clone(),
-                sender,
-            );
+            let handle = Http2Conn::new(id, self.allowed_cache, self.io_shutdown.clone(), sender);
             Some(handle)
         }
 

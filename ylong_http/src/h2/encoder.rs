@@ -21,6 +21,8 @@ use crate::h2::{Frame, Goaway, HpackEncoder, Settings};
 // Frame_size_error/Protocol Error.
 const DEFAULT_MAX_FRAME_SIZE: usize = 16384;
 
+const DEFAULT_HEADER_TABLE_SIZE: usize = 4096;
+
 #[derive(Debug)]
 pub enum FrameEncoderErr {
     EncodingData,
@@ -42,6 +44,7 @@ enum FrameEncoderState {
     EncodingHeadersPayload,
     // The state for encoding the padding octets for the HEADERS frame, if the PADDED flag is set.
     EncodingHeadersPadding,
+    // TODO compare to max_header_list_size
     // The state for encoding CONTINUATION frames if the header block exceeds the max_frame_size.
     EncodingContinuationFrames,
     // The final state, indicating that the HEADERS frame and any necessary CONTINUATION frames
@@ -109,12 +112,12 @@ pub struct FrameEncoder {
 impl FrameEncoder {
     /// Constructs a new `FrameEncoder` with specified maximum frame size and
     /// maximum header list size.
-    pub fn new(max_frame_size: usize, max_header_list_size: usize) -> Self {
+    pub fn new(max_frame_size: usize, use_huffman: bool) -> Self {
         FrameEncoder {
             current_frame: None,
             max_frame_size,
-            max_header_list_size,
-            hpack_encoder: HpackEncoder::with_max_size(max_header_list_size),
+            max_header_list_size: usize::MAX,
+            hpack_encoder: HpackEncoder::new(DEFAULT_HEADER_TABLE_SIZE, use_huffman),
             state: FrameEncoderState::Idle,
             encoded_bytes: 0,
             data_offset: 0,
@@ -343,9 +346,14 @@ impl FrameEncoder {
     }
 
     /// Sets the maximum header table size for the current encoder instance.
+    // TODO enable update header table size.
     pub fn update_header_table_size(&mut self, size: usize) {
+        self.hpack_encoder.update_max_dynamic_table_size(size)
+    }
+
+    // TODO enable update max header list size.
+    pub(crate) fn update_max_header_list_size(&mut self, size: usize) {
         self.max_header_list_size = size;
-        self.hpack_encoder = HpackEncoder::with_max_size(self.max_header_list_size)
     }
 
     fn finish_current_frame(&mut self) {
@@ -1328,7 +1336,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_data_frame_encoding() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         let data_payload = b"hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh".to_vec();
 
         let data_frame = Frame::new(
@@ -1367,7 +1375,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_headers_frame_encoding() {
-        let mut frame_encoder = FrameEncoder::new(4096, 8190);
+        let mut frame_encoder = FrameEncoder::new(4096, false);
 
         let mut new_parts = Parts::new();
         new_parts.pseudo.set_method(Some("GET".to_string()));
@@ -1406,7 +1414,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_settings_frame_encoding() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         let settings_payload = vec![
             Setting::HeaderTableSize(4096),
             Setting::EnablePush(true),
@@ -1473,7 +1481,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_ping_frame_encoding() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         let ping_payload = [1, 2, 3, 4, 5, 6, 7, 8];
 
         let ping_frame = Frame::new(
@@ -1525,7 +1533,7 @@ mod ut_frame_encoder {
     /// 4. Checks whether the encoding results are correct.
     #[test]
     fn ut_continue_frame_encoding() {
-        let mut encoder = FrameEncoder::new(4096, 8190);
+        let mut encoder = FrameEncoder::new(4096, false);
 
         let mut new_parts = Parts::new();
         new_parts.pseudo.set_method(Some("GET".to_string()));
@@ -1587,7 +1595,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_rst_stream_frame_encoding() {
-        let mut frame_encoder = FrameEncoder::new(4096, 8190);
+        let mut frame_encoder = FrameEncoder::new(4096, false);
 
         let error_code = 12345678;
         let rst_stream_payload = Payload::RstStream(RstStream::new(error_code));
@@ -1632,7 +1640,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_window_update_frame_encoding() {
-        let mut frame_encoder = FrameEncoder::new(4096, 8190);
+        let mut frame_encoder = FrameEncoder::new(4096, false);
 
         let window_size_increment = 12345678;
         let window_update_payload = Payload::WindowUpdate(WindowUpdate::new(window_size_increment));
@@ -1677,7 +1685,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_priority_frame_encoding() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         // Maximum value for a 31-bit integer
         let stream_dependency = 0x7FFFFFFF;
         let priority_payload = Priority::new(true, stream_dependency, 15);
@@ -1732,7 +1740,7 @@ mod ut_frame_encoder {
     #[test]
     fn ut_goaway_frame_encoding() {
         // 1. Creates a `FrameEncoder`.
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
 
         // 2. Creates a `Frame` with `Payload::Goaway`.
         let last_stream_id = 1;
@@ -1782,22 +1790,9 @@ mod ut_frame_encoder {
     /// 3. Checks whether the maximum frame size was updated correctly.
     #[test]
     fn ut_update_max_frame_size() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         encoder.update_max_frame_size(8192);
         assert_eq!(encoder.max_frame_size, 8192);
-    }
-
-    /// UT test cases for `FrameEncoder::update_header_table_size`.
-    ///
-    /// # Brief
-    /// 1. Creates a `FrameEncoder`.
-    /// 2. Updates the maximum header table size.
-    /// 3. Checks whether the maximum header table size was updated correctly.
-    #[test]
-    fn ut_update_header_table_size() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
-        encoder.update_header_table_size(8192);
-        assert_eq!(encoder.max_header_list_size, 8192);
     }
 
     /// UT test cases for `FrameEncoder::update_setting`.
@@ -1811,7 +1806,7 @@ mod ut_frame_encoder {
     /// 6. Checks whether the setting was updated correctly.
     #[test]
     fn ut_update_setting() {
-        let mut encoder = FrameEncoder::new(4096, 4096);
+        let mut encoder = FrameEncoder::new(4096, false);
         let settings_payload = vec![Setting::MaxFrameSize(4096)];
         let settings = Settings::new(settings_payload);
         let settings_frame = Frame::new(0, FrameFlags::new(0), Payload::Settings(settings));
@@ -1839,7 +1834,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_encode_small_data_frame() {
-        let mut encoder = FrameEncoder::new(100, 4096);
+        let mut encoder = FrameEncoder::new(100, false);
         let data_payload = vec![b'a'; 10];
         let mut buf = [0u8; 10];
         encode_small_frame(&mut encoder, &mut buf, data_payload.clone());
@@ -1879,7 +1874,7 @@ mod ut_frame_encoder {
     /// 5. Checks whether the result is correct.
     #[test]
     fn ut_encode_large_data_frame() {
-        let mut encoder = FrameEncoder::new(100, 4096);
+        let mut encoder = FrameEncoder::new(100, false);
         let data_payload = vec![b'a'; 1024];
         let mut buf = [0u8; 10];
 

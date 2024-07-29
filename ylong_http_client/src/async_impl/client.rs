@@ -501,17 +501,32 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets allowed max size of local cached frame.
+    /// Sets allowed max size of local cached frame, By default, 5 frames are
+    /// allowed per stream.
     ///
     /// # Examples
     ///
     /// ```
     /// use ylong_http_client::async_impl::ClientBuilder;
     ///
-    /// let config = ClientBuilder::new().allow_cached_frame_num(10);
+    /// let config = ClientBuilder::new().allowed_cache_frame_size(10);
     /// ```
-    pub fn allow_cached_frame_num(mut self, num: usize) -> Self {
-        self.http.http2_config.set_allow_cached_frame_num(num);
+    pub fn allowed_cache_frame_size(mut self, size: usize) -> Self {
+        self.http.http2_config.set_allowed_cache_frame_size(size);
+        self
+    }
+
+    /// Sets whether to use huffman coding in hpack. The default is true.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let config = ClientBuilder::new().use_huffman_coding(true);
+    /// ```
+    pub fn use_huffman_coding(mut self, use_huffman: bool) -> Self {
+        self.http.http2_config.set_use_huffman_coding(use_huffman);
         self
     }
 

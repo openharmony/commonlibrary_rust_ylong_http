@@ -22,16 +22,22 @@ use crate::h2::{Parts, PseudoHeaders};
 pub(crate) struct HpackEncoder {
     table: DynamicTable,
     holder: ReprEncStateHolder,
+    use_huffman: bool,
 }
 
 impl HpackEncoder {
-    /// Create a `HpackEncoder` with the given max size.
-    pub(crate) fn with_max_size(max_size: usize) -> Self {
+    /// Create a `HpackEncoder` with the given max dynamic table size and
+    /// huffman usage.
+    pub(crate) fn new(max_size: usize, use_huffman: bool) -> Self {
         Self {
             table: DynamicTable::with_max_size(max_size),
             holder: ReprEncStateHolder::new(),
+            use_huffman,
         }
     }
+
+    // TODO enable update header_table_size
+    pub(crate) fn update_max_dynamic_table_size(&self, _max_size: usize) {}
 
     /// Set the `Parts` to be encoded.
     pub(crate) fn set_parts(&mut self, parts: Parts) {
@@ -43,7 +49,7 @@ impl HpackEncoder {
     pub(crate) fn encode(&mut self, dst: &mut [u8]) -> usize {
         let mut encoder = ReprEncoder::new(&mut self.table);
         encoder.load(&mut self.holder);
-        let size = encoder.encode(dst);
+        let size = encoder.encode(dst, self.use_huffman);
         if size == dst.len() {
             encoder.save(&mut self.holder);
         }
@@ -91,7 +97,7 @@ mod ut_hpack_encoder {
         fn rfc7541_test_cases() {
             // C.2.1.  Literal Header Field with Indexing
             hpack_test_cases!(
-                HpackEncoder::with_max_size(4096),
+                HpackEncoder::new(4096, false),
                 26, "400a637573746f6d2d6b65790d637573746f6d2d686561646572", 55,
                 {
                     Header::Other(String::from("custom-key")),
@@ -104,7 +110,7 @@ mod ut_hpack_encoder {
 
             // C.2.4.  Indexed Header Field
             hpack_test_cases!(
-                HpackEncoder::with_max_size(4096),
+                HpackEncoder::new(4096, false),
                 1, "82", 0,
                 {
                     Header::Method,
@@ -114,7 +120,7 @@ mod ut_hpack_encoder {
 
             // C.3.  Request Examples without Huffman Coding
             {
-                let mut encoder = HpackEncoder::with_max_size(4096);
+                let mut encoder = HpackEncoder::new(4096, false);
                 // C.3.1.  First Request
                 hpack_test_cases!(
                     &mut encoder,
@@ -172,7 +178,7 @@ mod ut_hpack_encoder {
 
             // C.5.  Response Examples without Huffman Coding
             {
-                let mut encoder = HpackEncoder::with_max_size(256);
+                let mut encoder = HpackEncoder::new(256, false);
                 // C.5.1.  First Response
                 hpack_test_cases!(
                     &mut encoder,
