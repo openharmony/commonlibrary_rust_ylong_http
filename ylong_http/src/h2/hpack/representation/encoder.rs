@@ -19,6 +19,7 @@ use crate::h2::hpack::representation::PrefixIndexMask;
 use crate::h2::hpack::table::{DynamicTable, Header, TableIndex, TableSearcher};
 use crate::h2::{Parts, PseudoHeaders};
 use crate::headers::HeadersIntoIter;
+use crate::huffman::huffman_encode;
 
 /// Encoder implementation for decoding representation. The encode interface
 /// supports segmented writing.
@@ -61,7 +62,7 @@ impl<'a> ReprEncoder<'a> {
     /// Decoding is complete only when `self.iter` and `self.state` are both
     /// `None`. It is recommended that users save the result to a
     /// `RecEncStateHolder` immediately after using the method.
-    pub(crate) fn encode(&mut self, dst: &mut [u8]) -> usize {
+    pub(crate) fn encode(&mut self, dst: &mut [u8], use_huffman: bool) -> usize {
         // If `dst` is empty, leave the state unchanged.
         if dst.is_empty() {
             return 0;
@@ -92,13 +93,17 @@ impl<'a> ReprEncoder<'a> {
                     Some(TableIndex::HeaderName(index)) => {
                         // Update it to the dynamic table first, then decode it.
                         self.table.update(h.clone(), v.clone());
-                        Indexing::new(index, v.into_bytes(), false).encode(&mut dst[cur..])
+                        Indexing::new(index, v.into_bytes(), use_huffman).encode(&mut dst[cur..])
                     }
                     None => {
                         // Update it to the dynamic table first, then decode it.
                         self.table.update(h.clone(), v.clone());
-                        IndexingWithName::new(h.into_string().into_bytes(), v.into_bytes(), false)
-                            .encode(&mut dst[cur..])
+                        IndexingWithName::new(
+                            h.into_string().into_bytes(),
+                            v.into_bytes(),
+                            use_huffman,
+                        )
+                        .encode(&mut dst[cur..])
                     }
                 };
                 match result {
@@ -426,8 +431,9 @@ impl IndexAndValue {
     }
 
     fn set_value(mut self, value: Vec<u8>, is_huffman: bool) -> Self {
-        self.value_length = Some(Integer::length(value.len(), is_huffman));
-        self.value_octets = Some(Octets::new(value));
+        let octets = Octets::new(value, is_huffman);
+        self.value_length = Some(Integer::length(octets.len(), is_huffman));
+        self.value_octets = Some(octets);
         self
     }
 
@@ -465,10 +471,12 @@ impl NameAndValue {
     }
 
     fn set_name_and_value(mut self, name: Vec<u8>, value: Vec<u8>, is_huffman: bool) -> Self {
-        self.name_length = Some(Integer::length(name.len(), is_huffman));
-        self.name_octets = Some(Octets::new(name));
-        self.value_length = Some(Integer::length(value.len(), is_huffman));
-        self.value_octets = Some(Octets::new(value));
+        let name_octets = Octets::new(name, is_huffman);
+        self.name_length = Some(Integer::length(name_octets.len(), is_huffman));
+        self.name_octets = Some(name_octets);
+        let value_octets = Octets::new(value, is_huffman);
+        self.value_length = Some(Integer::length(value_octets.len(), is_huffman));
+        self.value_octets = Some(value_octets);
         self
     }
 
@@ -496,7 +504,7 @@ impl Integer {
 
     fn length(length: usize, is_huffman: bool) -> Self {
         Self {
-            int: IntegerEncoder::new(length, 0x7f, u8::from(is_huffman)),
+            int: IntegerEncoder::new(length, 0x7f, pre_mask(is_huffman)),
         }
     }
 
@@ -520,8 +528,18 @@ pub(crate) struct Octets {
 }
 
 impl Octets {
-    fn new(src: Vec<u8>) -> Self {
-        Self { src, idx: 0 }
+    fn new(src: Vec<u8>, is_huffman: bool) -> Self {
+        if is_huffman {
+            let mut dst = Vec::with_capacity(src.len());
+            huffman_encode(src.as_slice(), dst.as_mut());
+            Self { src: dst, idx: 0 }
+        } else {
+            Self { src, idx: 0 }
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.src.len()
     }
 
     fn encode(mut self, dst: &mut [u8]) -> Result<usize, Self> {
@@ -546,6 +564,14 @@ impl Octets {
                 Err(self)
             }
         }
+    }
+}
+
+fn pre_mask(is_huffman: bool) -> u8 {
+    if is_huffman {
+        0x80
+    } else {
+        0
     }
 }
 
