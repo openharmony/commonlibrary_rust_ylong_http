@@ -148,6 +148,7 @@ pub(crate) mod http1 {
 #[cfg(feature = "http2")]
 pub(crate) mod http2 {
     use std::collections::HashMap;
+    use std::future::Future;
     use std::marker::PhantomData;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -157,23 +158,28 @@ pub(crate) mod http2 {
     use ylong_http::error::HttpError;
     use ylong_http::h2::{
         ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, Goaway, H2Error, Payload,
-        Settings, SettingsBuilder,
+        RstStream, Settings, SettingsBuilder,
     };
 
     use crate::runtime::{
-        unbounded_channel, AsyncRead, AsyncWrite, AsyncWriteExt, UnboundedReceiver,
-        UnboundedSender, WriteHalf,
+        bounded_channel, unbounded_channel, AsyncRead, AsyncWrite, AsyncWriteExt, BoundedReceiver,
+        BoundedSender, SendError, UnboundedReceiver, UnboundedSender, WriteHalf,
     };
     use crate::util::config::H2Config;
     use crate::util::dispatcher::{ConnDispatcher, Dispatcher};
-    use crate::util::h2::{ConnManager, FlowControl, RecvData, RequestWrapper, SendData, Streams};
+    use crate::util::h2::{
+        ConnManager, FlowControl, H2StreamState, RecvData, RequestWrapper, SendData,
+        StreamEndState, Streams,
+    };
     use crate::ErrorKind::Request;
     use crate::{ErrorKind, HttpClientError};
 
     const DEFAULT_MAX_STREAM_ID: u32 = u32::MAX >> 1;
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
-    const DEFAULT_MAX_HEADER_LIST_SIZE: usize = 16 << 20;
     const DEFAULT_WINDOW_SIZE: u32 = 65535;
+
+    pub(crate) type ManagerSendFut =
+        Pin<Box<dyn Future<Output = Result<(), SendError<RespMessage>>> + Send + Sync>>;
 
     pub(crate) enum RespMessage {
         Output(Frame),
@@ -187,11 +193,11 @@ pub(crate) mod http2 {
 
     pub(crate) struct ReqMessage {
         pub(crate) id: u32,
-        pub(crate) sender: UnboundedSender<RespMessage>,
+        pub(crate) sender: BoundedSender<RespMessage>,
         pub(crate) request: RequestWrapper,
     }
 
-    #[derive(Debug, Eq, PartialEq, Clone)]
+    #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub(crate) enum DispatchErrorKind {
         H2(H2Error),
         Io(std::io::ErrorKind),
@@ -203,6 +209,7 @@ pub(crate) mod http2 {
     // threads according to HTTP2 syntax.
     pub(crate) struct Http2Dispatcher<S> {
         pub(crate) next_stream_id: StreamId,
+        pub(crate) allowed_cache: usize,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
         pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
@@ -212,6 +219,7 @@ pub(crate) mod http2 {
     pub(crate) struct Http2Conn<S> {
         // Handle id
         pub(crate) id: u32,
+        pub(crate) allow_cached_frames: usize,
         // Sends frame to StreamController
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) receiver: RespReceiver,
@@ -224,11 +232,12 @@ pub(crate) mod http2 {
         // closed.
         pub(crate) io_shutdown: Arc<AtomicBool>,
         // The senders of all connected stream channels of response.
-        pub(crate) senders: HashMap<u32, UnboundedSender<RespMessage>>,
+        pub(crate) senders: HashMap<u32, BoundedSender<RespMessage>>,
+        pub(crate) curr_message: HashMap<u32, ManagerSendFut>,
         // Stream information on the connection.
         pub(crate) streams: Streams,
         // Received GO_AWAY frame.
-        pub(crate) go_away: Option<u32>,
+        pub(crate) recved_go_away: Option<u32>,
         // The last GO_AWAY frame sent by the client.
         pub(crate) go_away_sync: GoAwaySync,
     }
@@ -257,7 +266,7 @@ pub(crate) mod http2 {
 
     #[derive(Default)]
     pub(crate) struct RespReceiver {
-        receiver: Option<UnboundedReceiver<RespMessage>>,
+        receiver: Option<BoundedReceiver<RespMessage>>,
     }
 
     impl<S> ConnDispatcher<S>
@@ -294,10 +303,19 @@ pub(crate) mod http2 {
             // being.
             let mut handles = Vec::with_capacity(3);
             if input_tx.send(settings).is_ok() {
-                Self::launch(controller, req_rx, input_tx, input_rx, &mut handles, io);
+                Self::launch(
+                    config.allowed_cache_frame_size(),
+                    config.use_huffman_coding(),
+                    controller,
+                    (input_tx, input_rx),
+                    req_rx,
+                    &mut handles,
+                    io,
+                );
             }
             Self {
                 next_stream_id,
+                allowed_cache: config.allowed_cache_frame_size(),
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
                 handles,
@@ -306,23 +324,24 @@ pub(crate) mod http2 {
         }
 
         fn launch(
+            allow_num: usize,
+            use_huffman: bool,
             controller: StreamController,
+            input_channel: (UnboundedSender<Frame>, UnboundedReceiver<Frame>),
             req_rx: UnboundedReceiver<ReqMessage>,
-            input_tx: UnboundedSender<Frame>,
-            input_rx: UnboundedReceiver<Frame>,
             handles: &mut Vec<crate::runtime::JoinHandle<()>>,
             io: S,
         ) {
-            let (resp_tx, resp_rx) = unbounded_channel();
+            let (resp_tx, resp_rx) = bounded_channel(allow_num);
             let (read, write) = crate::runtime::split(io);
             let settings_sync = Arc::new(Mutex::new(SettingsSync::default()));
             let send_settings_sync = settings_sync.clone();
             let send = crate::runtime::spawn(async move {
                 let mut writer = write;
                 if async_send_preface(&mut writer).await.is_ok() {
-                    let encoder =
-                        FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE);
-                    let mut send = SendData::new(encoder, send_settings_sync, writer, input_rx);
+                    let encoder = FrameEncoder::new(DEFAULT_MAX_FRAME_SIZE, use_huffman);
+                    let mut send =
+                        SendData::new(encoder, send_settings_sync, writer, input_channel.1);
                     let _ = Pin::new(&mut send).await;
                 }
             });
@@ -338,10 +357,8 @@ pub(crate) mod http2 {
 
             let manager = crate::runtime::spawn(async move {
                 let mut conn_manager =
-                    ConnManager::new(settings_sync, input_tx, resp_rx, req_rx, controller);
-                if let Err(e) = Pin::new(&mut conn_manager).await {
-                    conn_manager.exit_with_error(e);
-                }
+                    ConnManager::new(settings_sync, input_channel.0, resp_rx, req_rx, controller);
+                let _ = Pin::new(&mut conn_manager).await;
             });
             handles.push(manager);
         }
@@ -356,7 +373,7 @@ pub(crate) mod http2 {
                 return None;
             }
             let sender = self.sender.clone();
-            let handle = Http2Conn::new(id, self.io_shutdown.clone(), sender);
+            let handle = Http2Conn::new(id, self.allowed_cache, self.io_shutdown.clone(), sender);
             Some(handle)
         }
 
@@ -379,11 +396,13 @@ pub(crate) mod http2 {
     impl<S> Http2Conn<S> {
         pub(crate) fn new(
             id: u32,
+            allow_cached_num: usize,
             io_shutdown: Arc<AtomicBool>,
             sender: UnboundedSender<ReqMessage>,
         ) -> Self {
             Self {
                 id,
+                allow_cached_frames: allow_cached_num,
                 sender,
                 receiver: RespReceiver::default(),
                 io_shutdown,
@@ -395,7 +414,7 @@ pub(crate) mod http2 {
             &mut self,
             request: RequestWrapper,
         ) -> Result<(), HttpClientError> {
-            let (tx, rx) = unbounded_channel::<RespMessage>();
+            let (tx, rx) = bounded_channel::<RespMessage>(self.allow_cached_frames);
             self.receiver.set_receiver(rx);
             self.sender
                 .send(ReqMessage {
@@ -420,8 +439,9 @@ pub(crate) mod http2 {
             Self {
                 io_shutdown: shutdown,
                 senders: HashMap::new(),
+                curr_message: HashMap::new(),
                 streams,
-                go_away: None,
+                recved_go_away: None,
                 go_away_sync: GoAwaySync::default(),
             }
         }
@@ -430,7 +450,7 @@ pub(crate) mod http2 {
             self.io_shutdown.store(true, Ordering::Release);
         }
 
-        pub(crate) fn go_away_unsent_stream(
+        pub(crate) fn get_unsent_streams(
             &mut self,
             last_stream_id: u32,
         ) -> Result<Vec<u32>, H2Error> {
@@ -443,21 +463,86 @@ pub(crate) mod http2 {
             Ok(self.streams.get_go_away_streams(last_stream_id))
         }
 
-        pub(crate) fn send_message_to_stream(&mut self, stream_id: u32, message: RespMessage) {
+        pub(crate) fn send_message_to_stream(
+            &mut self,
+            cx: &mut Context<'_>,
+            stream_id: u32,
+            message: RespMessage,
+        ) -> Poll<Result<(), H2Error>> {
             if let Some(sender) = self.senders.get(&stream_id) {
                 // If the client coroutine has exited, this frame is skipped.
-                match sender.send(message) {
-                    Ok(_) => {}
-                    Err(_e) => {
+                let mut tx = {
+                    let sender = sender.clone();
+                    let ft = async move { sender.send(message).await };
+                    Box::pin(ft)
+                };
+
+                match tx.as_mut().poll(cx) {
+                    Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+                    // The current coroutine sending the request exited prematurely.
+                    Poll::Ready(Err(_)) => {
                         self.senders.remove(&stream_id);
+                        Poll::Ready(Err(H2Error::StreamError(stream_id, ErrorCode::NoError)))
+                    }
+                    Poll::Pending => {
+                        self.curr_message.insert(stream_id, tx);
+                        Poll::Pending
                     }
                 }
+            } else {
+                Poll::Ready(Err(H2Error::StreamError(stream_id, ErrorCode::NoError)))
+            }
+        }
+
+        pub(crate) fn poll_blocked_message(
+            &mut self,
+            cx: &mut Context<'_>,
+            input_tx: &UnboundedSender<Frame>,
+        ) -> Poll<()> {
+            let keys: Vec<u32> = self.curr_message.keys().cloned().collect();
+            let mut blocked = false;
+
+            for key in keys {
+                if let Some(mut task) = self.curr_message.remove(&key) {
+                    match task.as_mut().poll(cx) {
+                        Poll::Ready(Ok(_)) => {}
+                        // The current coroutine sending the request exited prematurely.
+                        Poll::Ready(Err(_)) => {
+                            self.senders.remove(&key);
+                            if let Some(state) = self.streams.stream_state(key) {
+                                if !matches!(state, H2StreamState::Closed(_)) {
+                                    if let StreamEndState::OK = self.streams.send_local_reset(key) {
+                                        let rest_payload =
+                                            RstStream::new(ErrorCode::NoError.into_code());
+                                        let frame = Frame::new(
+                                            key as usize,
+                                            FrameFlags::empty(),
+                                            Payload::RstStream(rest_payload),
+                                        );
+                                        // ignore the send error occurs here in order to finish all
+                                        // tasks.
+                                        let _ = input_tx.send(frame);
+                                    }
+                                }
+                            }
+                        }
+                        Poll::Pending => {
+                            self.curr_message.insert(key, task);
+                            blocked = true;
+                        }
+                    }
+                }
+            }
+            if blocked {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
             }
         }
     }
 
     impl RespReceiver {
-        pub(crate) fn set_receiver(&mut self, receiver: UnboundedReceiver<RespMessage>) {
+        pub(crate) fn set_receiver(&mut self, receiver: BoundedReceiver<RespMessage>) {
             self.receiver = Some(receiver);
         }
 

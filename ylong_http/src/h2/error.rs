@@ -29,7 +29,7 @@ use std::convert::{Infallible, TryFrom};
 use crate::error::{ErrorKind, HttpError};
 
 /// The http2 error handle implementation
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum H2Error {
     /// [`Stream Error`] Handling.
     ///
@@ -45,7 +45,7 @@ pub enum H2Error {
 /// [`Error Codes`] implementation.
 ///
 /// [`Error Codes`]: https://httpwg.org/specs/rfc9113.html#ErrorCodes
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ErrorCode {
     /// The associated condition is not a result of an error. For example,
     /// a `GOAWAY` might include this code to indicate graceful shutdown of a

@@ -14,43 +14,31 @@
 //! This is a simple asynchronous HTTPS client example.
 
 use ylong_http_client::async_impl::{Body, Client, Downloader, Request};
-use ylong_http_client::{Certificate, HttpClientError, Redirect, TlsVersion};
+use ylong_http_client::{HttpClientError, Redirect, TlsVersion};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("Tokio runtime build err.");
-    let mut v = vec![];
-    for _i in 0..3 {
-        let handle = rt.spawn(req());
-        v.push(handle);
-    }
+    let handle = rt.spawn(req());
 
     rt.block_on(async move {
-        for h in v {
-            let _ = h.await;
-        }
+        let _ = handle.await.unwrap().unwrap();
     });
 }
 
 async fn req() -> Result<(), HttpClientError> {
-    let v = "some certs".as_bytes();
-    let cert = Certificate::from_pem(v)?;
-
     // Creates a `async_impl::Client`
     let client = Client::builder()
         .redirect(Redirect::default())
-        .tls_built_in_root_certs(false) // not use root certs
-        .danger_accept_invalid_certs(true) // not verify certs
-        .max_tls_version(TlsVersion::TLS_1_2)
         .min_tls_version(TlsVersion::TLS_1_2)
-        .add_root_certificate(cert)
         .build()?;
 
     // Creates a `Request`.
     let request = Request::builder()
-        .url("https://www.example.com")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0")
+        .url("http://vipspeedtest8.wuhan.net.cn:8080/download?size=1073741824")
         .body(Body::empty())?;
 
     // Sends request and receives a `Response`.
