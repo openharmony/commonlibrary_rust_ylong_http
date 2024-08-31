@@ -90,7 +90,7 @@ pub struct Uri {
 }
 
 impl Uri {
-    /// Creates a HTTP-compliant default `Uri` with `Path` set to '/'.
+    /// Creates an HTTP-compliant default `Uri` with `Path` set to '/'.
     pub(crate) fn http() -> Uri {
         Uri {
             scheme: None,
@@ -232,7 +232,12 @@ impl Uri {
         let (scheme, rest) = scheme_token(bytes)?;
         let (authority, rest) = authority_token(rest)?;
         let (path, rest) = path_token(rest)?;
-        let query = query_token(rest)?;
+        let query = match rest.first() {
+            None => None,
+            Some(&b'?') => query_token(&rest[1..])?,
+            Some(&b'#') => None,
+            _ => return Err(InvalidUri::UriMissQuery.into()),
+        };
         let result = Uri {
             scheme,
             authority,
@@ -1084,7 +1089,8 @@ fn path_token(bytes: &[u8]) -> Result<(Option<Path>, &[u8]), InvalidUri> {
                 break;
             }
             _ => {
-                if !URI_VALUE_BYTES[b as usize] {
+                // "{} The three characters that might be used were previously percent-encoding.
+                if !PATH_AND_QUERY_BYTES[b as usize] {
                     return Err(InvalidUri::InvalidByte);
                 }
             }
@@ -1098,15 +1104,10 @@ fn path_token(bytes: &[u8]) -> Result<(Option<Path>, &[u8]), InvalidUri> {
     }
 }
 
-fn query_token(s: &[u8]) -> Result<Option<Query>, InvalidUri> {
-    if s.is_empty() {
+fn query_token(bytes: &[u8]) -> Result<Option<Query>, InvalidUri> {
+    if bytes.is_empty() {
         return Ok(None);
     }
-    let bytes = if s[0].eq_ignore_ascii_case(&b'?') {
-        &s[1..]
-    } else {
-        s
-    };
     let mut end = bytes.len();
     for (i, &b) in bytes.iter().enumerate() {
         match b {
@@ -1114,8 +1115,10 @@ fn query_token(s: &[u8]) -> Result<Option<Query>, InvalidUri> {
                 end = i;
                 break;
             }
+            // ?|  ` |  { |  }
+            0x3F | 0x60 | 0x7B | 0x7D => {}
             _ => {
-                if !URI_VALUE_BYTES[b as usize] {
+                if !PATH_AND_QUERY_BYTES[b as usize] {
                     return Err(InvalidUri::InvalidByte);
                 }
             }
@@ -1193,6 +1196,38 @@ const URI_VALUE_BYTES: [bool; 256] = {
         __, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, // 6F
 //      p   q   r   s   t   u   v   w   x   y   z   {   |   }   ~   del
         TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, __, __, TT, __, // 7F
+//      Expand ascii
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 8F
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 9F
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // AF
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // BF
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // CF
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // DF
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // EF
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // FF
+    ]
+};
+
+#[rustfmt::skip]
+const PATH_AND_QUERY_BYTES: [bool; 256] = {
+    const __: bool = false;
+    const TT: bool = true;
+    [
+//      \0                                  HT  LF          CR
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // F
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 1F
+//      \w  !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
+        __, TT, __, __, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, // 2F
+//      0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
+        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, TT, __, __, // 3F
+//      @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
+        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, // 4F
+//      P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
+        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, // 5F
+//      `   a   b   c   d   e   f   g   h   i   j   k   l   m   n   o
+        __, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, // 6F
+//      p   q   r   s   t   u   v   w   x   y   z   {   |   }   ~   del
+        TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, TT, __, TT, __, TT, __, // 7F
 //      Expand ascii
         __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 8F
         __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 9F
@@ -1418,11 +1453,6 @@ mod ut_uri {
         );
 
         uri_test_case!(
-            br"https://www.example.com:80/message/email?name='\^'",
-            Err(HttpError::from(ErrorKind::Uri(InvalidUri::InvalidByte))),
-        );
-
-        uri_test_case!(
             br#"https:/www.example.com:80/message/email?name=arya"#,
             Err(HttpError::from(ErrorKind::Uri(InvalidUri::UriMissScheme))),
         );
@@ -1610,5 +1640,16 @@ mod ut_uri {
 
         let uri = Uri::from_bytes(b"http://example.com:8080").unwrap();
         assert_eq!(uri.path_and_query(), None);
+    }
+
+    /// UT test cases for `Uri::path_and_query`.
+    ///
+    /// # Brief
+    /// 1. Creates Uri by calling `Uri::path_and_query()`.
+    /// 2. Checks that the query containing the {} symbol parses properly.
+    #[test]
+    fn ut_uri_json_query() {
+        let uri = Uri::from_bytes(b"http://example.com:8080/foo?a=1{WEBO_TEST}").unwrap();
+        assert_eq!(uri.path_and_query().unwrap(), "/foo?a=1{WEBO_TEST}");
     }
 }
