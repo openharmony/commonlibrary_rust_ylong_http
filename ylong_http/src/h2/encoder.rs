@@ -1823,6 +1823,101 @@ mod ut_frame_encoder {
         }
     }
 
+    /// UT test cases for `FrameEncoder` encoding continuation frames.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Headers` and sets the flags.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the continuation frames using a buffer.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encode_continuation_frames() {
+        let mut frame_encoder = FrameEncoder::new(4096, false);
+        let mut new_parts = Parts::new();
+        assert!(new_parts.is_empty());
+        new_parts.pseudo.set_method(Some("GET".to_string()));
+        new_parts.pseudo.set_scheme(Some("https".to_string()));
+        new_parts.pseudo.set_path(Some("/code".to_string()));
+        new_parts
+            .pseudo
+            .set_authority(Some("example.com".to_string()));
+
+        let mut frame_flag = FrameFlags::empty();
+        frame_flag.set_end_headers(true);
+        frame_flag.set_end_stream(false);
+        let frame = Frame::new(
+            1,
+            frame_flag.clone(),
+            Payload::Headers(Headers::new(new_parts.clone())),
+        );
+
+        frame_encoder.set_frame(frame).unwrap();
+        frame_encoder.state = FrameEncoderState::EncodingContinuationFrames;
+        let mut buf = [0u8; 5000];
+
+        assert!(frame_encoder.encode_continuation_frames(&mut buf).is_ok());
+
+        let mut frame_flag = FrameFlags::empty();
+        frame_flag.set_end_headers(true);
+        let frame = Frame::new(
+            1,
+            frame_flag,
+            Payload::Headers(Headers::new(new_parts.clone())),
+        );
+
+        frame_encoder.set_frame(frame).unwrap();
+        frame_encoder.state = FrameEncoderState::EncodingContinuationFrames;
+        assert!(frame_encoder.encode_continuation_frames(&mut buf).is_ok());
+
+        let mut frame_flag = FrameFlags::empty();
+        frame_flag.set_end_headers(true);
+        let frame = Frame::new(1, frame_flag, Payload::Ping(Ping::new([0; 8])));
+
+        frame_encoder.set_frame(frame).unwrap();
+        frame_encoder.state = FrameEncoderState::EncodingContinuationFrames;
+        assert!(frame_encoder.encode_continuation_frames(&mut buf).is_err());
+    }
+
+    /// UT test cases for `FrameEncoder` encoding padded data.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Data` and sets the flags.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the padding using a buffer.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encode_padding() {
+        let mut frame_encoder = FrameEncoder::new(4096, false);
+
+        // Creates a padded data frame.
+        let mut frame_flags = FrameFlags::empty();
+        frame_flags.set_end_headers(true);
+        frame_flags.set_padded(true);
+        let data_payload = vec![0u8; 500];
+        let data_frame = Frame::new(
+            1,
+            frame_flags.clone(),
+            Payload::Data(Data::new(data_payload)),
+        );
+
+        // Sets the frame to the frame_encoder and test padding encoding.
+        frame_encoder.set_frame(data_frame).unwrap();
+        frame_encoder.state = FrameEncoderState::EncodingDataPadding;
+        let mut buf = [0u8; 600];
+        assert!(frame_encoder.encode_padding(&mut buf).is_ok());
+
+        let headers_payload = Payload::Headers(Headers::new(Parts::new()));
+        let headers_frame = Frame::new(1, frame_flags.clone(), headers_payload);
+        frame_encoder.set_frame(headers_frame).unwrap();
+        frame_encoder.state = FrameEncoderState::EncodingDataPadding;
+        assert!(frame_encoder.encode_padding(&mut buf).is_err());
+
+        frame_encoder.current_frame = None;
+        assert!(frame_encoder.encode_padding(&mut buf).is_err());
+    }
+
     /// UT test cases for `FrameEncoder` encoding data frame.
     ///
     /// # Brief
