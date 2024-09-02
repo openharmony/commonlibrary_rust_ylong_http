@@ -13,12 +13,13 @@
 
 // TODO: reuse mime later.
 
+use std::future::Future;
 use std::io::Cursor;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
 
-use crate::body::async_impl::Body;
+use crate::body::async_impl::{Body, ReusableReader};
 use crate::{AsyncRead, ReadBuf};
 
 /// A structure that helps you build a `multipart/form-data` message.
@@ -174,10 +175,23 @@ impl MultiPart {
         states.push(MultiPartState::bytes(
             format!("--{}--\r\n", self.boundary).into_bytes(),
         ));
-        self.status = ReadStatus::Reading(MultiPartStates {
-            states: states.into_iter(),
-            curr: None,
-        })
+        self.status = ReadStatus::Reading(MultiPartStates { states, index: 0 })
+    }
+
+    pub(crate) async fn reuse_inner(&mut self) -> std::io::Result<()> {
+        match std::mem::replace(&mut self.status, ReadStatus::Never) {
+            ReadStatus::Never => Ok(()),
+            ReadStatus::Reading(mut states) => {
+                let res = states.reuse().await;
+                self.status = ReadStatus::Reading(states);
+                res
+            }
+            ReadStatus::Finish(mut states) => {
+                states.reuse().await?;
+                self.status = ReadStatus::Reading(states);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -196,7 +210,7 @@ impl AsyncRead for MultiPart {
         match self.status {
             ReadStatus::Never => self.build_status(),
             ReadStatus::Reading(_) => {}
-            ReadStatus::Finish => return Poll::Ready(Ok(())),
+            ReadStatus::Finish(_) => return Poll::Ready(Ok(())),
         }
 
         let status = if let ReadStatus::Reading(ref mut status) = self.status {
@@ -213,7 +227,10 @@ impl AsyncRead for MultiPart {
             Poll::Ready(Ok(())) => {
                 let new_filled = buf.filled().len();
                 if filled == new_filled {
-                    self.status = ReadStatus::Finish;
+                    match std::mem::replace(&mut self.status, ReadStatus::Never) {
+                        ReadStatus::Reading(states) => self.status = ReadStatus::Finish(states),
+                        _ => unreachable!(),
+                    };
                 }
                 Poll::Ready(Ok(()))
             }
@@ -227,6 +244,23 @@ impl AsyncRead for MultiPart {
             }
             x => x,
         }
+    }
+}
+
+impl ReusableReader for MultiPart {
+    fn reuse<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + Sync + 'a>>
+    where
+        Self: 'a,
+    {
+        Box::pin(async {
+            match self.status {
+                ReadStatus::Never => Ok(()),
+                ReadStatus::Reading(_) => self.reuse_inner().await,
+                ReadStatus::Finish(_) => self.reuse_inner().await,
+            }
+        })
     }
 }
 
@@ -352,8 +386,8 @@ impl Part {
     /// Sets a stream body of this `Part`.
     ///
     /// The body message will be set to the body part.
-    pub fn stream<T: AsyncRead + Send + Sync + 'static>(mut self, body: T) -> Self {
-        self.body = Some(MultiPartState::stream(Box::pin(body)));
+    pub fn stream<T: ReusableReader + Send + Sync + 'static + Unpin>(mut self, body: T) -> Self {
+        self.body = Some(MultiPartState::stream(Box::new(body)));
         self
     }
 }
@@ -365,7 +399,7 @@ impl Default for Part {
 }
 
 /// A basic trait for MultiPart.
-pub trait MultiPartBase: AsyncRead {
+pub trait MultiPartBase: ReusableReader {
     /// Get reference of MultiPart.
     fn multipart(&self) -> &MultiPart;
 }
@@ -379,12 +413,27 @@ impl MultiPartBase for MultiPart {
 enum ReadStatus {
     Never,
     Reading(MultiPartStates),
-    Finish,
+    Finish(MultiPartStates),
 }
 
 struct MultiPartStates {
-    states: IntoIter<MultiPartState>,
-    curr: Option<MultiPartState>,
+    states: Vec<MultiPartState>,
+    index: usize,
+}
+
+impl MultiPartStates {
+    async fn reuse(&mut self) -> std::io::Result<()> {
+        self.index = 0;
+        for state in self.states.iter_mut() {
+            match state {
+                MultiPartState::Bytes(bytes) => bytes.set_position(0),
+                MultiPartState::Stream(stream) => {
+                    stream.reuse().await?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl MultiPartStates {
@@ -393,11 +442,11 @@ impl MultiPartStates {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        let mut state = if let Some(state) = self.curr.take() {
-            state
-        } else {
-            return Poll::Ready(Ok(()));
+        let state = match self.states.get_mut(self.index) {
+            Some(state) => state,
+            None => return Poll::Ready(Ok(())),
         };
+
         match state {
             MultiPartState::Bytes(ref mut bytes) => {
                 let filled_len = buf.filled().len();
@@ -406,39 +455,26 @@ impl MultiPartStates {
                 let new = std::io::Read::read(bytes, unfilled).unwrap();
                 buf.set_filled(filled_len + new);
 
-                if new >= unfilled_len {
-                    self.curr = Some(state);
+                if new < unfilled_len {
+                    self.index += 1;
                 }
                 Poll::Ready(Ok(()))
             }
-            MultiPartState::Stream(ref mut stream) => {
+            MultiPartState::Stream(stream) => {
                 let old_len = buf.filled().len();
-                let result = stream.as_mut().poll_read(cx, buf);
+                let result = unsafe { Pin::new_unchecked(stream).poll_read(cx, buf) };
                 let new_len = buf.filled().len();
-                self.poll_result(result, old_len, new_len, state)
-            }
-        }
-    }
-
-    fn poll_result(
-        &mut self,
-        result: Poll<std::io::Result<()>>,
-        old_len: usize,
-        new_len: usize,
-        state: MultiPartState,
-    ) -> Poll<std::io::Result<()>> {
-        match result {
-            Poll::Ready(Ok(())) => {
-                if old_len != new_len {
-                    self.curr = Some(state);
+                match result {
+                    Poll::Ready(Ok(())) => {
+                        if old_len == new_len {
+                            self.index += 1;
+                        }
+                        Poll::Ready(Ok(()))
+                    }
+                    Poll::Pending => Poll::Pending,
+                    x => x,
                 }
-                Poll::Ready(Ok(()))
             }
-            Poll::Pending => {
-                self.curr = Some(state);
-                Poll::Pending
-            }
-            x => x,
         }
     }
 }
@@ -451,13 +487,9 @@ impl AsyncRead for MultiPartStates {
     ) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
         while !buf.initialize_unfilled().is_empty() {
-            if this.curr.is_none() {
-                this.curr = match this.states.next() {
-                    None => break,
-                    x => x,
-                }
+            if this.states.get(this.index).is_none() {
+                break;
             }
-
             match this.poll_read_curr(cx, buf) {
                 Poll::Ready(Ok(())) => {}
                 x => return x,
@@ -469,7 +501,7 @@ impl AsyncRead for MultiPartStates {
 
 enum MultiPartState {
     Bytes(Cursor<Vec<u8>>),
-    Stream(Pin<Box<dyn AsyncRead + Send + Sync>>),
+    Stream(Box<dyn ReusableReader + Send + Sync + Unpin>),
 }
 
 impl MultiPartState {
@@ -477,7 +509,7 @@ impl MultiPartState {
         Self::Bytes(Cursor::new(bytes))
     }
 
-    fn stream(reader: Pin<Box<dyn AsyncRead + Send + Sync>>) -> Self {
+    fn stream(reader: Box<dyn ReusableReader + Send + Sync + Unpin>) -> Self {
         Self::Stream(reader)
     }
 }
