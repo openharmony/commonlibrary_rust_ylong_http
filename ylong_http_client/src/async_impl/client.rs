@@ -17,7 +17,7 @@ use ylong_http::request::uri::Uri;
 
 use super::pool::ConnPool;
 use super::timeout::TimeoutFuture;
-use super::{conn, Body, Connector, HttpConnector, Request, Response};
+use super::{conn, Connector, HttpConnector, Request, Response};
 use crate::async_impl::interceptor::{IdleInterceptor, Interceptor, Interceptors};
 use crate::async_impl::request::Message;
 use crate::error::HttpClientError;
@@ -36,7 +36,7 @@ use crate::util::redirect::{RedirectInfo, Trigger};
 use crate::util::request::RequestArc;
 #[cfg(feature = "__c_openssl")]
 use crate::CertVerifier;
-use crate::Retry;
+use crate::{ErrorKind, Retry};
 
 /// HTTP asynchronous client implementation. Users can use `async_impl::Client`
 /// to send `Request` asynchronously.
@@ -147,7 +147,7 @@ impl<C: Connector> Client<C> {
         loop {
             let response = self.send_request(request.clone()).await;
             if let Err(ref err) = response {
-                if retries > 0 && request.ref_mut().body_mut().reuse() {
+                if retries > 0 && request.ref_mut().body_mut().reuse().await.is_ok() {
                     self.interceptors.intercept_retry(err)?;
                     retries -= 1;
                     continue;
@@ -217,9 +217,12 @@ impl<C: Connector> Client<C> {
             {
                 Trigger::NextLink => {
                     // Here the body should be reused.
-                    if !request.ref_mut().body_mut().reuse() {
-                        *request.ref_mut().body_mut() = Body::empty();
-                    }
+                    request
+                        .ref_mut()
+                        .body_mut()
+                        .reuse()
+                        .await
+                        .map_err(|e| HttpClientError::from_io_error(ErrorKind::Redirect, e))?;
                     self.interceptors
                         .intercept_redirect_request(request.ref_mut())?;
                     response = self.send_unformatted_request(request.clone()).await?;

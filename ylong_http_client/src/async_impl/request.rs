@@ -19,6 +19,7 @@ use core::task::{Context, Poll};
 use std::io::Cursor;
 use std::sync::Arc;
 
+use ylong_http::body::async_impl::ReusableReader;
 use ylong_http::body::MultiPartBase;
 use ylong_http::request::uri::PercentEncoder as PerEncoder;
 use ylong_http::request::{Request as Req, RequestBuilder as ReqBuilder};
@@ -255,7 +256,7 @@ pub struct Body {
 pub(crate) enum BodyKind {
     Empty,
     Slice(Cursor<Vec<u8>>),
-    Stream(Box<dyn AsyncRead + Send + Sync + Unpin>),
+    Stream(Box<dyn ReusableReader + Send + Sync + Unpin>),
     Multipart(Box<dyn MultiPartBase + Send + Sync + Unpin>),
 }
 
@@ -304,10 +305,10 @@ impl Body {
     /// ```
     pub fn stream<T>(stream: T) -> Self
     where
-        T: AsyncRead + Send + Sync + Unpin + 'static,
+        T: ReusableReader + Send + Sync + Unpin + 'static,
     {
         Body::new(BodyKind::Stream(
-            Box::new(stream) as Box<dyn AsyncRead + Send + Sync + Unpin>
+            Box::new(stream) as Box<dyn ReusableReader + Send + Sync + Unpin>
         ))
     }
 
@@ -340,15 +341,15 @@ impl Body {
         Self { inner }
     }
 
-    // TODO: Considers reusing unread stream ?
-    pub(crate) fn reuse(&mut self) -> bool {
+    pub(crate) async fn reuse(&mut self) -> std::io::Result<()> {
         match self.inner {
-            BodyKind::Empty => true,
+            BodyKind::Empty => Ok(()),
             BodyKind::Slice(ref mut slice) => {
                 slice.set_position(0);
-                true
+                Ok(())
             }
-            _ => false,
+            BodyKind::Stream(ref mut stream) => stream.reuse().await,
+            BodyKind::Multipart(ref mut multipart) => multipart.reuse().await,
         }
     }
 }
@@ -470,7 +471,6 @@ mod ut_client_request {
                 .length(Some(4)),
         );
         let mut request = RequestBuilder::default().body(Body::multipart(mp)).unwrap();
-        assert!(!request.body_mut().reuse());
         let handle = ylong_runtime::spawn(async move {
             let mut buf = vec![0u8; 50];
             let mut v_size = vec![];

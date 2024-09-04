@@ -25,8 +25,8 @@ tokio_base = ["tokio"]     # Uses asynchronous components of `tokio`
 ylong_base = ["ylong_runtime"]            # Uses asynchronous components of `ylong`
 
 [dependencies]
-tokio = { version = "1.20.1", features = ["io-util"], optional = true }
-ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", optional = true }
+tokio = { version = "1.20.1", features = ["io-util", "fs"], optional = true }
+ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", features = ["fs", "sync"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.20.1", features = ["io-util", "rt-multi-thread", "macros"] }
