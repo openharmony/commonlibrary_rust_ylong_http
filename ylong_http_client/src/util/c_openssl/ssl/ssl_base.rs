@@ -12,11 +12,9 @@
 // limitations under the License.
 
 use core::{cmp, ffi, fmt, str};
-use std::ffi::{c_uchar, CString};
+use std::ffi::CString;
 #[cfg(feature = "sync")]
 use std::io::{Read, Write};
-use std::ptr::null;
-use std::slice::from_raw_parts;
 
 use libc::{c_char, c_int, c_long, c_void};
 
@@ -37,7 +35,7 @@ use crate::c_openssl::x509::{
 };
 use crate::util::c_openssl::check_ptr;
 use crate::util::c_openssl::error::ErrorStack;
-use crate::util::c_openssl::ffi::ssl::{SSL_free, SSL_get0_alpn_selected, SSL_new, SSL};
+use crate::util::c_openssl::ffi::ssl::{SSL_free, SSL_new, SSL};
 use crate::util::c_openssl::foreign::Foreign;
 
 foreign_type!(
@@ -148,7 +146,14 @@ impl SslRef {
         }
     }
 
+    #[cfg(feature = "http2")]
     pub(crate) fn negotiated_alpn_protocol(&self) -> Option<&[u8]> {
+        use std::ffi::c_uchar;
+        use std::ptr::null;
+        use std::slice::from_raw_parts;
+
+        use crate::util::c_openssl::ffi::ssl::SSL_get0_alpn_selected;
+
         let mut data = null() as *const c_uchar;
         let mut len = 0_u32;
         unsafe {

@@ -19,7 +19,6 @@ use super::pool::ConnPool;
 use super::timeout::TimeoutFuture;
 use super::{conn, Connector, HttpConnector, Request, Response};
 use crate::async_impl::dns::{DefaultDnsResolver, Resolver};
-use crate::async_impl::interceptor::{IdleInterceptor, Interceptor, Interceptors};
 use crate::async_impl::request::Message;
 use crate::error::HttpClientError;
 use crate::runtime::timeout;
@@ -30,7 +29,8 @@ use crate::util::config::FchownConfig;
 use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
 };
-use crate::util::dispatcher::Conn;
+use crate::util::dispatcher::{Conn, TimeInfoConn};
+use crate::util::interceptor::{IdleInterceptor, Interceptor, Interceptors};
 use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
 use crate::util::redirect::{RedirectInfo, Trigger};
@@ -188,11 +188,17 @@ impl<C: Connector> Client<C> {
         mut request: RequestArc,
     ) -> Result<Response, HttpClientError> {
         RequestFormatter::new(request.ref_mut()).format()?;
-        let conn = self.connect_to(request.ref_mut().uri()).await?;
+        let mut info_conn = self.connect_to(request.ref_mut().uri()).await?;
+        request
+            .ref_mut()
+            .time_group_mut()
+            .update_transport_conn_time(info_conn.time_group());
+        let mut conn = info_conn.connection();
+        self.interceptors.intercept_connection(conn.get_detail())?;
         self.send_request_on_conn(conn, request).await
     }
 
-    async fn connect_to(&self, uri: &Uri) -> Result<Conn<C::Stream>, HttpClientError> {
+    async fn connect_to(&self, uri: &Uri) -> Result<TimeInfoConn<C::Stream>, HttpClientError> {
         if let Some(dur) = self.config.connect_timeout.inner() {
             match timeout(dur, self.inner.connect_to(uri)).await {
                 Err(elapsed) => err_from_other!(Timeout, elapsed),
@@ -285,6 +291,7 @@ pub struct ClientBuilder {
     /// Fchown configuration.
     fchown: Option<FchownConfig>,
 
+    /// Interceptor for all stages.
     interceptors: Arc<Interceptors>,
     /// Resolver to http DNS.
     resolver: Arc<dyn Resolver>,
@@ -443,8 +450,8 @@ impl ClientBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use ylong_http_client::async_impl::{ClientBuilder, Interceptor};
-    /// # use ylong_http_client::HttpClientError;
+    /// # use ylong_http_client::async_impl::ClientBuilder;
+    /// # use ylong_http_client::{HttpClientError, Interceptor};
     ///
     /// # fn add_interceptor<T>(interceptor: T)
     /// # where T: Interceptor + Sync + Send + 'static,
@@ -974,8 +981,8 @@ mod ut_async_impl_client {
         use ylong_http::h1::ResponseDecoder;
         use ylong_http::response::Response as HttpResponse;
 
-        use crate::async_impl::interceptor::IdleInterceptor;
         use crate::async_impl::{ClientBuilder, HttpBody};
+        use crate::util::interceptor::IdleInterceptor;
         use crate::util::normalizer::BodyLength;
         use crate::util::request::RequestArc;
         use crate::util::Redirect;
@@ -1066,7 +1073,11 @@ HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
     #[cfg(all(feature = "__tls", feature = "ylong_base"))]
     async fn client_request_verify() {
         // Creates a `async_impl::Client`
-        let client = Client::builder().cert_verifier(Verifier).build().unwrap();
+        let client = Client::builder()
+            .cert_verifier(Verifier)
+            .connect_timeout(Timeout::from_secs(10))
+            .build()
+            .unwrap();
         // Creates a `Request`.
         let request = Request::builder()
             .url("https://www.example.com")

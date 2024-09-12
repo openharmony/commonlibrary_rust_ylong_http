@@ -16,28 +16,14 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::async_impl::interceptor::ConnDetail;
 #[cfg(feature = "http3")]
 use crate::async_impl::quic::QuicConn;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
-
-/// `ConnDetail` trait, which is used to obtain information about the current
-/// connection.
-pub trait ConnInfo {
-    /// Whether the current connection is a proxy.
-    fn is_proxy(&self) -> bool;
-
-    /// Gets connection information.
-    fn conn_detail(&self) -> ConnDetail;
-
-    /// Gets quic information
-    #[cfg(feature = "http3")]
-    fn quic_conn(&mut self) -> Option<QuicConn>;
-}
+use crate::util::{ConnData, ConnInfo};
 
 /// A connection wrapper containing io and io information.
 pub struct HttpStream<T> {
-    detail: ConnDetail,
+    conn_data: ConnData,
     stream: T,
     #[cfg(feature = "http3")]
     quic_conn: Option<QuicConn>,
@@ -81,11 +67,11 @@ where
 
 impl<T> ConnInfo for HttpStream<T> {
     fn is_proxy(&self) -> bool {
-        self.detail.proxy
+        self.conn_data.is_proxy()
     }
 
-    fn conn_detail(&self) -> ConnDetail {
-        self.detail.clone()
+    fn conn_data(&self) -> ConnData {
+        self.conn_data.clone()
     }
 
     #[cfg(feature = "http3")]
@@ -96,9 +82,9 @@ impl<T> ConnInfo for HttpStream<T> {
 
 impl<T> HttpStream<T> {
     /// HttpStream constructor.
-    pub fn new(io: T, detail: ConnDetail) -> HttpStream<T> {
+    pub(crate) fn new(io: T, conn_data: ConnData) -> HttpStream<T> {
         HttpStream {
-            detail,
+            conn_data,
             stream: io,
             #[cfg(feature = "http3")]
             quic_conn: None,
@@ -106,7 +92,12 @@ impl<T> HttpStream<T> {
     }
 
     #[cfg(feature = "http3")]
-    pub fn set_quic_conn(&mut self, conn: QuicConn) {
+    pub(crate) fn set_quic_conn(&mut self, conn: QuicConn) {
         self.quic_conn = Some(conn);
+    }
+
+    #[cfg(feature = "http3")]
+    pub(crate) fn set_conn_data(&mut self, conn_data: ConnData) {
+        self.conn_data = conn_data
     }
 }

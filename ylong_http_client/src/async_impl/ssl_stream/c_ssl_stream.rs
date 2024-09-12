@@ -47,6 +47,7 @@ impl<S> AsyncSslStream<S> {
         unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().0.get_mut().stream) }
     }
 
+    #[cfg(feature = "http2")]
     pub(crate) fn negotiated_alpn_protocol(&self) -> Option<&[u8]> {
         self.0.ssl().negotiated_alpn_protocol()
     }

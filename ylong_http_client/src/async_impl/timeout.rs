@@ -67,9 +67,9 @@ mod ut_timeout {
     use ylong_http::response::{Response, ResponsePart};
     use ylong_http::version::Version;
 
-    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::timeout::TimeoutFuture;
     use crate::async_impl::HttpBody;
+    use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
     use crate::HttpClientError;
 

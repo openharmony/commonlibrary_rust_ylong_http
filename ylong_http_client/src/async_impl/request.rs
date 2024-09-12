@@ -24,9 +24,10 @@ use ylong_http::body::MultiPartBase;
 use ylong_http::request::uri::PercentEncoder as PerEncoder;
 use ylong_http::request::{Request as Req, RequestBuilder as ReqBuilder};
 
-use crate::async_impl::interceptor::Interceptors;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf};
+use crate::util::interceptor::Interceptors;
+use crate::util::monitor::TimeGroup;
 use crate::util::request::RequestArc;
 
 /// A structure that represents an HTTP `Request`. It contains a request line,
@@ -46,6 +47,7 @@ use crate::util::request::RequestArc;
 /// ```
 pub struct Request {
     pub(crate) inner: Req<Body>,
+    pub(crate) time_group: TimeGroup,
 }
 
 impl Request {
@@ -67,6 +69,10 @@ impl Request {
     /// ```
     pub fn builder() -> RequestBuilder {
         RequestBuilder::new()
+    }
+
+    pub(crate) fn time_group_mut(&mut self) -> &mut TimeGroup {
+        &mut self.time_group
     }
 }
 
@@ -228,7 +234,10 @@ impl RequestBuilder {
         builder
             .0
             .body(body)
-            .map(|inner| Request { inner })
+            .map(|inner| Request {
+                inner,
+                time_group: TimeGroup::default(),
+            })
             .map_err(|e| HttpClientError::from_error(ErrorKind::Build, e))
     }
 }

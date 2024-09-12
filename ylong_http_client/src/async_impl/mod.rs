@@ -29,7 +29,6 @@ mod connector;
 mod dns;
 mod downloader;
 mod http_body;
-mod interceptor;
 mod request;
 mod response;
 mod timeout;
@@ -47,10 +46,9 @@ pub(crate) mod pool;
 mod quic;
 
 pub use client::ClientBuilder;
-pub use connector::{ConnInfo, Connector, HttpConnector};
+pub use connector::{Connector, HttpConnector};
 pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
 pub use http_body::HttpBody;
-pub use interceptor::{ConnDetail, ConnProtocol, Interceptor};
 #[cfg(feature = "http3")]
 pub use quic::QuicConn;
 pub use request::{Body, PercentEncoder, Request, RequestBuilder};

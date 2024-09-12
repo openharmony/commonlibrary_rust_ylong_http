@@ -12,10 +12,12 @@
 // limitations under the License.
 
 use std::cmp::min;
+use std::mem::take;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use ylong_http::error::HttpError;
 use ylong_http::h2;
@@ -59,8 +61,18 @@ where
         payload,
         data,
     };
+    message
+        .request
+        .ref_mut()
+        .time_group_mut()
+        .set_transfer_start(Instant::now());
     conn.send_frame_to_controller(stream)?;
     let frame = conn.receiver.recv().await?;
+    message
+        .request
+        .ref_mut()
+        .time_group_mut()
+        .set_transfer_end(Instant::now());
     frame_2_response(conn, frame, message)
 }
 
@@ -115,19 +127,18 @@ where
     };
 
     let text_io = TextIo::new(conn);
-    // TODO Can http2 have no content-length header field and rely only on the
-    // end_stream flag? flag has a Body
     let length = match BodyLengthParser::new(message.request.ref_mut().method(), &part).parse() {
         Ok(length) => length,
         Err(e) => {
             return Err(e);
         }
     };
+    let time_group = take(message.request.ref_mut().time_group_mut());
     let body = HttpBody::new(message.interceptor, length, Box::new(text_io), &[0u8; 0])?;
 
-    Ok(Response::new(
-        ylong_http::response::Response::from_raw_parts(part, body),
-    ))
+    let mut response = Response::new(ylong_http::response::Response::from_raw_parts(part, body));
+    response.set_time_group(time_group);
+    Ok(response)
 }
 
 pub(crate) fn build_headers_payload(
@@ -448,6 +459,7 @@ mod ut_http2 {
     #[cfg(feature = "ylong_base")]
     #[test]
     fn ut_http2_body_poll_read() {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
         use std::pin::Pin;
         use std::sync::atomic::AtomicBool;
         use std::sync::Arc;
@@ -458,11 +470,18 @@ mod ut_http2 {
 
         use crate::async_impl::conn::http2::TextIo;
         use crate::util::dispatcher::http2::Http2Conn;
+        use crate::{ConnDetail, ConnProtocol};
 
         let (resp_tx, resp_rx) = ylong_runtime::sync::mpsc::bounded_channel(20);
         let (req_tx, _req_rx) = crate::runtime::unbounded_channel();
         let shutdown = Arc::new(AtomicBool::new(false));
-        let mut conn: Http2Conn<()> = Http2Conn::new(20, shutdown, req_tx);
+        let detail = ConnDetail {
+            protocol: ConnProtocol::Tcp,
+            local: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 443),
+            addr: "localhost".to_string(),
+        };
+        let mut conn: Http2Conn<()> = Http2Conn::new(20, shutdown, req_tx, detail);
         conn.receiver.set_receiver(resp_rx);
         let mut text_io = TextIo::new(conn);
         let data_1 = Frame::new(

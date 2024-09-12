@@ -17,10 +17,9 @@ mod stream;
 
 use core::future::Future;
 use std::io::{Error, ErrorKind};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-/// Information of an IO.
-pub use stream::ConnInfo;
 use ylong_http::request::uri::Uri;
 #[cfg(feature = "http3")]
 use ylong_runtime::net::{ConnectedUdpSocket, UdpSocket};
@@ -28,6 +27,8 @@ use ylong_runtime::net::{ConnectedUdpSocket, UdpSocket};
 use crate::async_impl::dns::{DefaultDnsResolver, EyeBallConfig, HappyEyeballs, Resolver};
 use crate::runtime::{AsyncRead, AsyncWrite, TcpStream};
 use crate::util::config::{ConnectorConfig, HttpVersion};
+/// Information of an IO.
+use crate::util::ConnInfo;
 use crate::{HttpClientError, Timeout};
 
 /// `Connector` trait used by `async_impl::Client`. `Connector` provides
@@ -106,11 +107,10 @@ async fn tcp_stream(eyeballs: HappyEyeballs) -> Result<TcpStream, HttpClientErro
         })
 }
 
-async fn eyeballs_connect(
+async fn dns_query(
     resolver: Arc<dyn Resolver>,
     addr: &str,
-    timeout: Timeout,
-) -> Result<TcpStream, HttpClientError> {
+) -> Result<Vec<SocketAddr>, HttpClientError> {
     let addr_fut = resolver.resolve(addr);
     let socket_addr = addr_fut.await.map_err(|e| {
         HttpClientError::from_dns_error(
@@ -118,8 +118,13 @@ async fn eyeballs_connect(
             Error::new(ErrorKind::Interrupted, e),
         )
     })?;
+    Ok(socket_addr.collect::<Vec<_>>())
+}
 
-    let addrs = socket_addr.collect::<Vec<_>>();
+async fn eyeballs_connect(
+    addrs: Vec<SocketAddr>,
+    timeout: Timeout,
+) -> Result<TcpStream, HttpClientError> {
     let eyeball_config = EyeBallConfig::new(timeout.inner(), None);
     let happy_eyeballs = HappyEyeballs::new(addrs, eyeball_config);
     tcp_stream(happy_eyeballs).await
@@ -145,15 +150,17 @@ pub(crate) async fn udp_stream(
 mod no_tls {
     use core::future::Future;
     use core::pin::Pin;
+    use std::time::Instant;
 
     use ylong_http::request::uri::Uri;
 
     use super::{eyeballs_connect, Connector, HttpConnector};
+    use crate::async_impl::connector::dns_query;
     use crate::async_impl::connector::stream::HttpStream;
-    use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::runtime::TcpStream;
     use crate::util::config::HttpVersion;
-    use crate::HttpClientError;
+    use crate::util::interceptor::ConnProtocol;
+    use crate::{ConnData, ConnDetail, HttpClientError, TimeGroup};
 
     impl Connector for HttpConnector {
         type Stream = HttpStream<TcpStream>;
@@ -172,7 +179,13 @@ mod no_tls {
             let resolver = self.resolver.clone();
             let timeout = self.config.timeout.clone();
             Box::pin(async move {
-                let stream = eyeballs_connect(resolver, addr.as_str(), timeout).await?;
+                let mut time_group = TimeGroup::default();
+                time_group.set_dns_start(Instant::now());
+                let socket_addrs = dns_query(resolver, addr.as_str()).await?;
+                time_group.set_dns_end(Instant::now());
+                time_group.set_tcp_start(Instant::now());
+                let stream = eyeballs_connect(socket_addrs, timeout).await?;
+                time_group.set_tcp_end(Instant::now());
                 let local = stream
                     .local_addr()
                     .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))?;
@@ -181,13 +194,16 @@ mod no_tls {
                     .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))?;
                 let detail = ConnDetail {
                     protocol: ConnProtocol::Tcp,
-                    alpn: None,
                     local,
                     peer,
                     addr,
-                    proxy: is_proxy,
                 };
-                Ok(HttpStream::new(stream, detail))
+
+                let data = ConnData::builder()
+                    .time_group(time_group)
+                    .proxy(is_proxy)
+                    .build(detail);
+                Ok(HttpStream::new(stream, data))
             })
         }
     }
@@ -200,12 +216,13 @@ mod tls {
     use std::error;
     use std::fmt::{Debug, Display, Formatter};
     use std::io::{Error, ErrorKind, Write};
+    use std::time::Instant;
 
     use ylong_http::request::uri::{Scheme, Uri};
 
     use super::{eyeballs_connect, Connector, HttpConnector};
+    use crate::async_impl::connector::dns_query;
     use crate::async_impl::connector::stream::HttpStream;
-    use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
     use crate::async_impl::mix::MixStream;
     #[cfg(feature = "http3")]
     use crate::async_impl::quic::QuicConn;
@@ -214,7 +231,10 @@ mod tls {
     use crate::config::FchownConfig;
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
     use crate::util::config::HttpVersion;
-    use crate::{HttpClientError, TlsConfig};
+    #[cfg(feature = "http2")]
+    use crate::util::information::NegotiateInfo;
+    use crate::util::interceptor::ConnProtocol;
+    use crate::{ConnData, ConnDetail, HttpClientError, TimeGroup, TlsConfig};
 
     impl Connector for HttpConnector {
         type Stream = HttpStream<MixStream>;
@@ -243,8 +263,13 @@ mod tls {
             let timeout = self.config.timeout.clone();
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
-                    let stream = eyeballs_connect(resolver, addr.as_str(), timeout).await?;
-
+                    let mut time_group = TimeGroup::default();
+                    time_group.set_dns_start(Instant::now());
+                    let socket_addrs = dns_query(resolver, addr.as_str()).await?;
+                    time_group.set_dns_end(Instant::now());
+                    time_group.set_tcp_start(Instant::now());
+                    let stream = eyeballs_connect(socket_addrs, timeout).await?;
+                    time_group.set_tcp_end(Instant::now());
                     #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
                     if let Some(fchown) = fchown {
                         let _ = stream.fchown(fchown.uid, fchown.gid);
@@ -258,14 +283,16 @@ mod tls {
                     })?;
                     let detail = ConnDetail {
                         protocol: ConnProtocol::Tcp,
-                        alpn: None,
                         local,
                         peer,
                         addr,
-                        proxy: is_proxy,
                     };
+                    let data = ConnData::builder()
+                        .time_group(time_group)
+                        .proxy(is_proxy)
+                        .build(detail);
 
-                    Ok(HttpStream::new(MixStream::Http(stream), detail))
+                    Ok(HttpStream::new(MixStream::Http(stream), data))
                 }),
                 Scheme::HTTPS => {
                     let host = uri.host().unwrap().to_string();
@@ -274,6 +301,8 @@ mod tls {
                     #[cfg(feature = "http3")]
                     if _http_version == HttpVersion::Http3 {
                         return Box::pin(async move {
+                            let mut time_group = TimeGroup::default();
+                            time_group.set_dns_start(Instant::now());
                             let addr_fut = resolver.resolve(&addr);
                             let addrs = addr_fut.await.map_err(|e| {
                                 HttpClientError::from_dns_error(
@@ -281,7 +310,8 @@ mod tls {
                                     Error::new(ErrorKind::Interrupted, e),
                                 )
                             })?;
-
+                            time_group.set_dns_end(Instant::now());
+                            time_group.set_quic_start(Instant::now());
                             let mut last_e = None;
                             for addr_it in addrs {
                                 let udp_socket = match super::udp_stream(&addr_it).await {
@@ -298,21 +328,27 @@ mod tls {
                                     HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
                                 })?;
                                 let detail = ConnDetail {
-                                    protocol: ConnProtocol::Udp,
-                                    alpn: None,
+                                    protocol: ConnProtocol::Quic,
                                     local,
                                     peer,
                                     addr: addr.clone(),
-                                    proxy: false,
                                 };
+
+                                let mut data = ConnData::builder()
+                                    .time_group(time_group.clone())
+                                    .proxy(is_proxy)
+                                    .build(detail);
+
                                 let mut stream =
-                                    HttpStream::new(MixStream::Udp(udp_socket), detail);
+                                    HttpStream::new(MixStream::Udp(udp_socket), data.clone());
                                 let Ok(quic_conn) =
                                     QuicConn::connect(&mut stream, &config, &host).await
                                 else {
                                     continue;
                                 };
                                 stream.set_quic_conn(quic_conn);
+                                data.time_group_mut().set_quic_end(Instant::now());
+                                stream.set_conn_data(data);
                                 return Ok(stream);
                             }
 
@@ -323,7 +359,13 @@ mod tls {
                         });
                     }
                     Box::pin(async move {
-                        let stream = eyeballs_connect(resolver, addr.as_str(), timeout).await?;
+                        let mut time_group = TimeGroup::default();
+                        time_group.set_dns_start(Instant::now());
+                        let socket_addrs = dns_query(resolver, addr.as_str()).await?;
+                        time_group.set_dns_end(Instant::now());
+                        time_group.set_tcp_start(Instant::now());
+                        let stream = eyeballs_connect(socket_addrs, timeout).await?;
+                        time_group.set_tcp_end(Instant::now());
                         #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
                         {
                             https_connect(
@@ -331,9 +373,9 @@ mod tls {
                                 addr,
                                 stream,
                                 is_proxy,
-                                auth,
-                                (host, port),
+                                (auth, host, port),
                                 fchown,
+                                time_group,
                             )
                             .await
                         }
@@ -343,7 +385,15 @@ mod tls {
                             feature = "__tls"
                         )))]
                         {
-                            https_connect(config, addr, stream, is_proxy, auth, (host, port)).await
+                            https_connect(
+                                config,
+                                addr,
+                                stream,
+                                is_proxy,
+                                (auth, host, port),
+                                time_group,
+                            )
+                            .await
                         }
                     })
                 }
@@ -356,11 +406,11 @@ mod tls {
         addr: String,
         tcp_stream: TcpStream,
         is_proxy: bool,
-        auth: Option<String>,
-        (host, port): (String, u16),
+        (auth, host, port): (Option<String>, String, u16),
         #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))] fchown: Option<
             FchownConfig,
         >,
+        mut time_group: TimeGroup,
     ) -> Result<HttpStream<MixStream>, HttpClientError> {
         let mut tcp = tcp_stream;
         #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
@@ -390,24 +440,38 @@ mod tls {
                 )
             })?;
 
+        time_group.set_tls_start(Instant::now());
         Pin::new(&mut stream).connect().await.map_err(|e| {
             HttpClientError::from_tls_error(
                 crate::ErrorKind::Connect,
                 Error::new(ErrorKind::Other, e),
             )
         })?;
+        time_group.set_tls_end(Instant::now());
 
+        #[cfg(feature = "http2")]
         let alpn = stream.negotiated_alpn_protocol().map(Vec::from);
         let detail = ConnDetail {
             protocol: ConnProtocol::Tcp,
-            alpn,
             local,
             peer,
             addr,
-            proxy: is_proxy,
         };
 
-        Ok(HttpStream::new(MixStream::Https(stream), detail))
+        #[cfg(feature = "http2")]
+        let data = ConnData::builder()
+            .time_group(time_group)
+            .proxy(is_proxy)
+            .negotiate(NegotiateInfo::from_alpn(alpn))
+            .build(detail);
+
+        #[cfg(not(feature = "http2"))]
+        let data = ConnData::builder()
+            .time_group(time_group)
+            .proxy(is_proxy)
+            .build(detail);
+
+        Ok(HttpStream::new(MixStream::Https(stream), data))
     }
 
     async fn tunnel(

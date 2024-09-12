@@ -24,9 +24,9 @@ use ylong_http::body::{ChunkBodyDecoder, ChunkState};
 use ylong_http::headers::Headers;
 
 use super::conn::StreamData;
-use crate::async_impl::interceptor::Interceptors;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf, Sleep};
+use crate::util::interceptor::Interceptors;
 use crate::util::normalizer::BodyLength;
 
 const TRAILER_SIZE: usize = 1024;
@@ -564,8 +564,8 @@ mod ut_async_http_body {
 
     use ylong_http::body::async_impl;
 
-    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::HttpBody;
+    use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
     use crate::ErrorKind;
 

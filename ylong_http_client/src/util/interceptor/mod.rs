@@ -13,12 +13,10 @@
 
 //! Http network interceptor.
 
-use std::net::SocketAddr;
-
 use ylong_http::response::Response as HttpResp;
 
 use crate::async_impl::{HttpBody, Request, Response};
-use crate::HttpClientError;
+use crate::{ConnDetail, HttpClientError};
 
 pub(crate) type Interceptors = dyn Interceptor + Sync + Send + 'static;
 
@@ -29,54 +27,8 @@ pub enum ConnProtocol {
     Tcp,
     /// Udp Protocol.
     Udp,
-}
-
-/// Connection information.
-#[derive(Clone)]
-pub struct ConnDetail {
-    /// Transport layer protocol type.
-    pub(crate) protocol: ConnProtocol,
-    pub(crate) alpn: Option<Vec<u8>>,
-    /// local socket address.
-    pub(crate) local: SocketAddr,
-    /// peer socket address.
-    pub(crate) peer: SocketAddr,
-    /// peer domain information.
-    pub(crate) addr: String,
-    /// Whether to use proxy.
-    pub(crate) proxy: bool,
-}
-
-impl ConnDetail {
-    /// Gets the transport layer protocol for the connection.
-    pub fn protocol(&self) -> &ConnProtocol {
-        &self.protocol
-    }
-
-    /// Gets the local socket address of the connection.
-    pub fn local(&self) -> SocketAddr {
-        self.local
-    }
-
-    /// Gets the peer socket address of the connection.
-    pub fn peer(&self) -> SocketAddr {
-        self.peer
-    }
-
-    /// Gets the peer domain address of the connection.
-    pub fn addr(&self) -> &str {
-        &self.addr
-    }
-
-    /// Whether to use proxy.
-    pub fn proxy(&self) -> bool {
-        self.proxy
-    }
-
-    /// Whether to use tls.
-    pub fn alpn(&self) -> Option<&[u8]> {
-        self.alpn.as_deref()
-    }
+    /// Quic Protocol
+    Quic,
 }
 
 /// Network interceptor.
