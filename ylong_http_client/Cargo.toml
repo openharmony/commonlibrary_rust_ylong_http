@@ -9,6 +9,7 @@ keywords = ["ylong", "http", "client"]
 
 [dependencies]
 ylong_http = { path = "../ylong_http" }
+quiche = { version = "0.22.0", features = ["ffi"], optional = true }
 libc = { version = "0.2.134", optional = true }
 tokio = { version = "1.20.1", features = ["io-util", "net", "rt", "rt-multi-thread", "macros", "sync", "time"], optional = true }
 ylong_runtime = { git = "https://gitee.com/openharmony/commonlibrary_rust_ylong_runtime.git", features = ["net", "sync", "fs", "macros", "time"], optional = true }
@@ -32,7 +33,7 @@ sync = []                               # Uses sync interfaces.
 async = []                              # Uses async interfaces.
 http1_1 = ["ylong_http/http1_1"]        # Uses HTTP/1.1.
 http2 = ["ylong_http/http2", "ylong_http/huffman"]            # Uses HTTP/2.
-http3 = []                              # Uses HTTP/3.
+http3 = ["ylong_http/http3", "quiche"]                              # Uses HTTP/3.
 
 tokio_base = ["tokio", "ylong_http/tokio_base"]                  # Uses tokio runtime.
 ylong_base = ["ylong_runtime", "ylong_http/ylong_base"]          # Uses ylong runtime.
@@ -42,6 +43,7 @@ __tls = []                              # Not open to user, only mark to use tls
 __c_openssl = ["__tls", "libc"]         # Not open to user, only mark to use tls by C-openssl for developer.
 c_openssl_1_1 = ["__c_openssl"]         # Uses TLS by FFI of C-openssl 1.1.
 c_openssl_3_0 = ["__c_openssl"]         # Uses TLS by FFI of C-openssl 3.0.
+c_boringssl = ["__tls", "libc"]
 
 [[example]]
 name = "async_certs_adapter"

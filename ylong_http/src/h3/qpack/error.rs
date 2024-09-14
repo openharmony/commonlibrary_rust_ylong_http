@@ -10,8 +10,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub enum H3errorQpack {
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum QpackError {
     ConnectionError(ErrorCode),
+    InternalError(NotClassified),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -21,4 +24,12 @@ pub enum ErrorCode {
     EncoderStreamError = 0x0201,
 
     DecoderStreamError = 0x0202,
+
+    H3SettingsError = 0x0109,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum NotClassified {
+    DynamicTableInsufficient,
+    StreamBlocked,
 }

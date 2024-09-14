@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![rustfmt::skip]
+use std::cmp::Ordering;
+use std::marker::PhantomData;
 
 use crate::h3::qpack::error::ErrorCode::DecompressionFailed;
-use crate::h3::qpack::error::{ErrorCode, H3errorQpack};
+use crate::h3::qpack::error::{ErrorCode, QpackError};
 use crate::h3::qpack::format::decoder::DecResult::Error;
 use crate::h3::qpack::integer::IntegerDecoder;
 use crate::h3::qpack::{
@@ -22,8 +23,6 @@ use crate::h3::qpack::{
     Representation, RequireInsertCount,
 };
 use crate::huffman::HuffmanDecoder;
-use std::cmp::Ordering;
-use std::marker::PhantomData;
 
 pub(crate) struct EncInstDecoder;
 
@@ -34,17 +33,11 @@ impl EncInstDecoder {
 
     /// Decodes `buf`. Every time users call `decode`, it will try to
     /// decode a `EncoderInstruction`.
-    /// # Example
-//     ```no_run
-//     use crate::h3::qpack::format::decoder::EncInstDecoder;
-//     let mut decoder = EncInstDecoder::new();
-//
-//     ```
     pub(crate) fn decode(
         &mut self,
         buf: &[u8],
         inst_state: &mut Option<InstDecodeState>,
-    ) -> Result<Option<(usize, EncoderInstruction)>, H3errorQpack> {
+    ) -> Result<Option<(usize, EncoderInstruction)>, QpackError> {
         if buf.is_empty() {
             return Ok(None);
         }
@@ -58,7 +51,6 @@ impl EncInstDecoder {
             // `Representation`, `Ok(None)` will be returned. Users need to call
             // `save` to save the current state to a `ReprDecStateHolder`.
             DecResult::NeedMore(state) => {
-                println!("need more");
                 *inst_state = Some(state);
                 Ok(None)
             }
@@ -83,7 +75,7 @@ impl ReprDecoder {
         &mut self,
         buf: &[u8],
         repr_state: &mut Option<ReprDecodeState>,
-    ) -> Result<Option<(usize, Representation)>, H3errorQpack> {
+    ) -> Result<Option<(usize, Representation)>, QpackError> {
         // If buf is empty, leave the state unchanged.
         let buf_len = buf.len();
         if buf.is_empty() {
@@ -98,7 +90,6 @@ impl ReprDecoder {
             // `Representation`, `Ok(None)` will be returned. Users need to call
             // `save` to save the current state to a `ReprDecStateHolder`.
             DecResult::NeedMore(state) => {
-                println!("need more");
                 *repr_state = Some(state);
                 Ok(None)
             }
@@ -109,7 +100,6 @@ impl ReprDecoder {
                 *repr_state = Some(ReprDecodeState::ReprIndex(ReprIndex::new()));
                 Ok(Some((buf_index, repr)))
             }
-
             DecResult::Error(error) => Err(error),
         }
     }
@@ -238,17 +228,17 @@ impl EncInstIndex {
     }
     fn decode(self, buf: &[u8]) -> DecResult<(usize, EncoderInstruction), InstDecodeState> {
         match self.inner.decode(buf) {
-            DecResult::Decoded((buf_index, EncoderInstPrefixBit::SETCAP, _, index)) => {
+            DecResult::Decoded((buf_index, EncoderInstPrefixBit::SET_CAP, _, index)) => {
                 DecResult::Decoded((buf_index, EncoderInstruction::SetCap { capacity: index }))
             }
             DecResult::Decoded((
                 buf_index,
-                EncoderInstPrefixBit::INSERTWITHINDEX,
+                EncoderInstPrefixBit::INSERT_WITH_INDEX,
                 mid_bit,
                 index,
             )) => {
                 let res = InstValueString::new(
-                    EncoderInstPrefixBit::INSERTWITHINDEX,
+                    EncoderInstPrefixBit::INSERT_WITH_INDEX,
                     mid_bit,
                     Name::Index(index),
                 )
@@ -257,12 +247,12 @@ impl EncInstIndex {
             }
             DecResult::Decoded((
                 buf_index,
-                EncoderInstPrefixBit::INSERTWITHLITERAL,
+                EncoderInstPrefixBit::INSERT_WITH_LITERAL,
                 mid_bit,
                 namelen,
             )) => {
                 let res = InstNameAndValue::new(
-                    EncoderInstPrefixBit::INSERTWITHLITERAL,
+                    EncoderInstPrefixBit::INSERT_WITH_LITERAL,
                     mid_bit,
                     namelen,
                 )
@@ -276,9 +266,7 @@ impl EncInstIndex {
                 DecResult::NeedMore(EncInstIndex::from_inner(inner).into())
             }
             DecResult::Error(e) => e.into(),
-            _ => DecResult::Error(H3errorQpack::ConnectionError(
-                ErrorCode::DecompressionFailed,
-            )),
+            _ => DecResult::Error(QpackError::ConnectionError(ErrorCode::DecompressionFailed)),
         }
     }
 }
@@ -338,9 +326,7 @@ impl ReprIndex {
             }
             DecResult::NeedMore(inner) => DecResult::NeedMore(ReprIndex::from_inner(inner).into()),
             DecResult::Error(e) => e.into(),
-            _ => DecResult::Error(H3errorQpack::ConnectionError(
-                ErrorCode::DecompressionFailed,
-            )),
+            _ => DecResult::Error(QpackError::ConnectionError(ErrorCode::DecompressionFailed)),
         }
     }
 }
@@ -357,7 +343,7 @@ impl FSPTwoIntergers {
             return DecResult::NeedMore(self.into());
         }
         let buf_len = buf.len();
-        let mask = PrefixMask::REQUIREINSERTCOUNT;
+        let mask = PrefixMask::REQUIRE_INSERT_COUNT;
         let ric = match IntegerDecoder::first_byte(buf[buf_index - 1], mask.0) {
             Ok(ric) => ric,
             Err(mut int) => {
@@ -388,7 +374,7 @@ impl FSPTwoIntergers {
         }
         let byte = buf[buf_index - 1];
         let signal = (byte & 0x80) != 0;
-        let mask = PrefixMask::DELTABASE;
+        let mask = PrefixMask::DELTA_BASE;
         let delta_base = match IntegerDecoder::first_byte(byte, mask.0) {
             Ok(delta_base) => delta_base,
             Err(mut int) => {
@@ -445,7 +431,8 @@ macro_rules! decode_first_byte {
                 match IntegerDecoder::first_byte(buf[buf_index - 1], mask.0) {
                     // Return the PrefixBit and index part value.
                     Ok(idx) => DecResult::Decoded((buf_index, prefix, mid_bit, idx)),
-                    // Index part value is longer than index(i.e. use all 1 to represent), so it needs more bytes to decode.
+                    // Index part value is longer than index(i.e. use all 1 to represent), so it
+                    // needs more bytes to decode.
                     Err(int) => {
                         let res =
                             <$trailing_bytes>::new(prefix, mid_bit, int).decode(&buf[buf_index..]);
@@ -608,7 +595,11 @@ macro_rules! name_and_value_decoder {
 
         impl $struct_name {
             fn new(prefix: $prefix_type, mid_bit: MidBit, namelen: usize) -> Self {
-                Self::from_inner(prefix, mid_bit, AsciiStringBytes::new(namelen).into())
+                if mid_bit.h.is_some_and(|h| h) {
+                    Self::from_inner(prefix, mid_bit, HuffmanStringBytes::new(namelen).into())
+                } else {
+                    Self::from_inner(prefix, mid_bit, AsciiStringBytes::new(namelen).into())
+                }
             }
 
             fn from_inner(prefix: $prefix_type, mid_bit: MidBit, inner: $inner_type) -> Self {
@@ -703,17 +694,17 @@ impl HuffmanStringBytes {
             Ordering::Greater | Ordering::Equal => {
                 let pos = self.length - self.read;
                 if self.huffman.decode(&buf[..pos]).is_err() {
-                    return H3errorQpack::ConnectionError(DecompressionFailed).into();
+                    return QpackError::ConnectionError(DecompressionFailed).into();
                 }
                 // let (_, mut remain_buf) = buf.split_at_mut(pos);
                 match self.huffman.finish() {
                     Ok(vec) => DecResult::Decoded((pos, vec)),
-                    Err(_) => H3errorQpack::ConnectionError(DecompressionFailed).into(),
+                    Err(_) => QpackError::ConnectionError(DecompressionFailed).into(),
                 }
             }
             Ordering::Less => {
                 if self.huffman.decode(buf).is_err() {
-                    return H3errorQpack::ConnectionError(DecompressionFailed).into();
+                    return QpackError::ConnectionError(DecompressionFailed).into();
                 }
                 self.read += buf.len();
                 // let (_, mut remain_buf) = buf.split_at_mut(buf.len());
@@ -757,7 +748,7 @@ impl InstValueString {
 
     fn decode(self, buf: &[u8]) -> DecResult<(usize, EncoderInstruction), InstDecodeState> {
         match (self.inst, self.inner.decode(buf)) {
-            (EncoderInstPrefixBit::INSERTWITHINDEX, DecResult::Decoded((buf_index, value))) => {
+            (EncoderInstPrefixBit::INSERT_WITH_INDEX, DecResult::Decoded((buf_index, value))) => {
                 DecResult::Decoded((
                     buf_index,
                     EncoderInstruction::InsertWithIndex {
@@ -767,7 +758,7 @@ impl InstValueString {
                     },
                 ))
             }
-            (EncoderInstPrefixBit::INSERTWITHLITERAL, DecResult::Decoded((buf_index, value))) => {
+            (EncoderInstPrefixBit::INSERT_WITH_LITERAL, DecResult::Decoded((buf_index, value))) => {
                 DecResult::Decoded((
                     buf_index,
                     EncoderInstruction::InsertWithLiteral {
@@ -777,7 +768,7 @@ impl InstValueString {
                     },
                 ))
             }
-            (_, _) => Error(H3errorQpack::ConnectionError(DecompressionFailed)),
+            (_, _) => Error(QpackError::ConnectionError(DecompressionFailed)),
         }
     }
 }
@@ -835,7 +826,7 @@ impl ReprValueString {
                     },
                 ))
             }
-            (_, _) => Error(H3errorQpack::ConnectionError(DecompressionFailed)),
+            (_, _) => Error(QpackError::ConnectionError(DecompressionFailed)),
         }
     }
 }
@@ -851,11 +842,11 @@ pub(crate) enum DecResult<D, S> {
     NeedMore(S),
 
     /// Errors that may occur when decoding.
-    Error(H3errorQpack),
+    Error(QpackError),
 }
 
-impl<D, S> From<H3errorQpack> for DecResult<D, S> {
-    fn from(e: H3errorQpack) -> Self {
+impl<D, S> From<QpackError> for DecResult<D, S> {
+    fn from(e: QpackError) -> Self {
         DecResult::Error(e)
     }
 }

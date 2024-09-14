@@ -11,14 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![rustfmt::skip]
-
-use crate::h3::qpack::table::Field;
 use crate::h3::pseudo::PseudoHeaders;
+use crate::h3::qpack::table::NameField;
 use crate::headers::Headers;
 
-/// HTTP2 HEADERS frame payload implementation.
-#[derive(PartialEq, Eq, Clone)]
+/// HTTP3 HEADERS frame payload implementation.
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Parts {
     pub(crate) pseudo: PseudoHeaders,
     pub(crate) map: Headers,
@@ -43,26 +41,30 @@ impl Parts {
         self.map = headers;
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    /// Whether the Headers part is empty.
+    pub fn is_empty(&self) -> bool {
         self.pseudo.is_empty() && self.map.is_empty()
     }
 
-    pub(crate) fn update(&mut self, headers: Field, value: String) {
+    /// Updates a field in the Headers part.
+    pub fn update(&mut self, headers: NameField, value: String) {
         match headers {
-            Field::Authority => self.pseudo.set_authority(Some(value)),
-            Field::Method => self.pseudo.set_method(Some(value)),
-            Field::Path => self.pseudo.set_path(Some(value)),
-            Field::Scheme => self.pseudo.set_scheme(Some(value)),
-            Field::Status => self.pseudo.set_status(Some(value)),
-            Field::Other(header) => self.map.append(header.as_str(), value.as_str()).unwrap(),
+            NameField::Authority => self.pseudo.set_authority(Some(value)),
+            NameField::Method => self.pseudo.set_method(Some(value)),
+            NameField::Path => self.pseudo.set_path(Some(value)),
+            NameField::Scheme => self.pseudo.set_scheme(Some(value)),
+            NameField::Status => self.pseudo.set_status(Some(value)),
+            NameField::Other(header) => self.map.append(header.as_str(), value.as_str()).unwrap(),
         }
     }
 
-    pub(crate) fn parts(&self) -> (&PseudoHeaders, &Headers) {
+    /// Gets Headers part.
+    pub fn parts(&self) -> (&PseudoHeaders, &Headers) {
         (&self.pseudo, &self.map)
     }
 
-    pub(crate) fn into_parts(self) -> (PseudoHeaders, Headers) {
+    /// Takes ownership of parts and separate Headers and pseudo.
+    pub fn into_parts(self) -> (PseudoHeaders, Headers) {
         (self.pseudo, self.map)
     }
 }

@@ -11,19 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![rustfmt::skip]
-
 pub mod decoder;
 pub mod encoder;
 pub(crate) mod error;
 pub mod format;
 mod integer;
 pub mod table;
+pub(crate) use decoder::{FieldDecodeState, FiledLines, QpackDecoder};
+pub(crate) use encoder::{DecoderInst, QpackEncoder};
+
 use crate::h3::qpack::format::decoder::Name;
-pub(crate) use decoder::FiledLines;
-pub(crate) use decoder::QpackDecoder;
-pub(crate) use encoder::DecoderInst;
-pub(crate) use encoder::QpackEncoder;
 
 pub(crate) struct RequireInsertCount(usize);
 
@@ -40,15 +37,15 @@ pub(crate) struct ReprPrefixBit(u8);
 
 /// # Prefix bit:
 /// ## Encoder Instructions:
-/// SETCAP: 0x20
-/// INSERTWITHINDEX: 0x80
-/// INSERTWITHLITERAL: 0x40
+/// SET_CAP: 0x20
+/// INSERT_WITH_INDEX: 0x80
+/// INSERT_WITH_LITERAL: 0x40
 /// DUPLICATE: 0x00
 ///
 /// ## Decoder Instructions:
 /// ACK: 0x80
-/// STREAMCANCEL: 0x40
-/// INSERTCOUNTINCREMENT: 0x00
+/// STREAM_CANCEL: 0x40
+/// INSERT_COUNT_INCREMENT: 0x00
 ///
 /// ## Representation:
 /// INDEXED: 0x80
@@ -59,22 +56,24 @@ pub(crate) struct ReprPrefixBit(u8);
 
 impl DecoderInstPrefixBit {
     pub(crate) const ACK: Self = Self(0x80);
-    pub(crate) const STREAMCANCEL: Self = Self(0x40);
-    pub(crate) const INSERTCOUNTINCREMENT: Self = Self(0x00);
+    pub(crate) const STREAM_CANCEL: Self = Self(0x40);
+    pub(crate) const INSERT_COUNT_INCREMENT: Self = Self(0x00);
 
     pub(crate) fn from_u8(byte: u8) -> Self {
         match byte {
-            x if x >= 0x80 => Self::ACK,
-            x if x >= 0x40 => Self::STREAMCANCEL,
-            _ => Self::INSERTCOUNTINCREMENT,
+            x if x & 0x80 == 0x80 => Self::ACK,
+            x if x & 0xC0 == 0x40 => Self::STREAM_CANCEL,
+            x if x & 0xC0 == 0x0 => Self::INSERT_COUNT_INCREMENT,
+            _ => unreachable!(),
         }
     }
 
     pub(crate) fn prefix_index_mask(&self) -> PrefixMask {
         match self.0 {
             0x80 => PrefixMask::ACK,
-            0x40 => PrefixMask::STREAMCANCEL,
-            _ => PrefixMask::INSERTCOUNTINCREMENT,
+            0x40 => PrefixMask::STREAM_CANCEL,
+            0x0 => PrefixMask::INSERT_COUNT_INCREMENT,
+            _ => unreachable!(),
         }
     }
 
@@ -88,25 +87,25 @@ impl DecoderInstPrefixBit {
 }
 
 impl EncoderInstPrefixBit {
-    pub(crate) const SETCAP: Self = Self(0x20);
-    pub(crate) const INSERTWITHINDEX: Self = Self(0x80);
-    pub(crate) const INSERTWITHLITERAL: Self = Self(0x40);
+    pub(crate) const SET_CAP: Self = Self(0x20);
+    pub(crate) const INSERT_WITH_INDEX: Self = Self(0x80);
+    pub(crate) const INSERT_WITH_LITERAL: Self = Self(0x40);
     pub(crate) const DUPLICATE: Self = Self(0x00);
 
     pub(crate) fn from_u8(byte: u8) -> Self {
         match byte {
-            x if x >= 0x80 => Self::INSERTWITHINDEX,
-            x if x >= 0x40 => Self::INSERTWITHLITERAL,
-            x if x >= 0x20 => Self::SETCAP,
+            x if x >= 0x80 => Self::INSERT_WITH_INDEX,
+            x if x >= 0x40 => Self::INSERT_WITH_LITERAL,
+            x if x >= 0x20 => Self::SET_CAP,
             _ => Self::DUPLICATE,
         }
     }
 
     pub(crate) fn prefix_index_mask(&self) -> PrefixMask {
         match self.0 {
-            0x80 => PrefixMask::INSERTWITHINDEX,
-            0x40 => PrefixMask::INSERTWITHLITERAL,
-            0x20 => PrefixMask::SETCAP,
+            0x80 => PrefixMask::INSERT_WITH_INDEX,
+            0x40 => PrefixMask::INSERT_WITH_LITERAL,
+            0x20 => PrefixMask::SET_CAP,
             _ => PrefixMask::DUPLICATE,
         }
     }
@@ -138,6 +137,7 @@ impl EncoderInstPrefixBit {
 }
 
 impl ReprPrefixBit {
+    // 此处的值为前缀1的位置，并没有实际意义
     pub(crate) const INDEXED: Self = Self(0x80);
     pub(crate) const INDEXEDWITHPOSTINDEX: Self = Self(0x10);
     pub(crate) const LITERALWITHINDEXING: Self = Self(0x40);
@@ -161,15 +161,16 @@ impl ReprPrefixBit {
     pub(crate) fn prefix_index_mask(&self) -> PrefixMask {
         match self.0 {
             0x80 => PrefixMask::INDEXED,
-            0x40 => PrefixMask::INDEXINGWITHNAME,
-            0x20 => PrefixMask::INDEXINGWITHLITERAL,
-            0x10 => PrefixMask::INDEXEDWITHPOSTNAME,
-            _ => PrefixMask::INDEXINGWITHPOSTNAME,
+            0x40 => PrefixMask::INDEXING_WITH_NAME,
+            0x20 => PrefixMask::INDEXING_WITH_LITERAL,
+            0x10 => PrefixMask::INDEXED_WITH_POST_NAME,
+            _ => PrefixMask::INDEXING_WITH_LITERAL,
         }
     }
 
-    /// Unlike Hpack, QPACK has some special value for the first byte of an integer.
-    /// Like T indicating whether the reference is into the static or dynamic table.
+    /// Unlike Hpack, QPACK has some special value for the first byte of an
+    /// integer. Like T indicating whether the reference is into the static
+    /// or dynamic table.
     pub(crate) fn prefix_midbit_value(&self, byte: u8) -> MidBit {
         match self.0 {
             0x80 => MidBit {
@@ -227,17 +228,18 @@ pub(crate) enum DecoderInstruction {
 }
 
 pub(crate) enum Representation {
-    /// An indexed field line format identifies an entry in the static table or an entry in
-    /// the dynamic table with an absolute index less than the value of the Base.
-    /// 0   1   2   3   4   5   6   7
+    /// An indexed field line format identifies an entry in the static table or
+    /// an entry in the dynamic table with an absolute index less than the
+    /// value of the Base. 0   1   2   3   4   5   6   7
     /// +---+---+---+---+---+---+---+---+
     /// | 1 | T |      Index (6+)       |
     /// +---+---+-----------------------+
-    /// This format starts with the '1' 1-bit pattern, followed by the 'T' bit, indicating
-    /// whether the reference is into the static or dynamic table. The 6-bit prefix integer
-    /// (Section 4.1.1) that follows is used to locate the table entry for the field line. When T=1,
-    /// the number represents the static table index; when T=0, the number is the relative index of
-    /// the entry in the dynamic table.
+    /// This format starts with the '1' 1-bit pattern, followed by the 'T' bit,
+    /// indicating whether the reference is into the static or dynamic
+    /// table. The 6-bit prefix integer (Section 4.1.1) that follows is used
+    /// to locate the table entry for the field line. When T=1, the number
+    /// represents the static table index; when T=0, the number is the relative
+    /// index of the entry in the dynamic table.
     FieldSectionPrefix {
         require_insert_count: RequireInsertCount,
         signal: bool,
@@ -268,7 +270,7 @@ pub(crate) enum Representation {
     },
 }
 
-//impl debug for Representation
+// impl debug for Representation
 
 pub(crate) struct MidBit {
     //'N', indicates whether an intermediary is permitted to add this field line to the dynamic
@@ -283,20 +285,18 @@ pub(crate) struct MidBit {
 pub(crate) struct PrefixMask(u8);
 
 impl PrefixMask {
-    pub(crate) const REQUIREINSERTCOUNT: Self = Self(0xff);
-    pub(crate) const DELTABASE: Self = Self(0x7f);
+    pub(crate) const REQUIRE_INSERT_COUNT: Self = Self(0xff);
+    pub(crate) const DELTA_BASE: Self = Self(0x7f);
     pub(crate) const INDEXED: Self = Self(0x3f);
-    pub(crate) const SETCAP: Self = Self(0x1f);
-    pub(crate) const INSERTWITHINDEX: Self = Self(0x3f);
-    pub(crate) const INSERTWITHLITERAL: Self = Self(0x1f);
+    pub(crate) const SET_CAP: Self = Self(0x1f);
+    pub(crate) const INSERT_WITH_INDEX: Self = Self(0x3f);
+    pub(crate) const INSERT_WITH_LITERAL: Self = Self(0x1f);
     pub(crate) const DUPLICATE: Self = Self(0x1f);
-
     pub(crate) const ACK: Self = Self(0x7f);
-    pub(crate) const STREAMCANCEL: Self = Self(0x3f);
-    pub(crate) const INSERTCOUNTINCREMENT: Self = Self(0x3f);
-
-    pub(crate) const INDEXINGWITHNAME: Self = Self(0x0f);
-    pub(crate) const INDEXINGWITHPOSTNAME: Self = Self(0x07);
-    pub(crate) const INDEXINGWITHLITERAL: Self = Self(0x07);
-    pub(crate) const INDEXEDWITHPOSTNAME: Self = Self(0x0f);
+    pub(crate) const STREAM_CANCEL: Self = Self(0x3f);
+    pub(crate) const INSERT_COUNT_INCREMENT: Self = Self(0x3f);
+    pub(crate) const INDEXING_WITH_NAME: Self = Self(0x0f);
+    pub(crate) const INDEXING_WITH_POST_NAME: Self = Self(0x07);
+    pub(crate) const INDEXING_WITH_LITERAL: Self = Self(0x07);
+    pub(crate) const INDEXED_WITH_POST_NAME: Self = Self(0x0f);
 }

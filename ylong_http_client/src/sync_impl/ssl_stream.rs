@@ -13,7 +13,7 @@
 
 use std::io::{Read, Write};
 
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 use crate::util::c_openssl::ssl::SslStream;
 
 /// A stream which may be wrapped with TLS.

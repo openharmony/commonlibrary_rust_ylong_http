@@ -19,14 +19,14 @@ use std::error::Error;
 use std::ffi::CString;
 use std::fmt;
 
-#[cfg(feature = "c_openssl_1_1")]
+#[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
 use libc::c_char;
 use libc::{c_int, c_ulong};
 
 use super::ssl_init;
 #[cfg(feature = "c_openssl_3_0")]
 use crate::util::c_openssl::ffi::err::ERR_get_error_all;
-#[cfg(feature = "c_openssl_1_1")]
+#[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
 use crate::util::c_openssl::ffi::err::{ERR_func_error_string, ERR_get_error_line_data};
 use crate::util::c_openssl::ffi::err::{ERR_lib_error_string, ERR_reason_error_string};
 
@@ -37,7 +37,7 @@ const ERR_TXT_STRING: c_int = 0x02;
 #[derive(Debug)]
 pub(crate) struct StackError {
     code: c_ulong,
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     file: *const c_char,
     #[cfg(feature = "c_openssl_3_0")]
     file: CString,
@@ -51,7 +51,7 @@ impl Clone for StackError {
     fn clone(&self) -> Self {
         Self {
             code: self.code,
-            #[cfg(feature = "c_openssl_1_1")]
+            #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
             file: self.file,
             #[cfg(feature = "c_openssl_3_0")]
             file: self.file.clone(),
@@ -76,7 +76,7 @@ impl StackError {
             let mut data = ptr::null();
             let mut flags = 0;
 
-            #[cfg(feature = "c_openssl_1_1")]
+            #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
             match ERR_get_error_line_data(&mut file, &mut line, &mut data, &mut flags) {
                 0 => None,
                 code => {
@@ -155,7 +155,7 @@ impl fmt::Display for StackError {
             }
         }
 
-        #[cfg(feature = "c_openssl_1_1")]
+        #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
         {
             let func_error = unsafe { ERR_func_error_string(self.code) };
             if !func_error.is_null() {
@@ -241,7 +241,7 @@ const fn error_system_error(code: c_ulong) -> bool {
 }
 
 pub(crate) const fn error_get_lib(code: c_ulong) -> c_int {
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     return ((code >> 24) & 0x0FF) as c_int;
 
     #[cfg(feature = "c_openssl_3_0")]
@@ -251,7 +251,7 @@ pub(crate) const fn error_get_lib(code: c_ulong) -> c_int {
 
 #[allow(unused_variables)]
 const fn error_get_func(code: c_ulong) -> c_int {
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     return ((code >> 12) & 0xFFF) as c_int;
 
     #[cfg(feature = "c_openssl_3_0")]
@@ -259,7 +259,7 @@ const fn error_get_func(code: c_ulong) -> c_int {
 }
 
 pub(crate) const fn error_get_reason(code: c_ulong) -> c_int {
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     return (code & 0xFFF) as c_int;
 
     #[cfg(feature = "c_openssl_3_0")]

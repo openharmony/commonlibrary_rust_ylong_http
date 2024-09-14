@@ -12,6 +12,8 @@
 // limitations under the License.
 
 //! HTTP configure module.
+#[cfg(feature = "http3")]
+use crate::ErrorKind;
 
 /// Options and flags which can be used to configure `HTTP` related logic.
 #[derive(Clone)]
@@ -20,6 +22,9 @@ pub(crate) struct HttpConfig {
 
     #[cfg(feature = "http2")]
     pub(crate) http2_config: http2::H2Config,
+
+    #[cfg(feature = "http3")]
+    pub(crate) http3_config: http3::H3Config,
 }
 
 impl HttpConfig {
@@ -30,6 +35,9 @@ impl HttpConfig {
 
             #[cfg(feature = "http2")]
             http2_config: http2::H2Config::new(),
+
+            #[cfg(feature = "http3")]
+            http3_config: http3::H3Config::new(),
         }
     }
 }
@@ -42,7 +50,7 @@ impl Default for HttpConfig {
 
 /// `HTTP` version to use.
 #[derive(PartialEq, Eq, Clone)]
-pub(crate) enum HttpVersion {
+pub enum HttpVersion {
     /// Enforces `HTTP/1.1` or `HTTP/1.0` requests.
     Http1,
 
@@ -50,8 +58,29 @@ pub(crate) enum HttpVersion {
     /// Enforce `HTTP/2.0` requests without `HTTP/1.1` Upgrade or ALPN.
     Http2,
 
+    #[cfg(feature = "http3")]
+    /// Enforces `HTTP/3` requests.
+    Http3,
+
     /// Negotiate the protocol version through the ALPN.
     Negotiate,
+}
+
+#[cfg(feature = "http3")]
+impl TryFrom<&[u8]> for HttpVersion {
+    type Error = ErrorKind;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value == b"h1" {
+            Ok(HttpVersion::Http1)
+        } else if value == b"h2" {
+            Ok(HttpVersion::Http2)
+        } else if value == b"h3" {
+            Ok(HttpVersion::Http3)
+        } else {
+            Err(ErrorKind::Other)
+        }
+    }
 }
 
 #[cfg(feature = "http2")]
@@ -163,6 +192,91 @@ pub(crate) mod http2 {
                 enable_push: false,
                 allowed_cache_frame_size: 5,
                 use_huffman: true,
+            }
+        }
+    }
+}
+
+#[cfg(feature = "http3")]
+pub(crate) mod http3 {
+    const DEFAULT_MAX_FIELD_SECTION_SIZE: u64 = 16 * 1024;
+    const DEFAULT_QPACK_MAX_TABLE_CAPACITY: u64 = 16 * 1024;
+    const DEFAULT_QPACK_BLOCKED_STREAMS: u64 = 10;
+
+    // todo: which settings should be pub to user
+    #[derive(Clone)]
+    pub(crate) struct H3Config {
+        max_field_section_size: u64,
+        qpack_max_table_capacity: u64,
+        qpack_blocked_streams: u64,
+        connect_protocol_enabled: Option<u64>,
+        additional_settings: Option<Vec<(u64, u64)>>,
+    }
+
+    impl H3Config {
+        /// `H3Config` constructor.
+
+        pub(crate) fn new() -> Self {
+            Self::default()
+        }
+
+        pub(crate) fn set_max_field_section_size(&mut self, size: u64) {
+            self.max_field_section_size = size;
+        }
+
+        pub(crate) fn set_qpack_max_table_capacity(&mut self, size: u64) {
+            self.qpack_max_table_capacity = size;
+        }
+
+        pub(crate) fn set_qpack_blocked_streams(&mut self, size: u64) {
+            self.qpack_blocked_streams = size;
+        }
+
+        #[allow(unused)]
+        fn set_connect_protocol_enabled(&mut self, size: u64) {
+            self.connect_protocol_enabled = Some(size);
+        }
+
+        #[allow(unused)]
+        fn insert_additional_settings(&mut self, key: u64, value: u64) {
+            if let Some(vec) = &mut self.additional_settings {
+                vec.push((key, value));
+            } else {
+                self.additional_settings = Some(vec![(key, value)]);
+            }
+        }
+
+        pub(crate) fn max_field_section_size(&self) -> u64 {
+            self.max_field_section_size
+        }
+
+        pub(crate) fn qpack_max_table_capacity(&self) -> u64 {
+            self.qpack_max_table_capacity
+        }
+
+        pub(crate) fn qpack_blocked_streams(&self) -> u64 {
+            self.qpack_blocked_streams
+        }
+
+        #[allow(unused)]
+        fn connect_protocol_enabled(&mut self) -> Option<u64> {
+            self.connect_protocol_enabled
+        }
+
+        #[allow(unused)]
+        fn additional_settings(&mut self) -> Option<Vec<(u64, u64)>> {
+            self.additional_settings.clone()
+        }
+    }
+
+    impl Default for H3Config {
+        fn default() -> Self {
+            Self {
+                max_field_section_size: DEFAULT_MAX_FIELD_SECTION_SIZE,
+                qpack_max_table_capacity: DEFAULT_QPACK_MAX_TABLE_CAPACITY,
+                qpack_blocked_streams: DEFAULT_QPACK_BLOCKED_STREAMS,
+                connect_protocol_enabled: None,
+                additional_settings: None,
             }
         }
     }

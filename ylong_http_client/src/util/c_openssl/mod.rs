@@ -18,10 +18,13 @@
 #[macro_use]
 mod foreign;
 mod bio;
-mod ffi;
+pub mod ffi;
 
 pub(crate) mod error;
 pub(crate) mod ssl;
+
+// todo
+#[allow(dead_code)]
 pub(crate) mod stack;
 pub(crate) mod x509;
 

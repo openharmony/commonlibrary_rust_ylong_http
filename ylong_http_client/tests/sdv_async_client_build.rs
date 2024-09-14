@@ -37,7 +37,6 @@ fn sdv_client_tls_builder() {
         .add_root_certificate(Certificate::from_pem(b"cert").unwrap())
         .tls_ca_file("ca.crt")
         .tls_cipher_list("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
-        .tls_cipher_suites("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK")
         .tls_built_in_root_certs(false)
         .danger_accept_invalid_certs(false)
         .danger_accept_invalid_hostnames(false)

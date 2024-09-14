@@ -18,7 +18,7 @@ pub(crate) mod bio;
 pub(crate) mod callback;
 pub(crate) mod err;
 pub(crate) mod pem;
-pub(crate) mod ssl;
+pub mod ssl; // todo
 pub(crate) mod stack;
 pub(crate) mod x509;
 

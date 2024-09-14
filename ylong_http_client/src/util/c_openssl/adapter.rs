@@ -46,7 +46,6 @@ pub struct TlsConfigBuilder {
     verify_hostname: bool,
     certs_list: Vec<Cert>,
     pins: Option<PubKeyPins>,
-    #[cfg(feature = "c_openssl_3_0")]
     paths_list: Vec<String>,
 }
 
@@ -68,7 +67,6 @@ impl TlsConfigBuilder {
             verify_hostname: true,
             certs_list: vec![],
             pins: None,
-            #[cfg(feature = "c_openssl_3_0")]
             paths_list: vec![],
         }
     }
@@ -136,8 +134,6 @@ impl TlsConfigBuilder {
 
     /// Sets the list of supported ciphers for protocols before `TLSv1.3`.
     ///
-    /// The `set_ciphersuites` method controls the cipher suites for `TLSv1.3`.
-    ///
     /// See [`ciphers`] for details on the format.
     ///
     /// [`ciphers`]: https://www.openssl.org/docs/man1.1.0/apps/ciphers.html
@@ -154,31 +150,6 @@ impl TlsConfigBuilder {
         self.inner = self
             .inner
             .and_then(|mut builder| builder.set_cipher_list(list).map(|_| builder));
-        self
-    }
-
-    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    ///
-    /// The `set_cipher_list` method controls the cipher suites for protocols
-    /// before `TLSv1.3`.
-    ///
-    /// The format consists of TLSv1.3 cipher suite names separated by `:`
-    /// characters in order of preference.
-    ///
-    /// Requires `OpenSSL 1.1.1` or `LibreSSL 3.4.0` or newer.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::TlsConfigBuilder;
-    ///
-    /// let builder = TlsConfigBuilder::new()
-    ///     .cipher_suites("DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK");
-    /// ```
-    pub fn cipher_suites(mut self, list: &str) -> Self {
-        self.inner = self
-            .inner
-            .and_then(|mut builder| builder.set_cipher_suites(list).map(|_| builder));
         self
     }
 
@@ -250,7 +221,6 @@ impl TlsConfigBuilder {
     /// let builder = TlsConfigBuilder::new().add_path_certificates(path);
     /// # }
     /// ```
-    #[cfg(feature = "c_openssl_3_0")]
     pub fn add_path_certificates(mut self, path: String) -> Self {
         self.paths_list.push(path);
         self
@@ -260,7 +230,7 @@ impl TlsConfigBuilder {
     // Negotiation (ALPN).
     //
     // Requires OpenSSL 1.0.2 or LibreSSL 2.6.1 or newer.
-    #[cfg(feature = "http2")]
+    #[cfg(any(feature = "http2", feature = "http3"))]
     pub(crate) fn alpn_protos(mut self, protocols: &[u8]) -> Self {
         self.inner = self
             .inner
@@ -401,7 +371,6 @@ impl TlsConfigBuilder {
             });
         }
 
-        #[cfg(feature = "c_openssl_3_0")]
         for path in self.paths_list {
             self.inner = self.inner.and_then(|mut builder| {
                 Ok(builder.cert_store_mut())
@@ -647,7 +616,6 @@ pub struct Certificate {
 #[derive(Clone)]
 pub(crate) enum CertificateList {
     CertList(Vec<Cert>),
-    #[cfg(feature = "c_openssl_3_0")]
     PathList(String),
 }
 
@@ -665,7 +633,6 @@ impl Certificate {
     }
 
     /// Deserializes a list of PEM-formatted certificates.
-    #[cfg(feature = "c_openssl_3_0")]
     pub fn from_path(path: &str) -> Result<Self, HttpClientError> {
         Ok(Certificate {
             inner: CertificateList::PathList(path.to_string()),
@@ -693,19 +660,6 @@ mod ut_openssl_adapter {
         let _ = TlsConfigBuilder::default();
         let builder = TlsConfigBuilder::new();
         assert!(builder.ca_file("folder/ca.crt").build().is_err());
-    }
-
-    /// UT test cases for `TlsConfigBuilder::new`.
-    ///
-    /// # Brief
-    /// 1. Creates a `TlsConfigBuilder` by calling `TlsConfigBuilder::new`.
-    /// 2. Calls `set_cipher_suites`.
-    /// 3. Provides an invalid path as argument.
-    /// 4. Checks if the result is as expected.
-    #[test]
-    fn ut_set_cipher_suites() {
-        let builder = TlsConfigBuilder::new().cipher_suites("INVALID STRING");
-        assert!(builder.build().is_err());
     }
 
     /// UT test cases for `TlsConfigBuilder::set_max_proto_version`.
@@ -791,9 +745,6 @@ mod ut_openssl_adapter {
     fn ut_add_root_certificates() {
         let certificate = Certificate::from_pem(include_bytes!("../../../tests/file/root-ca.pem"))
             .expect("Sets certs error.");
-        #[cfg(feature = "c_openssl_1_1")]
-        let CertificateList::CertList(certs) = certificate.inner;
-        #[cfg(feature = "c_openssl_3_0")]
         let certs = match certificate.inner {
             CertificateList::CertList(c) => c,
             CertificateList::PathList(_) => vec![],

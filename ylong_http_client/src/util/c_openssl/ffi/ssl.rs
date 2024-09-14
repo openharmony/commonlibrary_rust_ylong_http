@@ -36,6 +36,7 @@ extern "C" {
     pub(crate) fn SSL_CTX_up_ref(x: *mut SSL_CTX) -> c_int;
 
     /// Internal handling functions for SSL_CTX objects.
+    #[cfg(feature = "__c_openssl")]
     pub(crate) fn SSL_CTX_ctrl(
         ctx: *mut SSL_CTX,
         cmd: c_int,
@@ -54,9 +55,6 @@ extern "C" {
     /// control string str.\
     /// This function does not impact TLSv1.3 ciphersuites.
     pub(crate) fn SSL_CTX_set_cipher_list(ssl: *mut SSL_CTX, s: *const c_char) -> c_int;
-
-    /// Uses to configure the available TLSv1.3 ciphersuites for ctx.
-    pub(crate) fn SSL_CTX_set_ciphersuites(ctx: *mut SSL_CTX, str: *const c_char) -> c_int;
 
     /// Loads the first certificate stored in file into ctx.
     /// The formatting type of the certificate must be specified from the known
@@ -126,6 +124,20 @@ extern "C" {
         arg: *mut c_void,
     );
 
+    #[cfg(feature = "c_boringssl")]
+    pub(crate) fn SSL_CTX_set_min_proto_version(
+        ctx: *mut SSL_CTX,
+        version: libc::c_ushort,
+    ) -> c_int;
+
+    #[cfg(feature = "c_boringssl")]
+    pub(crate) fn SSL_CTX_set_max_proto_version(
+        ctx: *mut SSL_CTX,
+        version: libc::c_ushort,
+    ) -> c_int;
+
+    #[cfg(feature = "c_boringssl")]
+    pub(crate) fn SSL_CTX_set1_sigalgs_list(ctx: *mut SSL_CTX, parg: *mut c_void) -> c_int;
 }
 
 /// This is the main SSL/TLS structure which is created by a server or client
@@ -159,8 +171,9 @@ extern "C" {
 
     #[cfg(feature = "c_openssl_3_0")]
     pub(crate) fn SSL_get1_peer_certificate(ssl: *const SSL) -> *mut C_X509;
+    // use 1.1 in boringssl
 
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     pub(crate) fn SSL_get_peer_certificate(ssl: *const SSL) -> *mut C_X509;
 
     pub(crate) fn SSL_set_bio(ssl: *mut SSL, rbio: *mut BIO, wbio: *mut BIO);
@@ -175,12 +188,16 @@ extern "C" {
 
     pub(crate) fn SSL_shutdown(ssl: *mut SSL) -> c_int;
 
+    #[cfg(feature = "__c_openssl")]
     pub(crate) fn SSL_ctrl(ssl: *mut SSL, cmd: c_int, larg: c_long, parg: *mut c_void) -> c_long;
 
     /// Retrieve an internal pointer to the verification parameters for ssl
     /// respectively. The returned pointer must not be freed by the calling
     /// application.
     pub(crate) fn SSL_get0_param(ssl: *mut SSL) -> *mut X509_VERIFY_PARAM;
+
+    #[cfg(feature = "c_boringssl")]
+    pub(crate) fn SSL_set_tlsext_host_name(ssl: *mut SSL, name: *mut c_void) -> c_int;
 }
 
 /// This is a dispatch structure describing the internal ssl library

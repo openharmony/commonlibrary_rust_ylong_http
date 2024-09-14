@@ -29,23 +29,29 @@ pub(crate) mod redirect;
 #[cfg(feature = "async")]
 pub(crate) mod request;
 
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub(crate) mod c_openssl;
 
 #[cfg(any(feature = "http1_1", feature = "http2"))]
 pub(crate) mod dispatcher;
 
+#[cfg(feature = "http3")]
+pub(crate) mod alt_svc;
+#[cfg(any(feature = "http3", feature = "http2"))]
+pub(crate) mod data_ref;
 #[cfg(feature = "http2")]
 pub(crate) mod h2;
+#[cfg(feature = "http3")]
+pub(crate) mod h3;
 #[cfg(all(test, feature = "ylong_base"))]
 pub(crate) mod test_utils;
 
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub use c_openssl::{
     Cert, Certificate, PubKeyPins, PubKeyPinsBuilder, TlsConfig, TlsConfigBuilder, TlsFileType,
     TlsVersion,
 };
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub(crate) use config::{AlpnProtocol, AlpnProtocolList};
 #[cfg(feature = "__tls")]
 pub use config::{CertVerifier, ServerCerts};

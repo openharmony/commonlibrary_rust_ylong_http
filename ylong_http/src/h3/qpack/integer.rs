@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![rustfmt::skip]
-
-use crate::h3::qpack::error::{ErrorCode, H3errorQpack};
 use std::cmp::Ordering;
+
+use crate::h3::qpack::error::{ErrorCode, QpackError};
 
 pub(crate) struct Integer {
     pub(crate) int: IntegerEncoder,
@@ -28,22 +27,18 @@ impl Integer {
     }
     pub(crate) fn length(length: usize, is_huffman: bool) -> Self {
         Self {
-            int: IntegerEncoder::new(u8::from(is_huffman), length, 0x7f),
+            int: IntegerEncoder::new(pre_mask(is_huffman), length, 0x7f),
         }
     }
-    pub(crate) fn encode(mut self, dst: &mut [u8]) -> Result<usize, Self> {
-        let mut cur = 0;
+    pub(crate) fn encode(mut self, dst: &mut Vec<u8>) {
         while !self.int.is_finish() {
-            let dst = &mut dst[cur..];
-            if dst.is_empty() {
-                return Err(self);
+            if let Some(byte) = self.int.next_byte() {
+                dst.push(byte)
             }
-            dst[0] = self.int.next_byte().unwrap();
-            cur += 1;
         }
-        Ok(cur)
     }
 }
+
 pub(crate) struct IntegerDecoder {
     index: usize,
     shift: u32,
@@ -67,14 +62,12 @@ impl IntegerDecoder {
     /// Continues computing the integer based on the next byte of the input.
     /// Returns `Ok(Some(index))` if the result is obtained, otherwise returns
     /// `Ok(None)`, and returns Err in case of overflow.
-    pub(crate) fn next_byte(&mut self, byte: u8) -> Result<Option<usize>, H3errorQpack> {
+    pub(crate) fn next_byte(&mut self, byte: u8) -> Result<Option<usize>, QpackError> {
         self.index = 1usize
             .checked_shl(self.shift - 1)
             .and_then(|res| res.checked_mul((byte & 0x7f) as usize))
             .and_then(|res| res.checked_add(self.index))
-            .ok_or(H3errorQpack::ConnectionError(
-                ErrorCode::DecompressionFailed,
-            ))?; //todo: modify the error code
+            .ok_or(QpackError::ConnectionError(ErrorCode::DecompressionFailed))?; // todo: modify the error code
         self.shift += 7;
         match (byte & 0x80) == 0x00 {
             true => Ok(Some(self.index)),
@@ -144,5 +137,13 @@ impl IntegerEncoder {
     /// Checks if calculation is over.
     pub(crate) fn is_finish(&self) -> bool {
         matches!(self.state, IntegerEncodeState::Finish)
+    }
+}
+
+fn pre_mask(is_huffman: bool) -> u8 {
+    if is_huffman {
+        0x80
+    } else {
+        0
     }
 }

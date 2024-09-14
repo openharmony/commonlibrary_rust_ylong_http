@@ -20,17 +20,19 @@ pub(crate) use client::ClientConfig;
 pub(crate) use connector::ConnectorConfig;
 #[cfg(feature = "http2")]
 pub(crate) use http::http2::H2Config;
+#[cfg(feature = "http3")]
+pub(crate) use http::http3::H3Config;
 pub(crate) use http::{HttpConfig, HttpVersion};
 pub use settings::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub(crate) mod tls;
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub(crate) use tls::{AlpnProtocol, AlpnProtocolList};
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 pub use tls::{CertVerifier, ServerCerts};
 #[cfg(feature = "tls_rust_ssl")]
 pub use tls::{Certificate, PrivateKey, TlsConfig, TlsConfigBuilder, TlsFileType, TlsVersion};
-#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 mod fchown;
-#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 pub(crate) use fchown::FchownConfig;

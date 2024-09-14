@@ -127,7 +127,7 @@ impl HttpClientError {
     ///
     /// assert!(!HttpClientError::user_aborted().is_tls_error())
     /// ```
-    #[cfg(feature = "__c_openssl")]
+    #[cfg(feature = "__tls")]
     pub fn is_tls_error(&self) -> bool {
         matches!(self.cause, Cause::Tls(_))
     }
@@ -144,7 +144,7 @@ impl HttpClientError {
         }
     }
 
-    #[cfg(feature = "__c_openssl")]
+    #[cfg(feature = "__tls")]
     pub(crate) fn from_tls_error<T>(kind: ErrorKind, err: T) -> Self
     where
         T: Into<Box<dyn error::Error + Send + Sync>>,
@@ -273,7 +273,7 @@ impl ErrorKind {
 pub(crate) enum Cause {
     NoReason,
     Dns(io::Error),
-    #[cfg(feature = "__c_openssl")]
+    #[cfg(feature = "__tls")]
     Tls(Box<dyn error::Error + Send + Sync>),
     Io(io::Error),
     Msg(&'static str),
@@ -285,7 +285,7 @@ impl Debug for Cause {
         match self {
             Self::NoReason => write!(f, "No reason"),
             Self::Dns(err) => Debug::fmt(err, f),
-            #[cfg(feature = "__c_openssl")]
+            #[cfg(feature = "__tls")]
             Self::Tls(err) => Debug::fmt(err, f),
             Self::Io(err) => Debug::fmt(err, f),
             Self::Msg(msg) => write!(f, "{}", msg),
@@ -299,7 +299,7 @@ impl Display for Cause {
         match self {
             Self::NoReason => write!(f, "No reason"),
             Self::Dns(err) => Display::fmt(err, f),
-            #[cfg(feature = "__c_openssl")]
+            #[cfg(feature = "__tls")]
             Self::Tls(err) => Display::fmt(err, f),
             Self::Io(err) => Display::fmt(err, f),
             Self::Msg(msg) => write!(f, "{}", msg),
