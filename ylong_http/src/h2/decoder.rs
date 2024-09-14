@@ -150,9 +150,9 @@ impl core::iter::IntoIterator for Frames {
 /// When Headers Frames or Continuation Frames are not End Headers, they are
 /// represented as `FrameKind::Partial`.
 pub enum FrameKind {
-    /// PUSH_PROMISE or HEADRS frame parsing completed.
+    /// PUSH_PROMISE or HEADERS frame parsing completed.
     Complete(Frame),
-    /// Partial decoded of PUSH_PROMISE or HEADRS frame.
+    /// Partial decoded of PUSH_PROMISE or HEADERS frame.
     Partial,
 }
 

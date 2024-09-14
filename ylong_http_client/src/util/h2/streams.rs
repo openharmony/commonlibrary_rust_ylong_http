@@ -20,9 +20,9 @@ use std::task::{Context, Poll};
 use ylong_http::h2::{Data, ErrorCode, Frame, FrameFlags, H2Error, Payload};
 
 use crate::runtime::UnboundedSender;
+use crate::util::data_ref::BodyDataRef;
 use crate::util::dispatcher::http2::DispatchErrorKind;
 use crate::util::h2::buffer::{FlowControl, RecvWindow, SendWindow};
-use crate::util::h2::data_ref::BodyDataRef;
 
 pub(crate) const INITIAL_MAX_SEND_STREAM_ID: u32 = u32::MAX >> 1;
 pub(crate) const INITIAL_MAX_RECV_STREAM_ID: u32 = u32::MAX >> 1;
@@ -461,8 +461,8 @@ impl Streams {
         } else {
             return Err(H2Error::ConnectionError(ErrorCode::IntervalError));
         };
-        match stream.data.poll_read(cx, buf)? {
-            Poll::Ready(size) => {
+        match stream.data.poll_read(cx, buf) {
+            Poll::Ready(Some(size)) => {
                 if size > 0 {
                     stream.send_window.send_data(size as u32);
                     self.flow_control.send_data(size as u32);
@@ -485,6 +485,7 @@ impl Streams {
                     )))
                 }
             }
+            Poll::Ready(None) => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
             Poll::Pending => {
                 self.push_back_pending_send(id);
                 Ok(DataReadState::Pending)

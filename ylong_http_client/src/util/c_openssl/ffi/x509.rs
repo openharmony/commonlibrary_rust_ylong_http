@@ -99,6 +99,13 @@ extern "C" {
     /// storage.
     #[cfg(feature = "c_openssl_3_0")]
     pub(crate) fn X509_STORE_load_path(store: *mut X509_STORE, x: *const c_char) -> c_int;
+
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
+    pub(crate) fn X509_STORE_load_locations(
+        store: *mut X509_STORE,
+        file: *const c_char,
+        dir: *const c_char,
+    ) -> c_int;
 }
 
 pub(crate) enum X509_STORE_CTX {}

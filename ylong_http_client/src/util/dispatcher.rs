@@ -17,6 +17,9 @@ pub(crate) trait Dispatcher {
     fn dispatch(&self) -> Option<Self::Handle>;
 
     fn is_shutdown(&self) -> bool;
+
+    #[allow(dead_code)]
+    fn is_goaway(&self) -> bool;
 }
 
 pub(crate) enum ConnDispatcher<S> {
@@ -25,6 +28,9 @@ pub(crate) enum ConnDispatcher<S> {
 
     #[cfg(feature = "http2")]
     Http2(http2::Http2Dispatcher<S>),
+
+    #[cfg(feature = "http3")]
+    Http3(http3::Http3Dispatcher<S>),
 }
 
 impl<S> Dispatcher for ConnDispatcher<S> {
@@ -37,6 +43,9 @@ impl<S> Dispatcher for ConnDispatcher<S> {
 
             #[cfg(feature = "http2")]
             Self::Http2(h2) => h2.dispatch().map(Conn::Http2),
+
+            #[cfg(feature = "http3")]
+            Self::Http3(h3) => h3.dispatch().map(Conn::Http3),
         }
     }
 
@@ -47,6 +56,22 @@ impl<S> Dispatcher for ConnDispatcher<S> {
 
             #[cfg(feature = "http2")]
             Self::Http2(h2) => h2.is_shutdown(),
+
+            #[cfg(feature = "http3")]
+            Self::Http3(h3) => h3.is_shutdown(),
+        }
+    }
+
+    fn is_goaway(&self) -> bool {
+        match self {
+            #[cfg(feature = "http1_1")]
+            Self::Http1(h1) => h1.is_goaway(),
+
+            #[cfg(feature = "http2")]
+            Self::Http2(h2) => h2.is_goaway(),
+
+            #[cfg(feature = "http3")]
+            Self::Http3(h3) => h3.is_goaway(),
         }
     }
 }
@@ -57,6 +82,9 @@ pub(crate) enum Conn<S> {
 
     #[cfg(feature = "http2")]
     Http2(http2::Http2Conn<S>),
+
+    #[cfg(feature = "http3")]
+    Http3(http3::Http3Conn<S>),
 }
 
 #[cfg(feature = "http1_1")]
@@ -118,6 +146,10 @@ pub(crate) mod http1 {
 
         fn is_shutdown(&self) -> bool {
             self.inner.shutdown.load(Ordering::Relaxed)
+        }
+
+        fn is_goaway(&self) -> bool {
+            false
         }
     }
 
@@ -379,6 +411,11 @@ pub(crate) mod http2 {
 
         fn is_shutdown(&self) -> bool {
             self.io_shutdown.load(Ordering::Relaxed)
+        }
+
+        fn is_goaway(&self) -> bool {
+            // todo: goaway and shutdown
+            false
         }
     }
 
@@ -652,6 +689,250 @@ pub(crate) mod http2 {
             }
             DispatchErrorKind::ChannelClosed => {
                 HttpClientError::from_str(Request, "Coroutine channel closed.")
+            }
+            DispatchErrorKind::Disconnect => {
+                HttpClientError::from_str(Request, "remote peer closed.")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "http3")]
+pub(crate) mod http3 {
+    use std::marker::PhantomData;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use ylong_http::error::HttpError;
+    use ylong_http::h3::{Frame, FrameDecoder, H3Error};
+
+    use crate::async_impl::{ConnInfo, QuicConn};
+    use crate::runtime::{
+        bounded_channel, unbounded_channel, AsyncRead, AsyncWrite, BoundedReceiver, BoundedSender,
+        UnboundedSender,
+    };
+    use crate::util::config::H3Config;
+    use crate::util::data_ref::BodyDataRef;
+    use crate::util::dispatcher::{ConnDispatcher, Dispatcher};
+    use crate::util::h3::io_manager::IOManager;
+    use crate::util::h3::stream_manager::StreamManager;
+    use crate::ErrorKind::Request;
+    use crate::{ErrorKind, HttpClientError};
+
+    pub(crate) struct Http3Dispatcher<S> {
+        pub(crate) req_tx: UnboundedSender<ReqMessage>,
+        pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
+        pub(crate) _mark: PhantomData<S>,
+        pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) io_goaway: Arc<AtomicBool>,
+    }
+
+    pub(crate) struct Http3Conn<S> {
+        pub(crate) sender: UnboundedSender<ReqMessage>,
+        pub(crate) resp_receiver: BoundedReceiver<RespMessage>,
+        pub(crate) resp_sender: BoundedSender<RespMessage>,
+        pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) _mark: PhantomData<S>,
+    }
+
+    pub(crate) struct RequestWrapper {
+        pub(crate) header: Frame,
+        pub(crate) data: BodyDataRef,
+    }
+
+    #[derive(Debug, Clone)]
+    pub(crate) enum DispatchErrorKind {
+        H3(H3Error),
+        Io(std::io::ErrorKind),
+        Quic(quiche::Error),
+        ChannelClosed,
+        StreamFinished,
+        // todo: retry?
+        GoawayReceived,
+        Disconnect,
+    }
+
+    pub(crate) enum RespMessage {
+        Output(Frame),
+        OutputExit(DispatchErrorKind),
+    }
+
+    pub(crate) struct ReqMessage {
+        pub(crate) request: RequestWrapper,
+        pub(crate) frame_tx: BoundedSender<RespMessage>,
+    }
+
+    impl<S> Http3Dispatcher<S>
+    where
+        S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
+    {
+        pub(crate) fn new(config: H3Config, io: S, quic_connection: QuicConn) -> Self {
+            let (req_tx, req_rx) = unbounded_channel();
+            let (io_manager_tx, io_manager_rx) = unbounded_channel();
+            let (stream_manager_tx, stream_manager_rx) = unbounded_channel();
+            let mut handles = Vec::with_capacity(2);
+            let conn = Arc::new(Mutex::new(quic_connection));
+            let io_shutdown = Arc::new(AtomicBool::new(false));
+            let io_goaway = Arc::new(AtomicBool::new(false));
+            let mut stream_manager = StreamManager::new(
+                conn.clone(),
+                io_manager_tx,
+                stream_manager_rx,
+                req_rx,
+                FrameDecoder::new(
+                    config.qpack_blocked_streams() as usize,
+                    config.qpack_max_table_capacity() as usize,
+                ),
+                io_shutdown.clone(),
+                io_goaway.clone(),
+            );
+            let stream_handle = crate::runtime::spawn(async move {
+                if stream_manager.init(config).is_err() {
+                    return;
+                }
+                let _ = Pin::new(&mut stream_manager).await;
+            });
+            handles.push(stream_handle);
+
+            let io_handle = crate::runtime::spawn(async move {
+                let mut io_manager = IOManager::new(io, conn, io_manager_rx, stream_manager_tx);
+                let _ = Pin::new(&mut io_manager).await;
+            });
+            handles.push(io_handle);
+            // read_rx gets readable stream ids and writable client channels, then read
+            // stream and send to the corresponding channel
+            Self {
+                req_tx,
+                handles,
+                _mark: PhantomData,
+                io_shutdown,
+                io_goaway,
+            }
+        }
+    }
+
+    impl<S> Http3Conn<S> {
+        pub(crate) fn new(
+            sender: UnboundedSender<ReqMessage>,
+            io_shutdown: Arc<AtomicBool>,
+        ) -> Self {
+            const CHANNEL_SIZE: usize = 3;
+            let (resp_sender, resp_receiver) = bounded_channel(CHANNEL_SIZE);
+            Self {
+                sender,
+                resp_sender,
+                resp_receiver,
+                _mark: PhantomData,
+                io_shutdown,
+            }
+        }
+
+        pub(crate) fn send_frame_to_reader(
+            &mut self,
+            request: RequestWrapper,
+        ) -> Result<(), HttpClientError> {
+            self.sender
+                .send(ReqMessage {
+                    request,
+                    frame_tx: self.resp_sender.clone(),
+                })
+                .map_err(|_| {
+                    HttpClientError::from_str(ErrorKind::Request, "Request Sender Closed !")
+                })
+        }
+
+        pub(crate) async fn recv_resp(&mut self) -> Result<Frame, HttpClientError> {
+            #[cfg(feature = "tokio_base")]
+            match self.resp_receiver.recv().await {
+                None => err_from_msg!(Request, "Response Receiver Closed !"),
+                Some(message) => match message {
+                    RespMessage::Output(frame) => Ok(frame),
+                    RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),
+                },
+            }
+
+            #[cfg(feature = "ylong_base")]
+            match self.resp_receiver.recv().await {
+                Err(err) => Err(HttpClientError::from_error(ErrorKind::Request, err)),
+                Ok(message) => match message {
+                    RespMessage::Output(frame) => Ok(frame),
+                    RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),
+                },
+            }
+        }
+    }
+
+    impl<S> ConnDispatcher<S>
+    where
+        S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
+    {
+        pub(crate) fn http3(config: H3Config, io: S, quic_connection: QuicConn) -> Self {
+            Self::Http3(Http3Dispatcher::new(config, io, quic_connection))
+        }
+    }
+
+    impl<S> Dispatcher for Http3Dispatcher<S> {
+        type Handle = Http3Conn<S>;
+
+        fn dispatch(&self) -> Option<Self::Handle> {
+            let sender = self.req_tx.clone();
+            Some(Http3Conn::new(sender, self.io_shutdown.clone()))
+        }
+
+        fn is_shutdown(&self) -> bool {
+            self.io_shutdown.load(Ordering::Relaxed)
+        }
+
+        fn is_goaway(&self) -> bool {
+            self.io_goaway.load(Ordering::Relaxed)
+        }
+    }
+
+    impl<S> Drop for Http3Dispatcher<S> {
+        fn drop(&mut self) {
+            for handle in &self.handles {
+                #[cfg(feature = "tokio_base")]
+                handle.abort();
+                #[cfg(feature = "ylong_base")]
+                handle.cancel();
+            }
+        }
+    }
+
+    impl From<std::io::Error> for DispatchErrorKind {
+        fn from(value: std::io::Error) -> Self {
+            DispatchErrorKind::Io(value.kind())
+        }
+    }
+
+    impl From<H3Error> for DispatchErrorKind {
+        fn from(err: H3Error) -> Self {
+            DispatchErrorKind::H3(err)
+        }
+    }
+
+    impl From<quiche::Error> for DispatchErrorKind {
+        fn from(value: quiche::Error) -> Self {
+            DispatchErrorKind::Quic(value)
+        }
+    }
+
+    pub(crate) fn dispatch_client_error(dispatch_error: DispatchErrorKind) -> HttpClientError {
+        match dispatch_error {
+            DispatchErrorKind::H3(e) => HttpClientError::from_error(Request, HttpError::from(e)),
+            DispatchErrorKind::Io(e) => {
+                HttpClientError::from_io_error(Request, std::io::Error::from(e))
+            }
+            DispatchErrorKind::ChannelClosed => {
+                HttpClientError::from_str(Request, "Coroutine channel closed.")
+            }
+            DispatchErrorKind::Quic(e) => HttpClientError::from_error(Request, e),
+            DispatchErrorKind::GoawayReceived => {
+                HttpClientError::from_str(Request, "received remote goaway.")
+            }
+            DispatchErrorKind::StreamFinished => {
+                HttpClientError::from_str(Request, "stream finished.")
             }
             DispatchErrorKind::Disconnect => {
                 HttpClientError::from_str(Request, "remote peer closed.")

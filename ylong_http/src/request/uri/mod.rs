@@ -775,6 +775,30 @@ impl Host {
     }
 }
 
+impl core::str::FromStr for Host {
+    type Err = HttpError;
+
+    /// Constructs host from a string slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::str::FromStr;
+    ///
+    /// use ylong_http::request::uri::Host;
+    ///
+    /// let host = Host::from_str("www.example.com").unwrap();
+    /// assert_eq!(host.as_str(), "www.example.com");
+    /// ```
+    fn from_str(host: &str) -> Result<Self, Self::Err> {
+        if host.is_empty() {
+            Err(InvalidUri::UriMissHost.into())
+        } else {
+            Ok(Self(String::from(host)))
+        }
+    }
+}
+
 impl ToString for Host {
     fn to_string(&self) -> String {
         self.0.to_owned()
@@ -803,7 +827,7 @@ impl Port {
         self.0.as_str()
     }
 
-    /// Returns a u16 value of the `Port`.
+    /// Returns an u16 value of the `Port`.
     ///
     /// # Examples
     ///
@@ -818,6 +842,27 @@ impl Port {
         self.0
             .parse::<u16>()
             .map_err(|_| ErrorKind::Uri(InvalidUri::InvalidPort).into())
+    }
+}
+
+impl core::str::FromStr for Port {
+    type Err = HttpError;
+
+    /// Constructs host from a string slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::str::FromStr;
+    ///
+    /// use ylong_http::request::uri::Port;
+    ///
+    /// let host = Port::from_str("80").unwrap();
+    /// assert_eq!(host.as_str(), "80");
+    /// ```
+    fn from_str(port: &str) -> Result<Self, Self::Err> {
+        port.parse::<u16>().map_err(|_| InvalidUri::InvalidPort)?;
+        Ok(Self(String::from(port)))
     }
 }
 

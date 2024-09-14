@@ -14,121 +14,79 @@
 use std::convert::TryFrom;
 use std::io::Read;
 
-pub type Result<T> = std::result::Result<T, Err>;
+use ylong_runtime::iter::parallel::ParSplit;
 
-// pub trait TransferData {
-//     fn peek_u(&self, ty: &str, len: usize) -> &str;
-//     fn get_u(&self, ty: &str, len: usize) -> &str;
-//     fn put_u(&self, ty: &str, value: usize,len: usize) -> &mut [u8];
-// }
-//
-// impl TransferData for Octets {
-//     fn peek_u(&self, ty: &str, len: usize) -> &str {
-//         todo!()
-//     }
-//
-//     fn get_u(&self, ty: &str, len: usize) -> &str {
-//         todo!()
-//     }
-//
-//     fn put_u(&self, ty: &str, value: usize, len: usize) -> &mut [u8] {
-//         todo!()
-//     }
-// }
-// buf fragment splited by out offset
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReadVarint<'a> {
-    buf: &'a [u8],
+use crate::h3::error::CommonError::BufferTooShort;
+use crate::h3::error::{EncodeError, H3Error};
+
+pub type Result<T> = std::result::Result<T, H3Error>;
+
+macro_rules! peek_bytes {
+    ($buf: expr, $ty: ty, $len: expr) => {{
+        if $buf.len() < $len {
+            return Err(H3Error::Serialize(BufferTooShort));
+        }
+        let bytes: [u8; $len] = <[u8; $len]>::try_from($buf[..$len].as_ref()).unwrap();
+        let res = <$ty>::from_be_bytes(bytes);
+        Ok(res)
+    }};
 }
 
-impl<'a> ReadVarint<'a> {
-    pub fn new(buf: &'a [u8]) -> Self {
-        ReadVarint { buf }
+macro_rules! poll_bytes {
+    ($this: expr, $ty: ty, $len: expr) => {{
+        let res = peek_bytes!($this.buf[$this.idx..], $ty, $len);
+        $this.idx += $len;
+        res
+    }};
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadableBytes<'a> {
+    buf: &'a [u8],
+    idx: usize,
+}
+
+impl<'a> ReadableBytes<'a> {
+    pub fn from(buf: &'a [u8]) -> Self {
+        ReadableBytes { buf, idx: 0 }
     }
 
-    pub fn into_u8(&mut self) -> Result<u8> {
-        const len: usize = 1;
-
-        if self.buf.len() < len {
-            return Err(BufferTooShortError);
-        }
-        let bytes: [u8; len] = <[u8; len]>::try_from(self.buf[..len].as_ref()).unwrap();
-        if cfg!(target_endian = "big") {
-            let res: u8 = u8::from_be_bytes(bytes);
-            Ok(res)
-        } else {
-            let res: u8 = u8::from_le_bytes(bytes);
-            Ok(res)
-        }
+    pub(crate) fn peek_u8(&mut self) -> Result<u8> {
+        peek_bytes!(self.buf[self.idx..], u8, 1)
     }
 
-    pub fn into_u16(&mut self) -> Result<u16> {
-        const len: usize = 2;
-
-        if self.buf.len() < len {
-            return Err(BufferTooShortError);
-        }
-        let bytes: [u8; len] = <[u8; len]>::try_from(self.buf[..len].as_ref()).unwrap();
-        if cfg!(target_endian = "big") {
-            let res: u16 = u16::from_be_bytes(bytes);
-            Ok(res)
-        } else {
-            let res: u16 = u16::from_le_bytes(bytes);
-            Ok(res)
-        }
+    pub fn poll_u8(&mut self) -> Result<u8> {
+        poll_bytes!(self, u8, 1)
     }
 
-    pub fn into_u32(&mut self) -> Result<u32> {
-        const len: usize = 4;
-
-        if self.buf.len() < len {
-            return Err(BufferTooShortError);
-        }
-        let bytes: [u8; len] = <[u8; len]>::try_from(self.buf[..len].as_ref()).unwrap();
-        if cfg!(target_endian = "big") {
-            let res: u32 = u32::from_be_bytes(bytes);
-            Ok(res)
-        } else {
-            let res: u32 = u32::from_le_bytes(bytes);
-            Ok(res)
-        }
+    pub fn poll_u16(&mut self) -> Result<u16> {
+        poll_bytes!(self, u16, 2)
     }
 
-    pub fn into_u64(&mut self) -> Result<u64> {
-        const len: usize = 8;
+    pub fn poll_u32(&mut self) -> Result<u32> {
+        poll_bytes!(self, u32, 4)
+    }
 
-        if self.buf.len() < len {
-            return Err(BufferTooShortError);
-        }
-        let bytes: [u8; len] = <[u8; len]>::try_from(self.buf[..len].as_ref()).unwrap();
-        if cfg!(target_endian = "big") {
-            let res: u64 = u64::from_be_bytes(bytes);
-            Ok(res)
-        } else {
-            let res: u64 = u64::from_le_bytes(bytes);
-            Ok(res)
-        }
+    pub fn poll_u64(&mut self) -> Result<u64> {
+        poll_bytes!(self, u64, 8)
     }
 
     /// Reads an unsigned variable-length integer in network byte-order from
     /// the current offset and advances the buffer.
     pub fn get_varint(&mut self) -> Result<u64> {
-        let first = self.into_u8()?;
-
-        let len = varint_parse_len(first);
-
+        let first = self.peek_u8()?;
+        let len = parse_varint_len(first);
         if len > self.cap() {
-            return Err(BufferTooShortError);
+            return Err(BufferTooShort.into());
         }
-
         let out = match len {
-            1 => u64::from(self.into_u8()?),
+            1 => u64::from(self.poll_u8()?),
 
-            2 => u64::from(self.into_u16()? & 0x3fff),
+            2 => u64::from(self.poll_u16()? & 0x3fff),
 
-            4 => u64::from(self.into_u32()? & 0x3fffffff),
+            4 => u64::from(self.poll_u32()? & 0x3fffffff),
 
-            8 => self.into_u64()? & 0x3fffffffffffffff,
+            8 => self.poll_u64()? & 0x3fffffffffffffff,
 
             _ => unreachable!(),
         };
@@ -138,107 +96,87 @@ impl<'a> ReadVarint<'a> {
 
     /// Returns the remaining capacity in the buffer.
     pub fn cap(&self) -> usize {
-        self.buf.len() - self.off
-    }
-}
-
-// Component encoding status.
-enum TokenStatus<T, E> {
-    // The current component is completely encoded.
-    Complete(T),
-    // The current component is partially encoded.
-    Partial(E),
-}
-
-type TokenResult<T> = Result<TokenStatus<usize, T>>;
-
-struct WriteData<'a> {
-    src: &'a [u8],
-    src_idx: &'a mut usize,
-    dst: &'a mut [u8],
-}
-
-impl<'a> WriteData<'a> {
-    fn new(src: &'a [u8], src_idx: &'a mut usize, dst: &'a mut [u8]) -> Self {
-        WriteData { src, src_idx, dst }
+        self.buf.len() - self.idx
     }
 
-    fn write(&mut self) -> TokenResult<usize> {
-        let src_idx = *self.src_idx;
-        let input_len = self.src.len() - src_idx;
-        let output_len = self.dst.len();
-        let num = (&self.src[src_idx..]).read(self.dst).unwrap();
-        if output_len >= input_len {
-            return Ok(TokenStatus::Complete(num));
+    pub fn index(&self) -> usize {
+        self.idx
+    }
+
+    pub fn remaining(&self) -> &[u8] {
+        &self.buf[self.idx..]
+    }
+
+    pub fn slice(&mut self, length: usize) -> Result<&[u8]> {
+        if self.cap() < length {
+            Err(BufferTooShort.into())
+        } else {
+            let curr = self.idx;
+            self.idx += length;
+            Ok(&self.buf[curr..self.idx])
         }
-        *self.src_idx += num;
-        Ok(TokenStatus::Partial(num))
     }
 }
 
-pub struct WriteVarint<'a> {
-    src: &'a [u8],
-    src_idx: &'a mut usize,
-    dst: &'a mut [u8],
+macro_rules! write_bytes {
+    ($this: expr, $value: expr, $len: expr) => {{
+        // buf长度不够问题返回err，再由外层处理
+        if $this.remaining() < $len {
+            return Err(BufferTooShort.into());
+        }
+
+        let mut bytes: [u8; $len] = $value.to_be_bytes();
+        match $len {
+            1 => {}
+            2 => bytes[0] |= 0x40,
+            4 => bytes[0] |= 0x80,
+            8 => bytes[0] |= 0xC0,
+            _ => unreachable!(),
+        }
+        $this.bytes[$this.idx..$this.idx + $len].copy_from_slice(bytes.as_slice());
+        $this.idx_add($len);
+        Ok($len)
+    }};
 }
 
-impl<'a> WriteVarint<'a> {
-    // pub fn new(buf: &'a mut [u8]) -> Self {
-    //     WriteVarint { buf }
-    // }
-    pub fn new(src: &'a [u8], src_idx: &'a mut usize, dst: &'a mut [u8]) -> Self {
-        // src需要从value转码过来
-        WriteVarint { src, src_idx, dst }
+pub struct WritableBytes<'a> {
+    bytes: &'a mut [u8],
+    idx: usize,
+}
+
+impl<'a> WritableBytes<'a> {
+    pub fn from(bytes: &'a mut [u8]) -> WritableBytes<'a> {
+        Self { bytes, idx: 0 }
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.bytes.len() - self.idx
+    }
+
+    pub fn index(&self) -> usize {
+        self.idx
+    }
+
+    pub fn idx_add(&mut self, offset: usize) {
+        self.idx += offset
     }
 
     /// Writes an unsigned 8-bit integer at the current offset and advances
     /// the buffer.
     pub fn write_u8(&mut self, value: u8) -> Result<usize> {
-        const len: usize = 1;
-        // buf长度不够问题返回err，再由外层处理
-        if self.buf.len() != len {
-            return Err(BufferTooShortError);
-        }
-
-        let bytes: [u8; len] = value.to_be_bytes();
-        self.buf.copy_from_slice(bytes.as_slice());
-        Ok(len)
+        write_bytes!(self, value, 1)
     }
 
     pub fn write_u16(&mut self, value: u16) -> Result<usize> {
-        const len: usize = 2;
-        // buf长度不够问题返回err，再由外层处理
-        if self.buf.len() != len {
-            return Err(BufferTooShortError);
-        }
-
-        let bytes: [u8; len] = value.to_be_bytes();
-        self.buf.copy_from_slice(bytes.as_slice());
-        Ok(len)
+        write_bytes!(self, value, 2)
     }
 
     pub fn write_u32(&mut self, value: u32) -> Result<usize> {
-        const len: usize = 4;
-        // buf长度不够问题返回err，再由外层处理
-        if self.buf.len() != len {
-            return Err(BufferTooShortError);
-        }
-
-        let bytes: [u8; len] = value.to_be_bytes();
-        self.buf.copy_from_slice(bytes.as_slice());
-        Ok(len)
+        write_bytes!(self, value, 4)
     }
 
     pub fn write_u64(&mut self, value: u64) -> Result<usize> {
-        const len: usize = 8;
-        // buf长度不够问题返回err，再由外层处理
-        if self.buf.len() != len {
-            return Err(BufferTooShortError);
-        }
-
-        let bytes: [u8; len] = value.to_be_bytes();
-        self.buf.copy_from_slice(bytes.as_slice());
-        Ok(len)
+        write_bytes!(self, value, 8)
     }
 
     /// Writes an unsigned variable-length integer in network byte-order at the
@@ -247,36 +185,17 @@ impl<'a> WriteVarint<'a> {
         self.write_varint_with_len(value, varint_len(value))
     }
 
-    pub fn write_varint_with_len(&mut self, value: u64, len: usize) -> Result<usize> {
-        if self.cap() < len {
-            return Err(BufferTooShortError);
+    fn write_varint_with_len(&mut self, value: u64, len: usize) -> Result<usize> {
+        if self.remaining() < len {
+            return Err(BufferTooShort.into());
         }
-
-        let res = match len {
-            1 => self.write_u8(value as u8)?,
-
-            2 => {
-                let size = self.write_u16(value as u16)?;
-                *self.buf[0] |= 0x40;
-                size
-            }
-
-            4 => {
-                let size = self.write_u32(value as u32)?;
-                *self.buf[0] |= 0x80;
-                size
-            }
-
-            8 => {
-                let size = self.write_u64(value)?;
-                *self.buf[0] |= 0xc0;
-                size
-            }
-
+        match len {
+            1 => self.write_u8(value as u8),
+            2 => self.write_u16(value as u16),
+            4 => self.write_u32(value as u32),
+            8 => self.write_u64(value),
             _ => panic!("value is too large for varint"),
-        };
-
-        Ok(res)
+        }
     }
 }
 
@@ -288,15 +207,17 @@ pub const fn varint_len(v: u64) -> usize {
         64..=16383 => 2,
         16384..=1_073_741_823 => 4,
         1_073_741_824..=4_611_686_018_427_387_903 => 8,
-        _ => {unreachable!()}
+        _ => {
+            unreachable!()
+        }
     }
 }
 
 /// Returns how long the variable-length integer is, given its first byte.
-pub const fn varint_parse_len(byte: u8) -> usize {
-    let byte = byte >> 6;
-    if byte <= 3 {
-        1 << byte
+pub const fn parse_varint_len(byte: u8) -> usize {
+    let pre = byte >> 6;
+    if pre <= 3 {
+        1 << pre
     } else {
         unreachable!()
     }

@@ -37,6 +37,7 @@ impl Redirect {
         }
     }
 
+    // todo: check h3?
     pub(crate) fn redirect<A, B>(
         &self,
         request: &mut Request<A>,

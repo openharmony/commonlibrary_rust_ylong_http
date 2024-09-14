@@ -14,21 +14,25 @@
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+#[cfg(feature = "http3")]
+use ylong_runtime::net::ConnectedUdpSocket;
+use ylong_runtime::net::TcpStream;
+
 use crate::async_impl::ssl_stream::AsyncSslStream;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// A stream which may be wrapped with TLS.
-pub enum MixStream<T> {
+pub enum MixStream {
     /// A raw HTTP stream.
-    Http(T),
+    Http(TcpStream),
     /// An SSL-wrapped HTTP stream.
-    Https(AsyncSslStream<T>),
+    Https(AsyncSslStream<TcpStream>),
+    #[cfg(feature = "http3")]
+    /// A Udp connection
+    Udp(ConnectedUdpSocket),
 }
 
-impl<T> AsyncRead for MixStream<T>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
+impl AsyncRead for MixStream {
     // poll_read separately.
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -38,14 +42,13 @@ where
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_read(cx, buf),
             MixStream::Https(s) => Pin::new(s).poll_read(cx, buf),
+            #[cfg(feature = "http3")]
+            MixStream::Udp(s) => Pin::new(s).poll_recv(cx, buf),
         }
     }
 }
 
-impl<T> AsyncWrite for MixStream<T>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
+impl AsyncWrite for MixStream {
     // poll_write separately.
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -55,6 +58,8 @@ where
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_write(ctx, buf),
             MixStream::Https(s) => Pin::new(s).poll_write(ctx, buf),
+            #[cfg(feature = "http3")]
+            MixStream::Udp(s) => Pin::new(s).poll_send(ctx, buf),
         }
     }
 
@@ -62,6 +67,8 @@ where
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_flush(ctx),
             MixStream::Https(s) => Pin::new(s).poll_flush(ctx),
+            #[cfg(feature = "http3")]
+            MixStream::Udp(_) => Poll::Ready(Ok(())),
         }
     }
 
@@ -69,6 +76,8 @@ where
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_shutdown(ctx),
             MixStream::Https(s) => Pin::new(s).poll_shutdown(ctx),
+            #[cfg(feature = "http3")]
+            MixStream::Udp(_) => Poll::Ready(Ok(())),
         }
     }
 }

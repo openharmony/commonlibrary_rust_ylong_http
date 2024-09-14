@@ -253,10 +253,10 @@ pub(crate) enum ShutdownResult {
 }
 
 // TODO The SSLError thrown here is meaningless and has no information.
-fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
+pub(crate) fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
     #[cfg(feature = "c_openssl_3_0")]
     use crate::util::c_openssl::ffi::ssl::SSL_get1_peer_certificate;
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     use crate::util::c_openssl::ffi::ssl::SSL_get_peer_certificate;
 
     let certificate = unsafe {
@@ -264,7 +264,7 @@ fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError>
         {
             SSL_get1_peer_certificate(ssl)
         }
-        #[cfg(feature = "c_openssl_1_1")]
+        #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
         {
             SSL_get_peer_certificate(ssl)
         }

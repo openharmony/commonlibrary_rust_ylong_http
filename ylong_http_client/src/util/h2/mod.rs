@@ -22,7 +22,6 @@
 //! receiving of multiple streams.
 
 mod buffer;
-mod data_ref;
 mod input;
 mod manager;
 mod output;
@@ -32,7 +31,6 @@ mod streams;
 mod io;
 
 pub(crate) use buffer::FlowControl;
-pub(crate) use data_ref::BodyDataRef;
 pub(crate) use input::SendData;
 #[cfg(feature = "ylong_base")]
 pub(crate) use io::{split, Reader, Writer};

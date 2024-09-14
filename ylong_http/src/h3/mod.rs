@@ -13,14 +13,30 @@
 
 // TODO: `HTTP/3` Module.
 
-mod connection;
 mod decoder;
 mod encoder;
 mod error;
 mod frame;
-pub mod parts;
-pub mod pseudo;
-pub mod qpack;
+mod octets;
+mod parts;
+mod pseudo;
+mod qpack;
 // mod octets;
 mod stream;
-pub use frame::Frame;
+pub use decoder::FrameDecoder;
+pub use encoder::FrameEncoder;
+pub use error::{DecodeError, EncodeError, H3Error, H3ErrorCode};
+pub use frame::{
+    Data, Frame, Headers, Payload, Settings, DATA_FRAME_TYPE, HEADERS_FRAME_TYPE,
+    SETTINGS_FRAME_TYPE,
+};
+pub use parts::Parts;
+pub use pseudo::PseudoHeaders;
+pub use stream::{
+    FrameKind, Frames, StreamMessage, CONTROL_STREAM_TYPE, QPACK_DECODER_STREAM_TYPE,
+    QPACK_ENCODER_STREAM_TYPE,
+};
+
+pub(crate) fn is_bidirectional(id: u64) -> bool {
+    (id & 0x02) == 0
+}

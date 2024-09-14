@@ -31,7 +31,7 @@ pub enum ConnProtocol {
     Udp,
 }
 
-/// Tcp connection information.
+/// Connection information.
 #[derive(Clone)]
 pub struct ConnDetail {
     /// Transport layer protocol type.

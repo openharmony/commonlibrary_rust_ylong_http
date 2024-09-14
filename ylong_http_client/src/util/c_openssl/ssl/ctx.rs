@@ -15,7 +15,7 @@ use core::{fmt, mem, ptr};
 use std::ffi::CString;
 use std::path::Path;
 
-use libc::{c_int, c_long, c_uint, c_void};
+use libc::{c_int, c_uint, c_void};
 
 use super::filetype::SslFiletype;
 use super::method::SslMethod;
@@ -25,18 +25,26 @@ use crate::c_openssl::ffi::ssl::{
 };
 use crate::c_openssl::x509::{X509Store, X509StoreRef};
 use crate::util::c_openssl::error::ErrorStack;
+#[cfg(feature = "__c_openssl")]
+use crate::util::c_openssl::ffi::ssl::SSL_CTX_ctrl;
 use crate::util::c_openssl::ffi::ssl::{
-    SSL_CTX_ctrl, SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos,
-    SSL_CTX_set_cert_store, SSL_CTX_set_cert_verify_callback, SSL_CTX_set_cipher_list,
-    SSL_CTX_set_ciphersuites, SSL_CTX_up_ref, SSL_CTX_use_certificate_chain_file,
-    SSL_CTX_use_certificate_file, SSL_CTX,
+    SSL_CTX_load_verify_locations, SSL_CTX_new, SSL_CTX_set_alpn_protos, SSL_CTX_set_cert_store,
+    SSL_CTX_set_cert_verify_callback, SSL_CTX_set_cipher_list, SSL_CTX_up_ref,
+    SSL_CTX_use_certificate_chain_file, SSL_CTX_use_certificate_file, SSL_CTX,
+};
+#[cfg(feature = "c_boringssl")]
+use crate::util::c_openssl::ffi::ssl::{
+    SSL_CTX_set1_sigalgs_list, SSL_CTX_set_max_proto_version, SSL_CTX_set_min_proto_version,
 };
 use crate::util::c_openssl::foreign::{Foreign, ForeignRef};
 use crate::util::c_openssl::{cert_verify, check_ptr, check_ret, ssl_init};
 use crate::util::config::tls::DefaultCertVerifier;
 
+#[cfg(feature = "__c_openssl")]
 const SSL_CTRL_SET_MIN_PROTO_VERSION: c_int = 123;
+#[cfg(feature = "__c_openssl")]
 const SSL_CTRL_SET_MAX_PROTO_VERSION: c_int = 124;
+#[cfg(feature = "__c_openssl")]
 const SSL_CTRL_SET_SIGALGS_LIST: c_int = 98;
 
 foreign_type!(
@@ -117,29 +125,42 @@ impl SslContextBuilder {
     pub(crate) fn set_min_proto_version(&mut self, version: SslVersion) -> Result<(), ErrorStack> {
         let ptr = self.as_ptr_mut();
 
-        check_ret(unsafe {
+        #[cfg(feature = "__c_openssl")]
+        return check_ret(unsafe {
             SSL_CTX_ctrl(
                 ptr,
                 SSL_CTRL_SET_MIN_PROTO_VERSION,
-                version.0 as c_long,
+                version.0 as libc::c_long,
                 ptr::null_mut(),
             )
         } as c_int)
-        .map(|_| ())
+        .map(|_| ());
+
+        #[cfg(feature = "c_boringssl")]
+        return check_ret(
+            unsafe { SSL_CTX_set_min_proto_version(ptr, version.0 as libc::c_ushort) } as c_int,
+        )
+        .map(|_| ());
     }
 
     pub(crate) fn set_max_proto_version(&mut self, version: SslVersion) -> Result<(), ErrorStack> {
         let ptr = self.as_ptr_mut();
 
-        check_ret(unsafe {
+        #[cfg(feature = "__c_openssl")]
+        return check_ret(unsafe {
             SSL_CTX_ctrl(
                 ptr,
                 SSL_CTRL_SET_MAX_PROTO_VERSION,
-                version.0 as c_long,
+                version.0 as libc::c_long,
                 ptr::null_mut(),
             )
         } as c_int)
-        .map(|_| ())
+        .map(|_| ());
+        #[cfg(feature = "c_boringssl")]
+        return check_ret(
+            unsafe { SSL_CTX_set_max_proto_version(ptr, version.0 as libc::c_ushort) } as c_int,
+        )
+        .map(|_| ());
     }
 
     /// Loads trusted root certificates from a file.\
@@ -167,17 +188,6 @@ impl SslContextBuilder {
         let ptr = self.as_ptr_mut();
 
         check_ret(unsafe { SSL_CTX_set_cipher_list(ptr, list.as_ptr() as *const _) }).map(|_| ())
-    }
-
-    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    pub(crate) fn set_cipher_suites(&mut self, list: &str) -> Result<(), ErrorStack> {
-        let list = match CString::new(list) {
-            Ok(cstr) => cstr,
-            Err(_) => return Err(ErrorStack::get()),
-        };
-        let ptr = self.as_ptr_mut();
-
-        check_ret(unsafe { SSL_CTX_set_ciphersuites(ptr, list.as_ptr() as *const _) }).map(|_| ())
     }
 
     /// Loads a leaf certificate from a file.
@@ -290,17 +300,16 @@ impl SslContextBuilder {
         // SHA512 DSA (0x0602)
         const SUPPORT_SIGNATURE_ALGORITHMS: &str = "\
         ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:ed25519:\
-        ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:\
-        rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:\
-        rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512:DSA+SHA256:DSA+SHA384:DSA+SHA512";
+        rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:\
+        rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512";
         let list = match CString::new(SUPPORT_SIGNATURE_ALGORITHMS) {
             Ok(cstr) => cstr,
             Err(_) => return Err(ErrorStack::get()),
         };
 
         let ptr = self.as_ptr_mut();
-
-        check_ret(unsafe {
+        #[cfg(feature = "__c_openssl")]
+        return check_ret(unsafe {
             SSL_CTX_ctrl(
                 ptr,
                 SSL_CTRL_SET_SIGALGS_LIST,
@@ -308,6 +317,11 @@ impl SslContextBuilder {
                 list.as_ptr() as *const c_void as *mut c_void,
             )
         } as c_int)
-        .map(|_| ())
+        .map(|_| ());
+        #[cfg(feature = "c_boringssl")]
+        return check_ret(unsafe {
+            SSL_CTX_set1_sigalgs_list(ptr, list.as_ptr() as *const c_void as *mut c_void)
+        } as c_int)
+        .map(|_| ());
     }
 }

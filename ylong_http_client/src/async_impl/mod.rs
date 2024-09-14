@@ -36,14 +36,21 @@ mod uploader;
 #[cfg(feature = "__tls")]
 mod ssl_stream;
 
+#[cfg(feature = "__tls")]
+pub(crate) mod mix;
+
 pub(crate) mod conn;
 pub(crate) mod pool;
+#[cfg(feature = "http3")]
+mod quic;
 
 pub use client::ClientBuilder;
-pub use connector::{Connector, HttpConnector};
+pub use connector::{ConnInfo, Connector, HttpConnector};
 pub use downloader::{DownloadOperator, Downloader, DownloaderBuilder};
 pub use http_body::HttpBody;
 pub use interceptor::{ConnDetail, ConnProtocol, Interceptor};
+#[cfg(feature = "http3")]
+pub use quic::QuicConn;
 pub use request::{Body, PercentEncoder, Request, RequestBuilder};
 pub use response::Response;
 pub use uploader::{UploadOperator, Uploader, UploaderBuilder};

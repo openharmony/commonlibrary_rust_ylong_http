@@ -37,7 +37,7 @@ extern "C" {
         flags: *mut c_int,
     ) -> c_ulong;
 
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     pub(crate) fn ERR_get_error_line_data(
         file: *mut *const c_char,
         line: *mut c_int,
@@ -45,6 +45,6 @@ extern "C" {
         flags: *mut c_int,
     ) -> c_ulong;
 
-    #[cfg(feature = "c_openssl_1_1")]
+    #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     pub(crate) fn ERR_func_error_string(err: c_ulong) -> *const c_char;
 }

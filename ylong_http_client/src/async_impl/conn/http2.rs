@@ -31,8 +31,9 @@ use crate::async_impl::request::Message;
 use crate::async_impl::{HttpBody, Response};
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf};
+use crate::util::data_ref::BodyDataRef;
 use crate::util::dispatcher::http2::Http2Conn;
-use crate::util::h2::{BodyDataRef, RequestWrapper};
+use crate::util::h2::RequestWrapper;
 use crate::util::normalizer::BodyLengthParser;
 
 const UNUSED_FLAG: u8 = 0x0;

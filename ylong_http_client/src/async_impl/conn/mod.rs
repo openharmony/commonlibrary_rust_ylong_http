@@ -17,6 +17,9 @@ mod http1;
 #[cfg(feature = "http2")]
 mod http2;
 
+#[cfg(feature = "http3")]
+mod http3;
+
 use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::request::Message;
 use crate::async_impl::Response;
@@ -41,5 +44,8 @@ where
 
         #[cfg(feature = "http2")]
         Conn::Http2(http2) => http2::request(http2, message).await,
+
+        #[cfg(feature = "http3")]
+        Conn::Http3(http3) => http3::request(http3, message).await,
     }
 }

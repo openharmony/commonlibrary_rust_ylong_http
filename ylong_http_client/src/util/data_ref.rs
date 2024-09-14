@@ -16,8 +16,6 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use ylong_http::h2::{ErrorCode, H2Error};
-
 use crate::runtime::{AsyncRead, ReadBuf};
 use crate::util::request::RequestArc;
 
@@ -40,20 +38,18 @@ impl BodyDataRef {
         &mut self,
         cx: &mut Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<Result<usize, H2Error>> {
+    ) -> Poll<Option<usize>> {
         let request = if let Some(ref mut request) = self.body {
             request
         } else {
-            return Poll::Ready(Ok(0));
+            return Poll::Ready(Some(0));
         };
         let data = request.ref_mut().body_mut();
         let mut read_buf = ReadBuf::new(buf);
         let data = Pin::new(data);
         match data.poll_read(cx, &mut read_buf) {
-            Poll::Ready(Err(_e)) => {
-                Poll::Ready(Err(H2Error::ConnectionError(ErrorCode::IntervalError)))
-            }
-            Poll::Ready(Ok(_)) => Poll::Ready(Ok(read_buf.filled().len())),
+            Poll::Ready(Err(_)) => Poll::Ready(None),
+            Poll::Ready(Ok(_)) => Poll::Ready(Some(read_buf.filled().len())),
             Poll::Pending => Poll::Pending,
         }
     }

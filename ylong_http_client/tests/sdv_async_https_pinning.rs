@@ -14,7 +14,7 @@
 #![cfg(all(
     feature = "async",
     feature = "http1_1",
-    feature = "__c_openssl",
+    feature = "__tls",
     feature = "tokio_base"
 ))]
 

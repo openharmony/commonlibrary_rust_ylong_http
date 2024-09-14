@@ -424,27 +424,6 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    ///
-    /// The format consists of TLSv1.3 cipher suite names separated by `:`
-    /// characters in order of preference.
-    ///
-    /// Requires `OpenSSL 1.1.1` or `LibreSSL 3.4.0` or newer.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::sync_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new().tls_cipher_suites(
-    ///     "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
-    /// );
-    /// ```
-    pub fn tls_cipher_suites(mut self, list: &str) -> Self {
-        self.tls = self.tls.cipher_suites(list);
-        self
-    }
-
     /// Controls the use of built-in system certificates during certificate
     /// validation. Default to `true` -- uses built-in system certs.
     ///

@@ -17,6 +17,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::async_impl::interceptor::ConnDetail;
+#[cfg(feature = "http3")]
+use crate::async_impl::quic::QuicConn;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// `ConnDetail` trait, which is used to obtain information about the current
@@ -25,13 +27,20 @@ pub trait ConnInfo {
     /// Whether the current connection is a proxy.
     fn is_proxy(&self) -> bool;
 
+    /// Gets connection information.
     fn conn_detail(&self) -> ConnDetail;
+
+    /// Gets quic information
+    #[cfg(feature = "http3")]
+    fn quic_conn(&mut self) -> Option<QuicConn>;
 }
 
 /// A connection wrapper containing io and io information.
 pub struct HttpStream<T> {
     detail: ConnDetail,
     stream: T,
+    #[cfg(feature = "http3")]
+    quic_conn: Option<QuicConn>,
 }
 
 impl<T> AsyncRead for HttpStream<T>
@@ -78,11 +87,26 @@ impl<T> ConnInfo for HttpStream<T> {
     fn conn_detail(&self) -> ConnDetail {
         self.detail.clone()
     }
+
+    #[cfg(feature = "http3")]
+    fn quic_conn(&mut self) -> Option<QuicConn> {
+        self.quic_conn.take()
+    }
 }
 
 impl<T> HttpStream<T> {
     /// HttpStream constructor.
     pub fn new(io: T, detail: ConnDetail) -> HttpStream<T> {
-        HttpStream { detail, stream: io }
+        HttpStream {
+            detail,
+            stream: io,
+            #[cfg(feature = "http3")]
+            quic_conn: None,
+        }
+    }
+
+    #[cfg(feature = "http3")]
+    pub fn set_quic_conn(&mut self, conn: QuicConn) {
+        self.quic_conn = Some(conn);
     }
 }

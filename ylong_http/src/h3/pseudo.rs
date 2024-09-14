@@ -18,7 +18,7 @@
 /// # Note
 /// The current structure is not responsible for checking every value.
 // TODO: 考虑将 PseudoHeaders 拆分成 `RequestPseudo` 和 `ResponsePseudo`.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PseudoHeaders {
     authority: Option<String>,
     method: Option<String>,

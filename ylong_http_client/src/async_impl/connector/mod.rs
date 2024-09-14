@@ -20,9 +20,11 @@ use core::future::Future;
 /// Information of an IO.
 pub use stream::ConnInfo;
 use ylong_http::request::uri::Uri;
+#[cfg(feature = "http3")]
+use ylong_runtime::net::{ConnectedUdpSocket, UdpSocket};
 
 use crate::runtime::{AsyncRead, AsyncWrite, TcpStream};
-use crate::util::config::ConnectorConfig;
+use crate::util::config::{ConnectorConfig, HttpVersion};
 use crate::HttpClientError;
 
 /// `Connector` trait used by `async_impl::Client`. `Connector` provides
@@ -39,7 +41,7 @@ pub trait Connector {
         + 'static;
 
     /// Attempts to establish a connection.
-    fn connect(&self, uri: &Uri) -> Self::Future;
+    fn connect(&self, uri: &Uri, http_version: HttpVersion) -> Self::Future;
 }
 
 /// Connector for creating HTTP or HTTPS connections asynchronously.
@@ -77,6 +79,22 @@ async fn tcp_stream(addr: &str) -> Result<TcpStream, HttpClientError> {
             Ok(()) => Ok(stream),
             Err(e) => err_from_io!(Connect, e),
         })
+}
+
+#[cfg(feature = "http3")]
+pub(crate) async fn udp_stream(
+    addr: &std::net::SocketAddr,
+) -> Result<ConnectedUdpSocket, HttpClientError> {
+    let local_addr = match addr {
+        std::net::SocketAddr::V4(_) => "0.0.0.0:0",
+        std::net::SocketAddr::V6(_) => "[::]:0",
+    };
+    let sock = UdpSocket::bind(local_addr)
+        .await
+        .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))?;
+    sock.connect(addr)
+        .await
+        .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))
 }
 
 #[cfg(not(feature = "__tls"))]
@@ -140,18 +158,22 @@ mod tls {
     use super::{tcp_stream, Connector, HttpConnector};
     use crate::async_impl::connector::stream::HttpStream;
     use crate::async_impl::interceptor::{ConnDetail, ConnProtocol};
-    use crate::async_impl::ssl_stream::{AsyncSslStream, MixStream};
-    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+    use crate::async_impl::mix::MixStream;
+    #[cfg(feature = "http3")]
+    use crate::async_impl::quic::QuicConn;
+    use crate::async_impl::ssl_stream::AsyncSslStream;
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
     use crate::config::FchownConfig;
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
+    use crate::util::config::HttpVersion;
     use crate::{HttpClientError, TlsConfig};
 
     impl Connector for HttpConnector {
-        type Stream = HttpStream<MixStream<TcpStream>>;
+        type Stream = HttpStream<MixStream>;
         type Future =
             Pin<Box<dyn Future<Output = Result<Self::Stream, HttpClientError>> + Sync + Send>>;
 
-        fn connect(&self, uri: &Uri) -> Self::Future {
+        fn connect(&self, uri: &Uri, _http_version: HttpVersion) -> Self::Future {
             // Make sure all parts of uri is accurate.
             let mut addr = uri.authority().unwrap().to_string();
             let mut auth = None;
@@ -167,16 +189,12 @@ mod tls {
                     .and_then(|v| v.to_string().ok());
                 is_proxy = true;
             }
-            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
             let fchown = self.config.fchown.clone();
             match *uri.scheme().unwrap() {
                 Scheme::HTTP => Box::pin(async move {
                     let stream = tcp_stream(&addr).await?;
-                    #[cfg(all(
-                        target_os = "linux",
-                        feature = "ylong_base",
-                        feature = "__c_openssl"
-                    ))]
+                    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
                     if let Some(fchown) = fchown {
                         let _ = stream.fchown(fchown.uid, fchown.gid);
                     }
@@ -202,19 +220,63 @@ mod tls {
                     let host = uri.host().unwrap().to_string();
                     let port = uri.port().unwrap().as_u16().unwrap();
                     let config = self.config.tls.clone();
+                    #[cfg(feature = "http3")]
+                    if _http_version == HttpVersion::Http3 {
+                        return Box::pin(async move {
+                            let addrs = std::net::ToSocketAddrs::to_socket_addrs(&addr.clone())
+                                .map_err(|e| {
+                                    HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
+                                })?;
+
+                            let mut last_e = None;
+                            for addr_it in addrs {
+                                let udp_socket = match super::udp_stream(&addr_it).await {
+                                    Ok(socket) => socket,
+                                    Err(e) => {
+                                        last_e = Some(e);
+                                        continue;
+                                    }
+                                };
+                                let local = udp_socket.local_addr().map_err(|e| {
+                                    HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
+                                })?;
+                                let peer = udp_socket.peer_addr().map_err(|e| {
+                                    HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
+                                })?;
+                                let detail = ConnDetail {
+                                    protocol: ConnProtocol::Udp,
+                                    alpn: None,
+                                    local,
+                                    peer,
+                                    addr: addr.clone(),
+                                    proxy: false,
+                                };
+                                let mut stream =
+                                    HttpStream::new(MixStream::Udp(udp_socket), detail);
+                                let Ok(quic_conn) =
+                                    QuicConn::connect(&mut stream, &config, &host).await
+                                else {
+                                    continue;
+                                };
+                                stream.set_quic_conn(quic_conn);
+                                return Ok(stream);
+                            }
+
+                            Err(last_e.unwrap_or(HttpClientError::from_str(
+                                crate::ErrorKind::Connect,
+                                "connect failed",
+                            )))
+                        });
+                    }
                     Box::pin(async move {
-                        #[cfg(all(
-                            target_os = "linux",
-                            feature = "ylong_base",
-                            feature = "__c_openssl"
-                        ))]
+                        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
                         {
                             https_connect(config, addr, is_proxy, auth, host, port, fchown).await
                         }
                         #[cfg(not(all(
                             target_os = "linux",
                             feature = "ylong_base",
-                            feature = "__c_openssl"
+                            feature = "__tls"
                         )))]
                         {
                             https_connect(config, addr, is_proxy, auth, host, port).await
@@ -232,11 +294,12 @@ mod tls {
         auth: Option<String>,
         host: String,
         port: u16,
-        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
-        fchown: Option<FchownConfig>,
-    ) -> Result<HttpStream<MixStream<TcpStream>>, HttpClientError> {
+        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))] fchown: Option<
+            FchownConfig,
+        >,
+    ) -> Result<HttpStream<MixStream>, HttpClientError> {
         let mut tcp = tcp_stream(addr.as_str()).await?;
-        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
         if let Some(fchown) = fchown {
             let _ = tcp.fchown(fchown.uid, fchown.gid);
         }

@@ -28,7 +28,7 @@ use super::{SslContext, SslErrorCode};
 use crate::c_openssl::check_ret;
 use crate::c_openssl::ffi::bio::BIO;
 use crate::c_openssl::ffi::ssl::{
-    SSL_ctrl, SSL_get0_param, SSL_get_error, SSL_get_rbio, SSL_get_verify_result, SSL_read,
+    SSL_get0_param, SSL_get_error, SSL_get_rbio, SSL_get_verify_result, SSL_read,
     SSL_state_string_long, SSL_write,
 };
 use crate::c_openssl::foreign::ForeignRef;
@@ -54,6 +54,11 @@ impl Ssl {
             let ptr = check_ptr(SSL_new(ctx.as_ptr()))?;
             Ok(Ssl::from_ptr(ptr))
         }
+    }
+
+    #[cfg(feature = "http3")]
+    pub(crate) fn get_raw_ptr(&mut self) -> *mut SSL {
+        self.as_ptr()
     }
 
     /// Client connect to Server.
@@ -168,14 +173,25 @@ impl fmt::Debug for SslRef {
     }
 }
 
+#[cfg(feature = "__c_openssl")]
 const SSL_CTRL_SET_TLSEXT_HOSTNAME: c_int = 0x37;
+#[cfg(feature = "__c_openssl")]
 const TLSEXT_NAMETYPE_HOST_NAME: c_int = 0x0;
 
 unsafe fn ssl_set_tlsext_host_name(s: *mut SSL, name: *mut c_char) -> c_long {
-    SSL_ctrl(
+    #[cfg(feature = "__c_openssl")]
+    use crate::c_openssl::ffi::ssl::SSL_ctrl;
+    #[cfg(feature = "c_boringssl")]
+    use crate::c_openssl::ffi::ssl::SSL_set_tlsext_host_name;
+
+    #[cfg(feature = "__c_openssl")]
+    return SSL_ctrl(
         s,
         SSL_CTRL_SET_TLSEXT_HOSTNAME,
         TLSEXT_NAMETYPE_HOST_NAME as c_long,
         name as *mut c_void,
-    )
+    );
+
+    #[cfg(feature = "c_boringssl")]
+    return SSL_set_tlsext_host_name(s, name as *mut c_void) as c_long;
 }

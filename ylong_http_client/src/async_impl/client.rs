@@ -22,9 +22,9 @@ use crate::async_impl::interceptor::{IdleInterceptor, Interceptor, Interceptors}
 use crate::async_impl::request::Message;
 use crate::error::HttpClientError;
 use crate::runtime::timeout;
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 use crate::util::c_openssl::verify::PubKeyPins;
-#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 use crate::util::config::FchownConfig;
 use crate::util::config::{
     ClientConfig, ConnectorConfig, HttpConfig, HttpVersion, Proxy, Redirect, Timeout,
@@ -34,7 +34,7 @@ use crate::util::normalizer::RequestFormatter;
 use crate::util::proxy::Proxies;
 use crate::util::redirect::{RedirectInfo, Trigger};
 use crate::util::request::RequestArc;
-#[cfg(feature = "__c_openssl")]
+#[cfg(feature = "__tls")]
 use crate::CertVerifier;
 use crate::{ErrorKind, Retry};
 
@@ -160,8 +160,11 @@ impl<C: Connector> Client<C> {
 
 impl<C: Connector> Client<C> {
     async fn send_request(&self, request: RequestArc) -> Result<Response, HttpClientError> {
-        let response = self.send_unformatted_request(request.clone()).await?;
-        self.redirect(response, request).await
+        let mut response = self.send_unformatted_request(request.clone()).await?;
+        response = self.redirect(response, request.clone()).await?;
+        #[cfg(feature = "http3")]
+        self.inner.set_alt_svcs(request, &response);
+        Ok(response)
     }
 
     async fn send_unformatted_request(
@@ -262,7 +265,7 @@ pub struct ClientBuilder {
     /// Options and flags that is related to `Proxy`.
     proxies: Proxies,
 
-    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
     /// Fchown configuration.
     fchown: Option<FchownConfig>,
 
@@ -288,7 +291,7 @@ impl ClientBuilder {
             http: HttpConfig::default(),
             client: ClientConfig::default(),
             proxies: Proxies::default(),
-            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
             fchown: None,
             interceptors: Arc::new(IdleInterceptor),
             #[cfg(feature = "__tls")]
@@ -374,7 +377,7 @@ impl ClientBuilder {
     ///
     /// let builder = ClientBuilder::new().sockets_owner(1000, 1000);
     /// ```
-    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
     pub fn sockets_owner(mut self, uid: u32, gid: u32) -> Self {
         self.fchown = Some(FchownConfig::new(uid, gid));
         self
@@ -448,28 +451,32 @@ impl ClientBuilder {
     /// let client = ClientBuilder::new().build();
     /// ```
     pub fn build(self) -> Result<Client<HttpConnector>, HttpClientError> {
-        #[cfg(feature = "__c_openssl")]
+        #[cfg(feature = "__tls")]
         use crate::util::{AlpnProtocol, AlpnProtocolList};
 
-        #[cfg(feature = "__c_openssl")]
+        #[cfg(feature = "__tls")]
         let origin_builder = self.tls;
-        #[cfg(feature = "__c_openssl")]
+        #[cfg(feature = "__tls")]
         let tls_builder = match self.http.version {
             HttpVersion::Http1 => origin_builder,
             #[cfg(feature = "http2")]
             HttpVersion::Http2 => origin_builder.alpn_protos(AlpnProtocol::H2.wire_format_bytes()),
             HttpVersion::Negotiate => {
                 let supported = AlpnProtocolList::new();
+                #[cfg(feature = "http3")]
+                let supported = supported.extend(AlpnProtocol::H3);
                 #[cfg(feature = "http2")]
                 let supported = supported.extend(AlpnProtocol::H2);
                 let supported = supported.extend(AlpnProtocol::HTTP11);
                 origin_builder.alpn_proto_list(supported)
             }
+            #[cfg(feature = "http3")]
+            HttpVersion::Http3 => origin_builder.alpn_protos(AlpnProtocol::H3.wire_format_bytes()),
         };
 
         let config = ConnectorConfig {
             proxies: self.proxies,
-            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__c_openssl"))]
+            #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
             fchown: self.fchown,
             #[cfg(feature = "__tls")]
             tls: tls_builder.build()?,
@@ -603,6 +610,65 @@ impl ClientBuilder {
     }
 }
 
+#[cfg(feature = "http3")]
+impl ClientBuilder {
+    /// Only use HTTP/3.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().http3_prior_knowledge();
+    /// ```
+    pub fn http3_prior_knowledge(mut self) -> Self {
+        self.http.version = HttpVersion::Http3;
+        self
+    }
+
+    /// Sets the `SETTINGS_MAX_FIELD_SECTION_SIZE` defined in RFC9114
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().set_http3_max_field_section_size(16 * 1024);
+    /// ```
+    pub fn set_http3_max_field_section_size(mut self, size: u64) -> Self {
+        self.http.http3_config.set_max_field_section_size(size);
+        self
+    }
+
+    /// Sets the `SETTINGS_QPACK_MAX_TABLE_CAPACITY` defined in RFC9204
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().set_http3_qpack_max_table_capacity(16 * 1024);
+    /// ```
+    pub fn set_http3_qpack_max_table_capacity(mut self, size: u64) -> Self {
+        self.http.http3_config.set_qpack_max_table_capacity(size);
+        self
+    }
+
+    /// Sets the `SETTINGS_QPACK_BLOCKED_STREAMS` defined in RFC9204
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().set_http3_qpack_blocked_streams(10);
+    /// ```
+    pub fn set_http3_qpack_blocked_streams(mut self, size: u64) -> Self {
+        self.http.http3_config.set_qpack_blocked_streams(size);
+        self
+    }
+}
+
 #[cfg(feature = "__tls")]
 impl ClientBuilder {
     /// Sets the maximum allowed TLS version for connections.
@@ -661,7 +727,6 @@ impl ClientBuilder {
             CertificateList::CertList(c) => {
                 self.tls = self.tls.add_root_certificates(c);
             }
-            #[cfg(feature = "c_openssl_3_0")]
             CertificateList::PathList(p) => {
                 self.tls = self.tls.add_path_certificates(p);
             }
@@ -722,27 +787,6 @@ impl ClientBuilder {
     /// ```
     pub fn tls_cipher_list(mut self, list: &str) -> Self {
         self.tls = self.tls.cipher_list(list);
-        self
-    }
-
-    /// Sets the list of supported ciphers for the `TLSv1.3` protocol.
-    ///
-    /// The format consists of TLSv1.3 cipher suite names separated by `:`
-    /// characters in order of preference.
-    ///
-    /// Requires `OpenSSL 1.1.1` or `LibreSSL 3.4.0` or newer.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ylong_http_client::async_impl::ClientBuilder;
-    ///
-    /// let builder = ClientBuilder::new().tls_cipher_suites(
-    ///     "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
-    /// );
-    /// ```
-    pub fn tls_cipher_suites(mut self, list: &str) -> Self {
-        self.tls = self.tls.cipher_suites(list);
         self
     }
 
@@ -1061,9 +1105,6 @@ HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
             .add_root_certificate(Certificate::from_pem(b"cert").unwrap())
             .tls_ca_file("ca.crt")
             .tls_cipher_list(
-                "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
-            )
-            .tls_cipher_suites(
                 "DEFAULT:!aNULL:!eNULL:!MD5:!3DES:!DES:!RC4:!IDEA:!SEED:!aDSS:!SRP:!PSK",
             )
             .tls_built_in_root_certs(false)

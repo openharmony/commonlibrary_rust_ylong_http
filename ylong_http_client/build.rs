@@ -18,7 +18,7 @@
 //! ``OPENSSL_INCLUDE_DIR`` is the path for the Openssl header file.
 
 use std::env;
-
+// todo: check if needed
 fn main() {
     let lib_dir = env::var("OPENSSL_LIB_DIR");
     let include_dir = env::var("OPENSSL_INCLUDE_DIR");

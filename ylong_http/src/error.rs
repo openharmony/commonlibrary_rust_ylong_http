@@ -28,6 +28,8 @@ use std::error::Error;
 use crate::h1::H1Error;
 #[cfg(feature = "http2")]
 use crate::h2::H2Error;
+#[cfg(feature = "http3")]
+use crate::h3::H3Error;
 use crate::request::uri::InvalidUri;
 
 /// Errors that may occur when using this crate.
@@ -52,6 +54,13 @@ impl From<InvalidUri> for HttpError {
 impl From<H2Error> for HttpError {
     fn from(err: H2Error) -> Self {
         ErrorKind::H2(err).into()
+    }
+}
+
+#[cfg(feature = "http3")]
+impl From<H3Error> for HttpError {
+    fn from(err: H3Error) -> Self {
+        ErrorKind::H3(err).into()
     }
 }
 
@@ -84,4 +93,8 @@ pub(crate) enum ErrorKind {
     /// Errors related to `HTTP/2`.
     #[cfg(feature = "http2")]
     H2(H2Error),
+
+    /// Errors related to `HTTP/2`.
+    #[cfg(feature = "http3")]
+    H3(H3Error),
 }

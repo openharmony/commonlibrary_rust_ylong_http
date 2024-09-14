@@ -12,7 +12,6 @@
 // limitations under the License.
 
 use core::{ffi, fmt, ptr, str};
-#[cfg(feature = "c_openssl_3_0")]
 use std::ffi::CString;
 use std::net::IpAddr;
 
@@ -22,8 +21,6 @@ use super::bio::BioSlice;
 use super::error::{error_get_lib, error_get_reason, ErrorStack};
 use super::ffi::err::{ERR_clear_error, ERR_peek_last_error};
 use super::ffi::pem::PEM_read_bio_X509;
-#[cfg(feature = "c_openssl_3_0")]
-use super::ffi::x509::X509_STORE_load_path;
 use super::ffi::x509::{
     d2i_X509, EVP_PKEY_free, X509_NAME_free, X509_NAME_oneline, X509_PUBKEY_free,
     X509_STORE_CTX_free, X509_STORE_CTX_get0_cert, X509_STORE_add_cert, X509_STORE_free,
@@ -59,6 +56,9 @@ foreign_type! {
 }
 
 const ERR_LIB_PEM: c_int = 9;
+#[cfg(feature = "c_boringssl")]
+const PEM_R_NO_START_LINE: c_int = 110;
+#[cfg(feature = "__c_openssl")]
 const PEM_R_NO_START_LINE: c_int = 108;
 
 impl X509 {
@@ -96,7 +96,6 @@ impl X509 {
                         ERR_clear_error();
                         break;
                     }
-
                     return Err(ErrorStack::get());
                 } else {
                     certs.push(X509(r));
@@ -217,15 +216,27 @@ impl X509StoreRef {
         check_ret(unsafe { X509_STORE_add_cert(self.as_ptr(), cert.as_ptr()) }).map(|_| ())
     }
 
-    #[cfg(feature = "c_openssl_3_0")]
     pub(crate) fn add_path(&mut self, path: String) -> Result<(), ErrorStack> {
+        #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
+        use super::ffi::x509::X509_STORE_load_locations;
+        #[cfg(feature = "c_openssl_3_0")]
+        use super::ffi::x509::X509_STORE_load_path;
+
         let p_slice: &str = &path;
         let path = match CString::new(p_slice) {
             Ok(cstr) => cstr,
             Err(_) => return Err(ErrorStack::get()),
         };
-        check_ret(unsafe { X509_STORE_load_path(self.as_ptr(), path.as_ptr() as *const _) })
-            .map(|_| ())
+        #[cfg(feature = "c_openssl_3_0")]
+        return check_ret(unsafe {
+            X509_STORE_load_path(self.as_ptr(), path.as_ptr() as *const _)
+        })
+        .map(|_| ());
+        #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
+        return check_ret(unsafe {
+            X509_STORE_load_locations(self.as_ptr(), ptr::null(), path.as_ptr() as *const _)
+        })
+        .map(|_| ());
     }
 }
 

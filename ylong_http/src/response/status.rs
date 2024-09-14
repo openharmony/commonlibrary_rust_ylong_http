@@ -281,7 +281,6 @@ impl Display for StatusCode {
     }
 }
 
-#[rustfmt::skip]
 status_list!(
     /// [`100 Continue`]: https://tools.ietf.org/html/rfc7231#section-6.2.1
     (100, CONTINUE, "Continue"),
