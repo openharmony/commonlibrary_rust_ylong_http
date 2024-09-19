@@ -275,7 +275,7 @@ struct Text {
 
 impl Text {
     pub(crate) fn new(
-        len: usize,
+        len: u64,
         pre: &[u8],
         io: BoxStreamData,
         interceptors: Arc<Interceptors>,
