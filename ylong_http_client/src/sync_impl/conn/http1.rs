@@ -106,7 +106,7 @@ where
             .headers
             .get("Content-Length")
             .map(|v| v.to_string().unwrap_or(String::new()))
-            .and_then(|s| s.parse::<usize>().ok());
+            .and_then(|s| s.parse::<u64>().ok());
 
         let is_trailer = part.headers.get("Trailer").is_some();
 
