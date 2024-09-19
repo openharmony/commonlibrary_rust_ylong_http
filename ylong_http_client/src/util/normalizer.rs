@@ -162,7 +162,7 @@ impl<'a> BodyLengthParser<'a> {
         if content_length.is_some() {
             let content_length_valid = content_length
                 .and_then(|v| v.to_string().ok())
-                .and_then(|s| s.parse::<usize>().ok());
+                .and_then(|s| s.parse::<u64>().ok());
 
             return match content_length_valid {
                 // If `content-length` is 0, the io stream cannot be read,
@@ -180,7 +180,7 @@ impl<'a> BodyLengthParser<'a> {
 pub(crate) enum BodyLength {
     #[cfg(feature = "http1_1")]
     Chunk,
-    Length(usize),
+    Length(u64),
     Empty,
     UntilClose,
 }
