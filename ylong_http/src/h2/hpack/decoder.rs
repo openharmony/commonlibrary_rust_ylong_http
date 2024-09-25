@@ -189,13 +189,9 @@ impl<'a> Updater<'a> {
                     .search_header_name(index)
                     .ok_or(H2Error::ConnectionError(ErrorCode::CompressionError))?
             }
-            Name::Literal(octets) => Header::Other(
-                String::from_utf8(octets)
-                    .map_err(|_| H2Error::ConnectionError(ErrorCode::CompressionError))?,
-            ),
+            Name::Literal(octets) => Header::Other(unsafe { String::from_utf8_unchecked(octets) }),
         };
-        let v = String::from_utf8(value)
-            .map_err(|_| H2Error::ConnectionError(ErrorCode::CompressionError))?;
+        let v = unsafe { String::from_utf8_unchecked(value) };
         Ok((h, v))
     }
 }
@@ -588,5 +584,27 @@ mod ut_hpack_decoder {
                 }
             );
         }
+    }
+
+    /// UT test cases for `HpackDecoder`.
+    ///
+    /// # Brief
+    /// 1. Creates a header buf with non-utf8 bytes `0xE5, 0xBB, 0x6F`.
+    /// 2. Calls `HpackDecoder::decode()` function, passing in the specified
+    /// parameters.
+    /// 3. Checks if the test results are correct.
+    #[test]
+    fn ut_decode_literal_non_utf8_header_value() {
+        let mut decoder = HpackDecoder::with_max_size(1000, 2000);
+        let buf: [u8; 73] = [
+            0x0, 0x8D, 0x21, 0xEA, 0x49, 0x6A, 0x4A, 0xD2, 0x19, 0x15, 0x9D, 0x6, 0x49, 0x8F, 0x57,
+            0x39, 0x61, 0x74, 0x74, 0x61, 0x63, 0x68, 0x6D, 0x65, 0x6E, 0x74, 0x3B, 0x66, 0x69,
+            0x6C, 0x65, 0x4E, 0x61, 0x6D, 0x65, 0x3D, 0x54, 0x65, 0x73, 0x74, 0x5F, 0xE6, 0x96,
+            0xB0, 0xE5, 0xBB, 0x6F, 0x20, 0x4D, 0x69, 0x63, 0x72, 0x6F, 0x73, 0x6F, 0x66, 0x74,
+            0x20, 0x57, 0x6F, 0x72, 0x64, 0x20, 0xE6, 0x96, 0x87, 0xE6, 0xA1, 0xA3, 0x2E, 0x64,
+            0x6F, 0x63,
+        ];
+        let res = decoder.decode(&buf);
+        assert!(res.is_ok());
     }
 }
