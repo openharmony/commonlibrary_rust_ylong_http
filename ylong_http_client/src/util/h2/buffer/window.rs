@@ -13,7 +13,7 @@
 
 //! http2 send and recv window definition.
 
-use ylong_http::h2::{ErrorCode, Frame, FrameFlags, H2Error, Payload, WindowUpdate};
+use ylong_http::h2::{ErrorCode, Frame, FrameFlags, H2Error, Payload, StreamId, WindowUpdate};
 
 pub(crate) struct SendWindow {
     // As the sending window, the client retains only its visible window size,
@@ -116,15 +116,11 @@ impl RecvWindow {
         self.notification += size as i32
     }
 
-    pub(crate) fn check_window_update(&mut self, id: u32) -> Option<Frame> {
+    pub(crate) fn check_window_update(&mut self, id: StreamId) -> Option<Frame> {
         if let Some(size) = self.unreleased_size() {
             self.increase_notification(size);
             let window_update = WindowUpdate::new(size);
-            let frame = Frame::new(
-                id as usize,
-                FrameFlags::new(0),
-                Payload::WindowUpdate(window_update),
-            );
+            let frame = Frame::new(id, FrameFlags::new(0), Payload::WindowUpdate(window_update));
             Some(frame)
         } else {
             None

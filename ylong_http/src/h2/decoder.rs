@@ -13,6 +13,7 @@
 
 use std::ops::{Deref, DerefMut};
 
+use super::frame::StreamId;
 use super::{Frame, H2Error};
 use crate::error::ErrorKind::H2;
 use crate::h2;
@@ -195,7 +196,7 @@ struct HpackDecoderLayer {
 
 #[derive(Default)]
 struct FrameHeader {
-    stream_id: usize,
+    stream_id: StreamId,
     flags: u8,
     frame_type: u8,
     payload_length: usize,
@@ -204,9 +205,9 @@ struct FrameHeader {
 struct Continuations {
     flags: u8,
     is_end_stream: bool,
-    stream_id: usize,
+    stream_id: StreamId,
     is_end_headers: bool,
-    promised_stream_id: u32,
+    promised_stream_id: StreamId,
 }
 
 impl HpackDecoderLayer {
@@ -449,7 +450,7 @@ impl FrameDecoder {
         }
         if self.header.payload_length != 5 || buf.len() != 5 {
             return Err(H2Error::StreamError(
-                self.header.stream_id as u32,
+                self.header.stream_id,
                 ErrorCode::FrameSizeError,
             ));
         }
@@ -485,7 +486,7 @@ impl FrameDecoder {
         if self.header.payload_length < 8 || buf.len() < 8 {
             return Err(H2Error::ConnectionError(ErrorCode::FrameSizeError));
         }
-        let last_stream_id = get_stream_id(&buf[..4]) as usize;
+        let last_stream_id = get_stream_id(&buf[..4]);
         let error_code = get_code_value(&buf[4..8]);
         let mut debug_data = vec![];
         debug_data.extend_from_slice(&buf[8..]);
@@ -515,7 +516,7 @@ impl FrameDecoder {
             | (buf[3] as u32);
         if increment_size == 0 {
             return Err(H2Error::StreamError(
-                self.header.stream_id as u32,
+                self.header.stream_id,
                 ErrorCode::ProtocolError,
             ));
         }
@@ -761,7 +762,7 @@ impl FrameDecoder {
         } else {
             get_stream_id(&buf[..4])
         };
-        if is_connection_frame(promised_stream_id as usize) {
+        if is_connection_frame(promised_stream_id) {
             return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
         }
         self.push_promise_framing(end_headers, promised_stream_id)
@@ -770,7 +771,7 @@ impl FrameDecoder {
     fn push_promise_framing(
         &mut self,
         end_headers: bool,
-        promised_stream_id: u32,
+        promised_stream_id: StreamId,
     ) -> Result<FrameKind, H2Error> {
         if end_headers {
             let headers = self.hpack.hpack_finish()?;
@@ -813,7 +814,7 @@ impl FrameDecoder {
             }
             let frame_type = header_buffer[3];
             let flags = header_buffer[4];
-            let stream_id = get_stream_id(&header_buffer[5..9]) as usize;
+            let stream_id = get_stream_id(&header_buffer[5..9]);
             let frame_header = FrameHeader {
                 stream_id,
                 flags,
@@ -830,11 +831,11 @@ impl FrameDecoder {
     }
 }
 
-fn is_connection_frame(id: usize) -> bool {
+fn is_connection_frame(id: StreamId) -> bool {
     id == 0
 }
 
-fn get_stream_id(token: &[u8]) -> u32 {
+fn get_stream_id(token: &[u8]) -> StreamId {
     (((token[0] & 0x7f) as u32) << 24)
         | ((token[1] as u32) << 16)
         | ((token[2] as u32) << 8)

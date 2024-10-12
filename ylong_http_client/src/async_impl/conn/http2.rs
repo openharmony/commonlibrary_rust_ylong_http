@@ -51,11 +51,12 @@ where
     let part = message.request.ref_mut().part().clone();
 
     // TODO Implement trailer.
-    let headers = build_headers_frame(conn.id, part, false)
+    let (flag, payload) = build_headers_payload(part, false)
         .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
     let data = BodyDataRef::new(message.request.clone());
     let stream = RequestWrapper {
-        header: headers,
+        flag,
+        payload,
         data,
     };
     conn.send_frame_to_controller(stream)?;
@@ -80,7 +81,10 @@ where
                 None => {
                     return Err(HttpClientError::from_error(
                         ErrorKind::Request,
-                        HttpError::from(H2Error::StreamError(conn.id, ErrorCode::ProtocolError)),
+                        HttpError::from(H2Error::StreamError(
+                            headers_frame.stream_id(),
+                            ErrorCode::ProtocolError,
+                        )),
                     ));
                 }
             };
@@ -94,7 +98,7 @@ where
             return Err(HttpClientError::from_error(
                 ErrorKind::Request,
                 HttpError::from(H2Error::StreamError(
-                    conn.id,
+                    headers_frame.stream_id(),
                     ErrorCode::try_from(reset.error_code()).unwrap_or(ErrorCode::ProtocolError),
                 )),
             ));
@@ -102,7 +106,10 @@ where
         _ => {
             return Err(HttpClientError::from_error(
                 ErrorKind::Request,
-                HttpError::from(H2Error::StreamError(conn.id, ErrorCode::ProtocolError)),
+                HttpError::from(H2Error::StreamError(
+                    headers_frame.stream_id(),
+                    ErrorCode::ProtocolError,
+                )),
             ));
         }
     };
@@ -123,11 +130,10 @@ where
     ))
 }
 
-pub(crate) fn build_headers_frame(
-    id: u32,
+pub(crate) fn build_headers_payload(
     mut part: RequestPart,
     is_end_stream: bool,
-) -> Result<Frame, HttpError> {
+) -> Result<(FrameFlags, Payload), HttpError> {
     remove_connection_specific_headers(&mut part.headers)?;
     let pseudo = build_pseudo_headers(&mut part)?;
     let mut header_part = h2::Parts::new();
@@ -140,11 +146,7 @@ pub(crate) fn build_headers_frame(
     if is_end_stream {
         flag.set_end_stream(true);
     }
-    Ok(Frame::new(
-        id as usize,
-        flag,
-        Payload::Headers(headers_payload),
-    ))
+    Ok((flag, Payload::Headers(headers_payload)))
 }
 
 // Illegal headers validation in http2.
@@ -379,7 +381,7 @@ mod ut_http2 {
     use ylong_http::h2::Payload;
     use ylong_http::request::RequestBuilder;
 
-    use crate::async_impl::conn::http2::build_headers_frame;
+    use crate::async_impl::conn::http2::build_headers_payload;
 
     macro_rules! build_request {
         (
@@ -404,7 +406,7 @@ mod ut_http2 {
     }
 
     #[test]
-    fn ut_http2_build_headers_frame() {
+    fn ut_http2_build_headers_payload() {
         let request = build_request!(
             Request: {
             Method: "GET",
@@ -415,12 +417,11 @@ mod ut_http2 {
             Body: "Hi",
         }
         );
-        let frame = build_headers_frame(1, request.part().clone(), false).unwrap();
-        assert_eq!(frame.flags().bits(), 0x4);
-        let frame = build_headers_frame(1, request.part().clone(), true).unwrap();
-        assert_eq!(frame.stream_id(), 1);
-        assert_eq!(frame.flags().bits(), 0x5);
-        if let Payload::Headers(headers) = frame.payload() {
+        let (flag, _) = build_headers_payload(request.part().clone(), false).unwrap();
+        assert_eq!(flag.bits(), 0x4);
+        let (flag, payload) = build_headers_payload(request.part().clone(), true).unwrap();
+        assert_eq!(flag.bits(), 0x5);
+        if let Payload::Headers(headers) = payload {
             let (pseudo, _headers) = headers.parts();
             assert_eq!(pseudo.status(), None);
             assert_eq!(pseudo.scheme().unwrap(), "http");
@@ -457,7 +458,7 @@ mod ut_http2 {
         let (resp_tx, resp_rx) = ylong_runtime::sync::mpsc::bounded_channel(20);
         let (req_tx, _req_rx) = crate::runtime::unbounded_channel();
         let shutdown = Arc::new(AtomicBool::new(false));
-        let mut conn: Http2Conn<()> = Http2Conn::new(1, 20, shutdown, req_tx);
+        let mut conn: Http2Conn<()> = Http2Conn::new(20, shutdown, req_tx);
         conn.receiver.set_receiver(resp_rx);
         let mut text_io = TextIo::new(conn);
         let data_1 = Frame::new(

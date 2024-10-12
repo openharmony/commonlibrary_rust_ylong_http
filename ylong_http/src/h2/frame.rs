@@ -17,6 +17,10 @@ use crate::error::HttpError;
 use crate::h2::{ErrorCode, H2Error, Parts, PseudoHeaders};
 use crate::headers;
 
+/// Type StreamId
+/// In HTTP/2, Streams are identified by an unsigned 31-bit integer.
+pub type StreamId = u32;
+
 /// Mask for the END_STREAM flag.
 /// When set, indicates that the sender will not send further frames for this
 /// stream.
@@ -114,8 +118,6 @@ pub enum Setting {
     MaxHeaderListSize(u32),
 }
 
-type StreamId = usize;
-
 /// HTTP/2 frame flags.
 #[derive(Clone)]
 pub struct FrameFlags(u8);
@@ -189,7 +191,7 @@ pub struct WindowUpdate {
 /// streams the sender intends to initiate.
 #[derive(Clone)]
 pub struct PushPromise {
-    promised_stream_id: u32,
+    promised_stream_id: StreamId,
     parts: Parts,
 }
 
@@ -595,7 +597,7 @@ impl Ping {
 
 impl PushPromise {
     /// `PushPromise` constructor.
-    pub fn new(promised_stream_id: u32, parts: Parts) -> Self {
+    pub fn new(promised_stream_id: StreamId, parts: Parts) -> Self {
         Self {
             promised_stream_id,
             parts,

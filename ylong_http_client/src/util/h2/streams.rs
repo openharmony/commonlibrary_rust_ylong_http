@@ -17,16 +17,18 @@ use std::cmp::{min, Ordering};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::task::{Context, Poll};
 
-use ylong_http::h2::{Data, ErrorCode, Frame, FrameFlags, H2Error, Payload};
+use ylong_http::h2::{Data, ErrorCode, Frame, FrameFlags, H2Error, Payload, StreamId};
 
 use crate::runtime::UnboundedSender;
 use crate::util::data_ref::BodyDataRef;
 use crate::util::dispatcher::http2::DispatchErrorKind;
 use crate::util::h2::buffer::{FlowControl, RecvWindow, SendWindow};
 
-pub(crate) const INITIAL_MAX_SEND_STREAM_ID: u32 = u32::MAX >> 1;
-pub(crate) const INITIAL_MAX_RECV_STREAM_ID: u32 = u32::MAX >> 1;
-const INITIAL_LATEST_REMOTE_ID: u32 = 0;
+pub(crate) const INITIAL_MAX_SEND_STREAM_ID: StreamId = u32::MAX >> 1;
+pub(crate) const INITIAL_MAX_RECV_STREAM_ID: StreamId = u32::MAX >> 1;
+
+const DEFAULT_MAX_STREAM_ID: StreamId = u32::MAX >> 1;
+const INITIAL_LATEST_REMOTE_ID: StreamId = 0;
 const DEFAULT_MAX_CONCURRENT_STREAMS: u32 = 100;
 
 pub(crate) enum FrameRecvState {
@@ -121,28 +123,30 @@ pub(crate) struct Stream {
 }
 
 pub(crate) struct RequestWrapper {
-    pub(crate) header: Frame,
+    pub(crate) flag: FrameFlags,
+    pub(crate) payload: Payload,
     pub(crate) data: BodyDataRef,
 }
 
 pub(crate) struct Streams {
     // Records the received goaway last_stream_id.
-    pub(crate) max_send_id: u32,
+    pub(crate) max_send_id: StreamId,
     // Records the send goaway last_stream_id.
-    pub(crate) max_recv_id: u32,
+    pub(crate) max_recv_id: StreamId,
     // Currently the client doesn't support push promise, so this value is always 0.
-    pub(crate) latest_remote_id: u32,
+    pub(crate) latest_remote_id: StreamId,
     pub(crate) stream_recv_window_size: u32,
     pub(crate) stream_send_window_size: u32,
     max_concurrent_streams: u32,
     current_concurrent_streams: u32,
     flow_control: FlowControl,
-    pending_concurrency: VecDeque<u32>,
+    pending_concurrency: VecDeque<StreamId>,
     pending_stream_window: HashSet<u32>,
     pending_conn_window: VecDeque<u32>,
-    pending_send: VecDeque<u32>,
-    window_updating_streams: VecDeque<u32>,
-    pub(crate) stream_map: HashMap<u32, Stream>,
+    pending_send: VecDeque<StreamId>,
+    window_updating_streams: VecDeque<StreamId>,
+    pub(crate) stream_map: HashMap<StreamId, Stream>,
+    pub(crate) next_stream_id: StreamId,
 }
 
 macro_rules! change_stream_state {
@@ -196,6 +200,7 @@ impl Streams {
             pending_send: VecDeque::new(),
             window_updating_streams: VecDeque::new(),
             stream_map: HashMap::new(),
+            next_stream_id: 1,
         }
     }
 
@@ -261,7 +266,7 @@ impl Streams {
         }
     }
 
-    pub(crate) fn release_stream_recv_window(&mut self, id: u32, size: u32) -> Result<(), H2Error> {
+    pub(crate) fn release_stream_recv_window(&mut self, id: StreamId, size: u32) -> Result<(), H2Error> {
         if let Some(stream) = self.stream_map.get_mut(&id) {
             if stream.recv_window.notification_available() < size {
                 return Err(H2Error::StreamError(id, ErrorCode::FlowControlError));
@@ -294,27 +299,30 @@ impl Streams {
         true
     }
 
-    pub(crate) fn stream_state(&self, id: u32) -> Option<H2StreamState> {
+    pub(crate) fn stream_state(&self, id: StreamId) -> Option<H2StreamState> {
         self.stream_map.get(&id).map(|stream| stream.state)
     }
 
-    pub(crate) fn insert(&mut self, id: u32, request: RequestWrapper) {
+    pub(crate) fn insert(&mut self, id: StreamId, headers: Frame, data: BodyDataRef) {
         let send_window = SendWindow::new(self.stream_send_window_size as i32);
         let recv_window = RecvWindow::new(self.stream_recv_window_size as i32);
-
-        let stream = Stream::new(recv_window, send_window, request.header, request.data);
+        let stream = Stream::new(recv_window, send_window, headers, data);
         self.stream_map.insert(id, stream);
     }
 
-    pub(crate) fn push_back_pending_send(&mut self, id: u32) {
+    pub(crate) fn push_back_pending_send(&mut self, id: StreamId) {
         self.pending_send.push_back(id);
     }
 
-    pub(crate) fn push_pending_concurrency(&mut self, id: u32) {
+    pub(crate) fn push_pending_concurrency(&mut self, id: StreamId) {
         self.pending_concurrency.push_back(id);
     }
 
-    pub(crate) fn next_pending_stream(&mut self) -> Option<u32> {
+    pub(crate) fn is_pending_concurrency_empty(&self) -> bool {
+        self.pending_concurrency.is_empty()
+    }
+
+    pub(crate) fn next_pending_stream(&mut self) -> Option<StreamId> {
         self.pending_send.pop_front()
     }
 
@@ -357,7 +365,7 @@ impl Streams {
 
     pub(crate) fn reassign_stream_send_window(
         &mut self,
-        id: u32,
+        id: StreamId,
         size: u32,
     ) -> Result<(), H2Error> {
         if let Some(stream) = self.stream_map.get_mut(&id) {
@@ -404,7 +412,7 @@ impl Streams {
         }
     }
 
-    pub(crate) fn headers(&mut self, id: u32) -> Result<Option<Frame>, H2Error> {
+    pub(crate) fn headers(&mut self, id: StreamId) -> Result<Option<Frame>, H2Error> {
         match self.stream_map.get_mut(&id) {
             None => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
             Some(stream) => match stream.state {
@@ -417,7 +425,7 @@ impl Streams {
     pub(crate) fn poll_read_body(
         &mut self,
         cx: &mut Context<'_>,
-        id: u32,
+        id: StreamId,
     ) -> Result<DataReadState, H2Error> {
         // TODO Since the Array length needs to be a constant,
         // the minimum value is used here, which can be optimized to the MAX_FRAME_SIZE
@@ -453,7 +461,7 @@ impl Streams {
     fn poll_sized_data(
         &mut self,
         cx: &mut Context<'_>,
-        id: u32,
+        id: StreamId,
         buf: &mut [u8],
     ) -> Result<DataReadState, H2Error> {
         let stream = if let Some(stream) = self.stream_map.get_mut(&id) {
@@ -470,7 +478,7 @@ impl Streams {
                     let flag = FrameFlags::new(0);
 
                     Ok(DataReadState::Ready(Frame::new(
-                        id as usize,
+                        id,
                         flag,
                         Payload::Data(Data::new(data_vec)),
                     )))
@@ -479,7 +487,7 @@ impl Streams {
                     let mut flag = FrameFlags::new(1);
                     flag.set_end_stream(true);
                     Ok(DataReadState::Finish(Frame::new(
-                        id as usize,
+                        id,
                         flag,
                         Payload::Data(Data::new(data_vec)),
                     )))
@@ -493,7 +501,7 @@ impl Streams {
         }
     }
 
-    pub(crate) fn get_go_away_streams(&mut self, last_stream_id: u32) -> Vec<u32> {
+    pub(crate) fn get_go_away_streams(&mut self, last_stream_id: StreamId) -> Vec<StreamId> {
         let mut ids = vec![];
         for (id, unsent_stream) in self.stream_map.iter_mut() {
             if *id >= last_stream_id {
@@ -518,7 +526,7 @@ impl Streams {
         ids
     }
 
-    pub(crate) fn get_all_unclosed_streams(&mut self) -> Vec<u32> {
+    pub(crate) fn get_all_unclosed_streams(&mut self) -> Vec<StreamId> {
         let mut ids = vec![];
         for (id, stream) in self.stream_map.iter_mut() {
             match stream.state {
@@ -542,7 +550,7 @@ impl Streams {
         self.pending_concurrency.clear();
     }
 
-    pub(crate) fn send_local_reset(&mut self, id: u32) -> StreamEndState {
+    pub(crate) fn send_local_reset(&mut self, id: StreamId) -> StreamEndState {
         return match self.stream_map.get_mut(&id) {
             None => StreamEndState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match stream.state {
@@ -567,7 +575,7 @@ impl Streams {
         };
     }
 
-    pub(crate) fn send_headers_frame(&mut self, id: u32, eos: bool) -> FrameRecvState {
+    pub(crate) fn send_headers_frame(&mut self, id: StreamId, eos: bool) -> FrameRecvState {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
@@ -610,7 +618,7 @@ impl Streams {
         FrameRecvState::OK
     }
 
-    pub(crate) fn send_data_frame(&mut self, id: u32, eos: bool) -> FrameRecvState {
+    pub(crate) fn send_data_frame(&mut self, id: StreamId, eos: bool) -> FrameRecvState {
         match self.stream_map.get_mut(&id) {
             None => return FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError)),
             Some(stream) => match &stream.state {
@@ -636,7 +644,7 @@ impl Streams {
         FrameRecvState::OK
     }
 
-    pub(crate) fn recv_remote_reset(&mut self, id: u32) -> StreamEndState {
+    pub(crate) fn recv_remote_reset(&mut self, id: StreamId) -> StreamEndState {
         if id > self.max_recv_id {
             return StreamEndState::Ignore;
         }
@@ -655,7 +663,7 @@ impl Streams {
         };
     }
 
-    pub(crate) fn recv_headers(&mut self, id: u32, eos: bool) -> FrameRecvState {
+    pub(crate) fn recv_headers(&mut self, id: StreamId, eos: bool) -> FrameRecvState {
         if id > self.max_recv_id {
             return FrameRecvState::Ignore;
         }
@@ -695,7 +703,7 @@ impl Streams {
         FrameRecvState::OK
     }
 
-    pub(crate) fn recv_data(&mut self, id: u32, eos: bool) -> FrameRecvState {
+    pub(crate) fn recv_data(&mut self, id: StreamId, eos: bool) -> FrameRecvState {
         if id > self.max_recv_id {
             return FrameRecvState::Ignore;
         }
@@ -725,6 +733,18 @@ impl Streams {
             },
         }
         FrameRecvState::OK
+    }
+
+    pub(crate) fn generate_id(&mut self) -> Result<StreamId, DispatchErrorKind> {
+        let id = self.next_stream_id;
+        if self.next_stream_id < DEFAULT_MAX_STREAM_ID {
+            self.next_stream_id += 2;
+            Ok(id)
+        } else {
+            Err(DispatchErrorKind::H2(H2Error::ConnectionError(
+                ErrorCode::ProtocolError,
+            )))
+        }
     }
 }
 

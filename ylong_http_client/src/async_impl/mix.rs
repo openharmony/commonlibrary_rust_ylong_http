@@ -16,10 +16,9 @@ use core::task::{Context, Poll};
 
 #[cfg(feature = "http3")]
 use ylong_runtime::net::ConnectedUdpSocket;
-use ylong_runtime::net::TcpStream;
 
 use crate::async_impl::ssl_stream::AsyncSslStream;
-use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
+use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf, TcpStream};
 
 /// A stream which may be wrapped with TLS.
 pub enum MixStream {

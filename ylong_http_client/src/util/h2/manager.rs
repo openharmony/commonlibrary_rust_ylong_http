@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use ylong_http::h2::{
-    ErrorCode, Frame, FrameFlags, Goaway, H2Error, Payload, Ping, RstStream, Setting,
+    ErrorCode, Frame, FrameFlags, Goaway, H2Error, Payload, Ping, RstStream, Setting, StreamId,
 };
 
 use crate::runtime::{BoundedReceiver, UnboundedReceiver, UnboundedSender};
@@ -166,43 +166,37 @@ impl ConnManager {
     fn poll_recv_request(&mut self, cx: &mut Context<'_>) -> Result<(), DispatchErrorKind> {
         loop {
             #[cfg(feature = "tokio_base")]
-            match self.req_rx.poll_recv(cx) {
-                Poll::Ready(Some(message)) => {
-                    if self.controller.streams.reach_max_concurrency() {
-                        self.controller.streams.push_pending_concurrency(message.id);
-                    } else {
-                        self.controller.streams.increase_current_concurrency();
-                        self.controller.streams.push_back_pending_send(message.id)
-                    }
-                    self.controller.senders.insert(message.id, message.sender);
-                    self.controller.streams.insert(message.id, message.request);
-                }
-                Poll::Ready(None) => {
-                    return Err(DispatchErrorKind::ChannelClosed);
-                }
-                Poll::Pending => {
-                    break;
-                }
-            }
+            let message = match self.req_rx.poll_recv(cx) {
+                Poll::Ready(Some(message)) => message,
+                Poll::Ready(None) => return Err(DispatchErrorKind::ChannelClosed),
+                Poll::Pending => break,
+            };
             #[cfg(feature = "ylong_base")]
-            match self.req_rx.poll_recv(cx) {
-                Poll::Ready(Ok(message)) => {
-                    if self.controller.streams.reach_max_concurrency() {
-                        self.controller.streams.push_pending_concurrency(message.id);
-                    } else {
-                        self.controller.streams.increase_current_concurrency();
-                        self.controller.streams.push_back_pending_send(message.id)
-                    }
-                    self.controller.senders.insert(message.id, message.sender);
-                    self.controller.streams.insert(message.id, message.request);
-                }
-                Poll::Ready(Err(_e)) => {
-                    return Err(DispatchErrorKind::ChannelClosed);
-                }
-                Poll::Pending => {
+            let message = match self.req_rx.poll_recv(cx) {
+                Poll::Ready(Ok(message)) => message,
+                Poll::Ready(Err(_e)) => return Err(DispatchErrorKind::ChannelClosed),
+                Poll::Pending => break,
+            };
+            let id = match self.controller.streams.generate_id() {
+                Ok(id) => id,
+                Err(e) => {
+                    let _ = message.sender.try_send(RespMessage::OutputExit(e));
                     break;
                 }
+            };
+            let headers = Frame::new(id, message.request.flag, message.request.payload);
+            if self.controller.streams.reach_max_concurrency()
+                || !self.controller.streams.is_pending_concurrency_empty()
+            {
+                self.controller.streams.push_pending_concurrency(id)
+            } else {
+                self.controller.streams.increase_current_concurrency();
+                self.controller.streams.push_back_pending_send(id)
             }
+            self.controller.senders.insert(id, message.sender);
+            self.controller
+                .streams
+                .insert(id, headers, message.request.data);
         }
         Ok(())
     }
@@ -228,7 +222,7 @@ impl ConnManager {
     fn input_stream_frame(
         &mut self,
         cx: &mut Context<'_>,
-        id: u32,
+        id: StreamId,
     ) -> Result<(), DispatchErrorKind> {
         match self.controller.streams.headers(id)? {
             None => {}
@@ -263,7 +257,7 @@ impl ConnManager {
                 if let FrameRecvState::Err(e) = self
                     .controller
                     .streams
-                    .send_headers_frame(frame.stream_id() as u32, frame.flags().is_end_stream())
+                    .send_headers_frame(frame.stream_id(), frame.flags().is_end_stream())
                 {
                     // Never return FrameRecvState::Ignore case.
                     return Err(e.into());
@@ -273,7 +267,7 @@ impl ConnManager {
                 if let FrameRecvState::Err(e) = self
                     .controller
                     .streams
-                    .send_data_frame(frame.stream_id() as u32, frame.flags().is_end_stream())
+                    .send_data_frame(frame.stream_id(), frame.flags().is_end_stream())
                 {
                     // Never return FrameRecvState::Ignore case.
                     return Err(e.into());
@@ -410,7 +404,7 @@ impl ConnManager {
         self.controller.shutdown();
         self.req_rx.close();
         let last_stream_id = go_away.get_last_stream_id();
-        let streams = self.controller.get_unsent_streams(last_stream_id as u32)?;
+        let streams = self.controller.get_unsent_streams(last_stream_id)?;
 
         let error = H2Error::ConnectionError(ErrorCode::try_from(go_away.get_error_code())?);
 
@@ -445,11 +439,11 @@ impl ConnManager {
         match self
             .controller
             .streams
-            .recv_remote_reset(frame.stream_id() as u32)
+            .recv_remote_reset(frame.stream_id())
         {
             StreamEndState::OK => self.controller.send_message_to_stream(
                 cx,
-                frame.stream_id() as u32,
+                frame.stream_id(),
                 RespMessage::Output(frame),
             ),
             StreamEndState::Err(e) => Poll::Ready(Err(e)),
@@ -465,11 +459,11 @@ impl ConnManager {
         match self
             .controller
             .streams
-            .recv_headers(frame.stream_id() as u32, frame.flags().is_end_stream())
+            .recv_headers(frame.stream_id(), frame.flags().is_end_stream())
         {
             FrameRecvState::OK => self.controller.send_message_to_stream(
                 cx,
-                frame.stream_id() as u32,
+                frame.stream_id(),
                 RespMessage::Output(frame),
             ),
             FrameRecvState::Err(e) => Poll::Ready(Err(e)),
@@ -484,7 +478,7 @@ impl ConnManager {
             // this will not happen forever.
             return Poll::Ready(Ok(()));
         };
-        let id = frame.stream_id() as u32;
+        let id = frame.stream_id();
         let len = data.size() as u32;
 
         self.controller.streams.release_conn_recv_window(len)?;
@@ -499,7 +493,7 @@ impl ConnManager {
         {
             FrameRecvState::OK => self.controller.send_message_to_stream(
                 cx,
-                frame.stream_id() as u32,
+                frame.stream_id(),
                 RespMessage::Output(frame),
             ),
             FrameRecvState::Ignore => Poll::Ready(Ok(())),
@@ -524,7 +518,7 @@ impl ConnManager {
         } else {
             self.controller
                 .streams
-                .reassign_stream_send_window(id as u32, increment)?;
+                .reassign_stream_send_window(id, increment)?;
         }
         Ok(())
     }
@@ -555,15 +549,11 @@ impl ConnManager {
     fn manage_stream_error(
         &mut self,
         cx: &mut Context<'_>,
-        id: u32,
+        id: StreamId,
         code: ErrorCode,
     ) -> Poll<Result<(), DispatchErrorKind>> {
         let rest_payload = RstStream::new(code.into_code());
-        let frame = Frame::new(
-            id as usize,
-            FrameFlags::empty(),
-            Payload::RstStream(rest_payload),
-        );
+        let frame = Frame::new(id, FrameFlags::empty(), Payload::RstStream(rest_payload));
         match self.controller.streams.send_local_reset(id) {
             StreamEndState::OK => {
                 self.input_tx
@@ -606,7 +596,7 @@ impl ConnManager {
         // shutdown.
         let go_away_payload = Goaway::new(
             code.into_code(),
-            self.controller.streams.latest_remote_id as usize,
+            self.controller.streams.latest_remote_id,
             vec![],
         );
         let frame = Frame::new(
@@ -647,7 +637,7 @@ impl ConnManager {
         // before closed. The preceding operations before receiving the frame
         // ensure that the connection is in the closing state.
         if self.controller.streams.is_closed() {
-            let last_stream_id = self.controller.streams.latest_remote_id as usize;
+            let last_stream_id = self.controller.streams.latest_remote_id;
             let go_away_payload = Goaway::new(error_code, last_stream_id, vec![]);
             let frame = Frame::new(
                 0,
@@ -677,8 +667,7 @@ impl ConnManager {
             Some(ref go_away) => {
                 // Whether the same GOAWAY Frame has been sent before.
                 if !(go_away.get_error_code() == err_code
-                    && go_away.get_last_stream_id()
-                        == self.controller.streams.latest_remote_id as usize)
+                    && go_away.get_last_stream_id() == self.controller.streams.latest_remote_id)
                 {
                     self.controller.go_away_sync.going_away = Some(payload);
                     self.input_tx
