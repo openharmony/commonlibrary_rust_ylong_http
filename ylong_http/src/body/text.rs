@@ -276,7 +276,7 @@ impl<T: AsyncRead + Unpin + Send + Sync> async_impl::Body for TextBody<FromAsync
 /// assert_eq!(left, b"[REDUNDANT DATA]");
 /// ```
 pub struct TextBodyDecoder {
-    left: usize,
+    left: u64,
 }
 
 impl TextBodyDecoder {
@@ -291,7 +291,7 @@ impl TextBodyDecoder {
     ///
     /// let decoder = TextBodyDecoder::new(10);
     /// ```
-    pub fn new(length: usize) -> TextBodyDecoder {
+    pub fn new(length: u64) -> TextBodyDecoder {
         TextBodyDecoder { left: length }
     }
 
@@ -348,12 +348,13 @@ impl TextBodyDecoder {
             return (Text::complete(&buf[..0]), buf);
         }
 
-        let size = min(self.left, buf.len());
+        let size = min(self.left, buf.len() as u64);
         self.left -= size;
+        let end = size as usize;
         if self.left == 0 {
-            (Text::complete(&buf[..size]), &buf[size..])
+            (Text::complete(&buf[..end]), &buf[end..])
         } else {
-            (Text::partial(&buf[..size]), &buf[size..])
+            (Text::partial(&buf[..end]), &buf[end..])
         }
     }
 }

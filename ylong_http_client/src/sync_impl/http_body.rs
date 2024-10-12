@@ -56,7 +56,7 @@ impl HttpBody {
         Self { kind: Kind::Empty }
     }
 
-    pub(crate) fn text(len: usize, pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn text(len: u64, pre: &[u8], io: BoxStreamData) -> Self {
         Self {
             kind: Kind::Text(Text::new(len, pre, io)),
         }
@@ -83,7 +83,7 @@ struct Text {
 }
 
 impl Text {
-    pub(crate) fn new(len: usize, pre: &[u8], io: BoxStreamData) -> Self {
+    pub(crate) fn new(len: u64, pre: &[u8], io: BoxStreamData) -> Self {
         Self {
             decoder: TextBodyDecoder::new(len),
             pre: (!pre.is_empty()).then_some(Cursor::new(pre.to_vec())),

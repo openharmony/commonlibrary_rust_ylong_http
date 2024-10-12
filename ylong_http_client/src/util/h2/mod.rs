@@ -38,6 +38,6 @@ pub(crate) use input::SendData;
 pub(crate) use io::{split, Reader, Writer};
 pub(crate) use manager::ConnManager;
 pub(crate) use output::RecvData;
-pub(crate) use streams::{RequestWrapper, Streams};
+pub(crate) use streams::{H2StreamState, RequestWrapper, StreamEndState, Streams};
 
 pub const MAX_FLOW_CONTROL_WINDOW: u32 = (1 << 31) - 1;
