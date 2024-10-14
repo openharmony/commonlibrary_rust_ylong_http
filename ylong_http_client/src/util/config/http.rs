@@ -20,6 +20,9 @@ use crate::ErrorKind;
 pub(crate) struct HttpConfig {
     pub(crate) version: HttpVersion,
 
+    #[cfg(feature = "http1_1")]
+    pub(crate) http1_config: http1::H1Config,
+
     #[cfg(feature = "http2")]
     pub(crate) http2_config: http2::H2Config,
 
@@ -32,6 +35,9 @@ impl HttpConfig {
     pub(crate) fn new() -> Self {
         Self {
             version: HttpVersion::Negotiate,
+
+            #[cfg(feature = "http1_1")]
+            http1_config: http1::H1Config::default(),
 
             #[cfg(feature = "http2")]
             http2_config: http2::H2Config::new(),
@@ -82,6 +88,34 @@ impl TryFrom<&[u8]> for HttpVersion {
             Ok(HttpVersion::Http3)
         } else {
             Err(ErrorKind::Other)
+        }
+    }
+}
+
+#[cfg(feature = "http1_1")]
+pub(crate) mod http1 {
+    const DEFAULT_MAX_CONN_NUM: usize = 6;
+
+    #[derive(Clone)]
+    pub(crate) struct H1Config {
+        max_conn_num: usize,
+    }
+
+    impl H1Config {
+        pub(crate) fn set_max_conn_num(&mut self, num: usize) {
+            self.max_conn_num = num
+        }
+
+        pub(crate) fn max_conn_num(&self) -> usize {
+            self.max_conn_num
+        }
+    }
+
+    impl Default for H1Config {
+        fn default() -> Self {
+            Self {
+                max_conn_num: DEFAULT_MAX_CONN_NUM,
+            }
         }
     }
 }

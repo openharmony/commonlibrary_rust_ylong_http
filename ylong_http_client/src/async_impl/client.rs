@@ -445,6 +445,22 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the maximum number of http1 connections allowed.
+    ///
+    /// By default, the maximum number of http1 connections allowed is 6.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().max_h1_conn_number(5);
+    /// ```
+    pub fn max_h1_conn_number(mut self, number: usize) -> Self {
+        self.http.http1_config.set_max_conn_num(number);
+        self
+    }
+
     /// Adds a `Interceptor` to the `Client`.
     ///
     /// # Examples
@@ -1324,6 +1340,7 @@ HJMRZVCQpSMzvHlofHSNgzWV1MX5h1CP4SGZdBDTfA==
         );
         let client = Client::builder()
             .connect_timeout(Timeout::from_secs(2))
+            .max_h1_conn_number(10)
             .http1_only()
             .build()
             .unwrap();

@@ -35,6 +35,7 @@ use crate::util::config::H2Config;
 #[cfg(feature = "http3")]
 use crate::util::config::H3Config;
 use crate::util::config::{HttpConfig, HttpVersion};
+use crate::util::dispatcher::http1::{WrappedSemPermit, WrappedSemaphore};
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher, TimeInfoConn};
 use crate::util::pool::{Pool, PoolKey};
 #[cfg(feature = "http3")]
@@ -74,9 +75,8 @@ impl<C: Connector> ConnPool<C, C::Stream> {
 
         #[cfg(feature = "http3")]
         let alt_svc = self.alt_svcs.get_alt_svcs(&key);
-
         self.pool
-            .get(key, Conns::new)
+            .get(key, Conns::new, self.config.http1_config.max_conn_num())
             .conn(
                 self.config.clone(),
                 self.connector.clone(),
@@ -93,7 +93,13 @@ impl<C: Connector> ConnPool<C, C::Stream> {
     }
 }
 
+pub(crate) enum H1ConnOption<T> {
+    Some(T),
+    None(WrappedSemPermit),
+}
+
 pub(crate) struct Conns<S> {
+    usable: WrappedSemaphore,
     list: Arc<Mutex<Vec<ConnDispatcher<S>>>>,
     #[cfg(feature = "http2")]
     h2_conn: Arc<crate::runtime::AsyncMutex<Vec<ConnDispatcher<S>>>>,
@@ -102,8 +108,10 @@ pub(crate) struct Conns<S> {
 }
 
 impl<S> Conns<S> {
-    fn new() -> Self {
+    fn new(max_conn_num: usize) -> Self {
         Self {
+            usable: WrappedSemaphore::new(max_conn_num),
+
             list: Arc::new(Mutex::new(Vec::new())),
 
             #[cfg(feature = "http2")]
@@ -120,6 +128,7 @@ impl<S> Conns<S> {
 impl<S> Clone for Conns<S> {
     fn clone(&self) -> Self {
         Self {
+            usable: self.usable.clone(),
             list: self.list.clone(),
 
             #[cfg(feature = "http2")]
@@ -180,15 +189,18 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
     where
         C: Connector<Stream = S>,
     {
-        if let Some(conn) = self.exist_h1_conn() {
-            return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
-        }
-        let stream = connector.connect(url, HttpVersion::Http1).await?;
-        let time_group = take(stream.conn_data().time_group_mut());
+        let semaphore = self.usable.acquire().await;
+        match self.exist_h1_conn(semaphore) {
+            H1ConnOption::Some(conn) => Ok(TimeInfoConn::new(conn, TimeGroup::default())),
+            H1ConnOption::None(permit) => {
+                let stream = connector.connect(url, HttpVersion::Http1).await?;
+                let time_group = take(stream.conn_data().time_group_mut());
 
-        let dispatcher = ConnDispatcher::http1(stream);
-        let conn = self.dispatch_h1_conn(dispatcher);
-        Ok(TimeInfoConn::new(conn, time_group))
+                let dispatcher = ConnDispatcher::http1(stream);
+                let conn = self.dispatch_h1_conn(dispatcher, permit);
+                Ok(TimeInfoConn::new(conn, time_group))
+            }
+        }
     }
 
     #[cfg(feature = "http2")]
@@ -274,10 +286,13 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 if let Some(conn) = Self::exist_h2_conn(&mut lock) {
                     return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
                 }
-
-                if let Some(conn) = self.exist_h1_conn() {
-                    return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
-                }
+                let permit = self.usable.acquire().await;
+                let permit = match self.exist_h1_conn(permit) {
+                    H1ConnOption::Some(conn) => {
+                        return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
+                    }
+                    H1ConnOption::None(permit) => permit,
+                };
                 let stream = connector.connect(url, HttpVersion::Negotiate).await?;
                 let mut data = stream.conn_data();
                 let time_group = take(data.time_group_mut());
@@ -287,7 +302,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 } else {
                     let dispatcher = ConnDispatcher::http1(stream);
                     return Ok(TimeInfoConn::new(
-                        self.dispatch_h1_conn(dispatcher),
+                        self.dispatch_h1_conn(dispatcher, permit),
                         time_group,
                     ));
                 };
@@ -295,13 +310,15 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 if protocol == b"http/1.1" {
                     let dispatcher = ConnDispatcher::http1(stream);
                     Ok(TimeInfoConn::new(
-                        self.dispatch_h1_conn(dispatcher),
+                        self.dispatch_h1_conn(dispatcher, permit),
                         time_group,
                     ))
                 } else if protocol == b"h2" {
+                    std::mem::drop(permit);
                     let conn = Self::dispatch_h2_conn(data.detail(), h2_config, stream, &mut lock);
                     Ok(TimeInfoConn::new(conn, time_group))
                 } else {
+                    std::mem::drop(permit);
                     err_from_msg!(Connect, "Alpn negotiate a wrong protocol version.")
                 }
             }
@@ -361,11 +378,20 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         None
     }
 
-    fn dispatch_h1_conn(&self, dispatcher: ConnDispatcher<S>) -> Conn<S> {
+    fn dispatch_h1_conn(&self, dispatcher: ConnDispatcher<S>, permit: WrappedSemPermit) -> Conn<S> {
         // We must be able to get the `Conn` here.
-        let conn = dispatcher.dispatch().unwrap();
+        let mut conn = dispatcher.dispatch().unwrap();
         let mut list = self.list.lock().unwrap();
         list.push(dispatcher);
+        #[cfg(any(feature = "http2", feature = "http3"))]
+        if let Conn::Http1(ref mut h1) = conn {
+            h1.occupy_sem(permit)
+        }
+        #[cfg(all(not(feature = "http2"), not(feature = "http3")))]
+        {
+            let Conn::Http1(ref mut h1) = conn;
+            h1.occupy_sem(permit)
+        }
         conn
     }
 
@@ -396,7 +422,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         conn
     }
 
-    fn exist_h1_conn(&self) -> Option<Conn<S>> {
+    fn exist_h1_conn(&self, permit: WrappedSemPermit) -> H1ConnOption<Conn<S>> {
         let mut list = self.list.lock().unwrap();
         let mut conn = None;
         let curr = take(&mut *list);
@@ -411,7 +437,13 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
             }
             list.push(dispatcher);
         }
-        conn
+        match conn {
+            Some(Conn::Http1(mut h1)) => {
+                h1.occupy_sem(permit);
+                H1ConnOption::Some(Conn::Http1(h1))
+            }
+            _ => H1ConnOption::None(permit),
+        }
     }
 
     #[cfg(feature = "http2")]
