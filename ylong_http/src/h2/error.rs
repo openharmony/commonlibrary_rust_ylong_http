@@ -28,13 +28,15 @@ use std::convert::{Infallible, TryFrom};
 
 use crate::error::{ErrorKind, HttpError};
 
+use super::frame::StreamId;
+
 /// The http2 error handle implementation
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum H2Error {
     /// [`Stream Error`] Handling.
     ///
     /// [`Stream Error`]: https://www.rfc-editor.org/rfc/rfc9113.html#name-stream-error-handling
-    StreamError(u32, ErrorCode),
+    StreamError(StreamId, ErrorCode),
 
     /// [`Connection Error`] Handling.
     ///

@@ -63,7 +63,7 @@ pub use encoder::FrameEncoder;
 pub use error::{ErrorCode, H2Error};
 pub use frame::{
     Data, Frame, FrameFlags, Goaway, Headers, Payload, Ping, RstStream, Setting, Settings,
-    SettingsBuilder, WindowUpdate,
+    SettingsBuilder, WindowUpdate, StreamId
 };
 pub(crate) use hpack::{HpackDecoder, HpackEncoder};
 pub use parts::Parts;

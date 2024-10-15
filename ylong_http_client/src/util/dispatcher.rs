@@ -183,14 +183,14 @@ pub(crate) mod http2 {
     use std::future::Future;
     use std::marker::PhantomData;
     use std::pin::Pin;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
     use ylong_http::error::HttpError;
     use ylong_http::h2::{
         ErrorCode, Frame, FrameDecoder, FrameEncoder, FrameFlags, Goaway, H2Error, Payload,
-        RstStream, Settings, SettingsBuilder,
+        RstStream, Settings, SettingsBuilder, StreamId,
     };
 
     use crate::runtime::{
@@ -205,8 +205,6 @@ pub(crate) mod http2 {
     };
     use crate::ErrorKind::Request;
     use crate::{ErrorKind, HttpClientError};
-
-    const DEFAULT_MAX_STREAM_ID: u32 = u32::MAX >> 1;
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
     const DEFAULT_WINDOW_SIZE: u32 = 65535;
 
@@ -224,7 +222,6 @@ pub(crate) mod http2 {
     }
 
     pub(crate) struct ReqMessage {
-        pub(crate) id: u32,
         pub(crate) sender: BoundedSender<RespMessage>,
         pub(crate) request: RequestWrapper,
     }
@@ -240,7 +237,6 @@ pub(crate) mod http2 {
     // HTTP2-based connection manager, which can dispatch connections to other
     // threads according to HTTP2 syntax.
     pub(crate) struct Http2Dispatcher<S> {
-        pub(crate) next_stream_id: StreamId,
         pub(crate) allowed_cache: usize,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
@@ -249,8 +245,6 @@ pub(crate) mod http2 {
     }
 
     pub(crate) struct Http2Conn<S> {
-        // Handle id
-        pub(crate) id: u32,
         pub(crate) allow_cached_frames: usize,
         // Sends frame to StreamController
         pub(crate) sender: UnboundedSender<ReqMessage>,
@@ -264,12 +258,12 @@ pub(crate) mod http2 {
         // closed.
         pub(crate) io_shutdown: Arc<AtomicBool>,
         // The senders of all connected stream channels of response.
-        pub(crate) senders: HashMap<u32, BoundedSender<RespMessage>>,
-        pub(crate) curr_message: HashMap<u32, ManagerSendFut>,
+        pub(crate) senders: HashMap<StreamId, BoundedSender<RespMessage>>,
+        pub(crate) curr_message: HashMap<StreamId, ManagerSendFut>,
         // Stream information on the connection.
         pub(crate) streams: Streams,
         // Received GO_AWAY frame.
-        pub(crate) recved_go_away: Option<u32>,
+        pub(crate) recved_go_away: Option<StreamId>,
         // The last GO_AWAY frame sent by the client.
         pub(crate) go_away_sync: GoAwaySync,
     }
@@ -289,11 +283,6 @@ pub(crate) mod http2 {
         Acknowledging(Settings),
         #[default]
         Synced,
-    }
-
-    pub(crate) struct StreamId {
-        // TODO Determine the maximum value of id.
-        id: AtomicU32,
     }
 
     #[derive(Default)]
@@ -324,10 +313,6 @@ pub(crate) mod http2 {
             let shutdown_flag = Arc::new(AtomicBool::new(false));
             let controller = StreamController::new(streams, shutdown_flag.clone());
 
-            // The id of the client stream, starting from 1
-            let next_stream_id = StreamId {
-                id: AtomicU32::new(1),
-            };
             let (input_tx, input_rx) = unbounded_channel();
             let (req_tx, req_rx) = unbounded_channel();
 
@@ -346,7 +331,6 @@ pub(crate) mod http2 {
                 );
             }
             Self {
-                next_stream_id,
                 allowed_cache: config.allowed_cache_frame_size(),
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
@@ -400,12 +384,8 @@ pub(crate) mod http2 {
         type Handle = Http2Conn<S>;
 
         fn dispatch(&self) -> Option<Self::Handle> {
-            let id = self.next_stream_id.generate_id();
-            if id > DEFAULT_MAX_STREAM_ID {
-                return None;
-            }
             let sender = self.sender.clone();
-            let handle = Http2Conn::new(id, self.allowed_cache, self.io_shutdown.clone(), sender);
+            let handle = Http2Conn::new(self.allowed_cache, self.io_shutdown.clone(), sender);
             Some(handle)
         }
 
@@ -432,13 +412,11 @@ pub(crate) mod http2 {
 
     impl<S> Http2Conn<S> {
         pub(crate) fn new(
-            id: u32,
             allow_cached_num: usize,
             io_shutdown: Arc<AtomicBool>,
             sender: UnboundedSender<ReqMessage>,
         ) -> Self {
             Self {
-                id,
                 allow_cached_frames: allow_cached_num,
                 sender,
                 receiver: RespReceiver::default(),
@@ -455,19 +433,12 @@ pub(crate) mod http2 {
             self.receiver.set_receiver(rx);
             self.sender
                 .send(ReqMessage {
-                    id: self.id,
                     sender: tx,
                     request,
                 })
                 .map_err(|_| {
                     HttpClientError::from_str(ErrorKind::Request, "Request Sender Closed !")
                 })
-        }
-    }
-
-    impl StreamId {
-        fn generate_id(&self) -> u32 {
-            self.id.fetch_add(2, Ordering::Relaxed)
         }
     }
 
@@ -489,8 +460,8 @@ pub(crate) mod http2 {
 
         pub(crate) fn get_unsent_streams(
             &mut self,
-            last_stream_id: u32,
-        ) -> Result<Vec<u32>, H2Error> {
+            last_stream_id: StreamId,
+        ) -> Result<Vec<StreamId>, H2Error> {
             // The last-stream-id in the subsequent GO_AWAY frame
             // cannot be greater than the last-stream-id in the previous GO_AWAY frame.
             if self.streams.max_send_id < last_stream_id {
@@ -503,7 +474,7 @@ pub(crate) mod http2 {
         pub(crate) fn send_message_to_stream(
             &mut self,
             cx: &mut Context<'_>,
-            stream_id: u32,
+            stream_id: StreamId,
             message: RespMessage,
         ) -> Poll<Result<(), H2Error>> {
             if let Some(sender) = self.senders.get(&stream_id) {
@@ -536,7 +507,7 @@ pub(crate) mod http2 {
             cx: &mut Context<'_>,
             input_tx: &UnboundedSender<Frame>,
         ) -> Poll<()> {
-            let keys: Vec<u32> = self.curr_message.keys().cloned().collect();
+            let keys: Vec<StreamId> = self.curr_message.keys().cloned().collect();
             let mut blocked = false;
 
             for key in keys {
@@ -552,7 +523,7 @@ pub(crate) mod http2 {
                                         let rest_payload =
                                             RstStream::new(ErrorCode::NoError.into_code());
                                         let frame = Frame::new(
-                                            key as usize,
+                                            key,
                                             FrameFlags::empty(),
                                             Payload::RstStream(rest_payload),
                                         );
