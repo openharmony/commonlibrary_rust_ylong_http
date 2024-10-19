@@ -74,3 +74,40 @@ impl Default for Parts {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod ut_h3_part {
+    use crate::h3::qpack::table::NameField;
+    use crate::h3::Parts;
+
+    /// UT test cases for `Parts::parts` .
+    ///
+    /// # Brief
+    /// 1. Creates a `Parts`.
+    /// 2. Calls the update method to update parts' content.
+    /// 3. Checks whether the result is correct.
+    #[test]
+    fn ut_h3_part_update() {
+        let mut part = Parts::new();
+        part.update(NameField::Status, "200".to_string());
+        part.update(NameField::Method, "POST".to_string());
+        part.update(NameField::Path, "/test".to_string());
+        part.update(NameField::Scheme, "HTTPS".to_string());
+        part.update(NameField::Authority, "www.example.com".to_string());
+        part.update(
+            NameField::Other("test-key".to_string()),
+            "test-value".to_string(),
+        );
+
+        let (pseudo, header) = part.parts();
+        assert_eq!(pseudo.status(), Some("200"));
+        assert_eq!(pseudo.method(), Some("POST"));
+        assert_eq!(pseudo.path(), Some("/test"));
+        assert_eq!(pseudo.scheme(), Some("HTTPS"));
+        assert_eq!(pseudo.authority(), Some("www.example.com"));
+        assert_eq!(
+            header.get("test-key").map(|v| v.to_string().unwrap()),
+            Some("test-value".to_string())
+        );
+    }
+}

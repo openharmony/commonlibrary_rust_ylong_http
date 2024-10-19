@@ -645,3 +645,118 @@ fn encode_var_integer(src: u64, frame_buf: &mut [u8]) -> Result<usize, H3Error> 
     let size = writable_buf.index();
     Ok(size)
 }
+
+#[cfg(test)]
+mod h3_encoder {
+    use crate::h3::qpack::table::NameField;
+    use crate::h3::{Data, Frame, FrameEncoder, Headers, Parts, Payload, PseudoHeaders, Settings};
+
+    /// UT test cases for `FrameEncoder` encoding `Settings` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Settings`.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the frame with request stream id.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encoder_request_stream_settings() {
+        let mut encoder = FrameEncoder::default();
+        let setting = Settings::default();
+        let setting = Frame::new(0x4, Payload::Settings(setting));
+        encoder.set_frame(1, setting).unwrap();
+        let mut data_buf = [0u8; 1024];
+        let mut inst_buf = [0u8; 1024];
+        let res = encoder.encode(0, &mut data_buf, &mut inst_buf);
+        assert!(res.is_err());
+    }
+
+    /// UT test cases for `FrameEncoder` encoding `Settings` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Settings`.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the frame with control stream id.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encoder_control_stream_settings() {
+        let mut encoder = FrameEncoder::default();
+        let mut setting = Settings::default();
+        setting.set_max_field_section_size(1024);
+        setting.set_qpack_block_stream(50);
+        setting.set_qpack_max_table_capacity(1024);
+        let setting = Frame::new(0x4, Payload::Settings(setting));
+        encoder.set_frame(1, setting).unwrap();
+        let mut data_buf = [0u8; 1024];
+        let mut inst_buf = [0u8; 1024];
+
+        let (data_idx, inst_idx) = encoder.encode(1, &mut data_buf, &mut inst_buf).unwrap();
+        assert_eq!([4, 8, 6, 68, 0, 1, 68, 0, 7, 50], data_buf[..data_idx]);
+        assert_eq!(inst_idx, 0);
+    }
+
+    /// UT test cases for `FrameEncoder` encoding `Headers` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Headers`.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the frame with request stream id.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encoder_request_stream_header() {
+        let mut encoder = FrameEncoder::default();
+        encoder.set_max_table_capacity(400).unwrap();
+        let mut parts = Parts::new();
+        parts.update(
+            NameField::Other("content-length".to_string()),
+            "10".to_string(),
+        );
+        parts.update(
+            NameField::Other("test-header".to_string()),
+            "test-header".to_string(),
+        );
+        parts.update(NameField::Method, "GET".to_string());
+        parts.update(NameField::Scheme, "HTTPS".to_string());
+        parts.update(NameField::Authority, "www.example.com".to_string());
+        let headers = Headers::new(parts);
+        let header = Frame::new(1, Payload::Headers(headers));
+        encoder.set_frame(0, header).unwrap();
+        let mut data_buf = [0u8; 1024];
+        let mut inst_buf = [0u8; 1024];
+
+        let (data_idx, inst_idx) = encoder.encode(0, &mut data_buf, &mut inst_buf).unwrap();
+        assert_eq!(
+            data_buf[..data_idx],
+            [
+                1, 47, 0, 0, 209, 95, 7, 133, 199, 191, 126, 189, 223, 80, 140, 241, 227, 194, 229,
+                242, 58, 107, 160, 171, 144, 244, 255, 84, 130, 8, 63, 43, 73, 80, 149, 167, 40,
+                228, 45, 159, 136, 73, 80, 149, 167, 40, 228, 45, 159
+            ]
+        );
+        assert_eq!(&inst_buf[..inst_idx], [63, 241, 2]);
+    }
+
+    /// UT test cases for `FrameEncoder` encoding `Data` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a `Frame` with `Payload::Data`.
+    /// 3. Sets the frame for the encoder.
+    /// 4. Encodes the frame with request stream id.
+    /// 5. Checks whether the result is correct.
+    #[test]
+    fn ut_encoder_request_stream_data() {
+        let mut encoder = FrameEncoder::default();
+        let data_body = Data::new(Vec::from("hello"));
+        let data = Frame::new(0, Payload::Data(data_body));
+
+        encoder.set_frame(0, data).unwrap();
+        let mut data_buf = [0u8; 1024];
+        let mut inst_buf = [0u8; 1024];
+        let (data_idx, inst_idx) = encoder.encode(0, &mut data_buf, &mut inst_buf).unwrap();
+        assert_eq!([0, 5, 104, 101, 108, 108, 111], data_buf[..data_idx]);
+        assert_eq!(inst_idx, 0)
+    }
+}

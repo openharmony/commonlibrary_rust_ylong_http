@@ -222,3 +222,52 @@ pub const fn parse_varint_len(byte: u8) -> usize {
         unreachable!()
     }
 }
+
+#[cfg(test)]
+mod h3_octets {
+    use crate::h3::octets::{ReadableBytes, WritableBytes};
+
+    /// UT test cases for `ReadableBytes::get_varint` .
+    ///
+    /// # Brief
+    /// 1. Creates a buf with variable-length integer encoded bytes.
+    /// 2. Creates a `ReadableBytes` with the buf.
+    /// 3. Calls the get_varint method to get the value.
+    /// 4. Checks whether the result is correct.
+    #[test]
+    fn ut_readable_bytes() {
+        let bytes = [
+            0x3F, 0x7F, 0xFF, 0xBF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF,
+        ];
+        let mut readable = ReadableBytes::from(&bytes);
+        assert_eq!(readable.get_varint().unwrap(), 63);
+        assert_eq!(readable.get_varint().unwrap(), 16383);
+        assert_eq!(readable.get_varint().unwrap(), 1_073_741_823);
+        assert_eq!(readable.get_varint().unwrap(), 4_611_686_018_427_387_903);
+        assert_eq!(readable.index(), 15);
+    }
+
+    /// UT test cases for `WritableBytes::write_varint` .
+    ///
+    /// # Brief
+    /// 1. Creates a result buf with variable-length integer encoded bytes.
+    /// 2. Creates a `WritableBytes` with empty buf.
+    /// 3. Calls the write_varint method to write integers.
+    /// 4. Checks whether the result is correct.
+    #[test]
+    fn ut_writable_bytes() {
+        let bytes = [
+            0x3F, 0x7F, 0xFF, 0xBF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF,
+        ];
+        let mut buf = [0u8; 15];
+        let mut writable = WritableBytes::from(&mut buf);
+        assert_eq!(writable.write_varint(63).unwrap(), 1);
+        assert_eq!(writable.write_varint(16383).unwrap(), 2);
+        assert_eq!(writable.write_varint(1_073_741_823).unwrap(), 4);
+        assert_eq!(writable.write_varint(4_611_686_018_427_387_903).unwrap(), 8);
+        assert_eq!(writable.index(), 15);
+        assert_eq!(buf, bytes);
+    }
+}
