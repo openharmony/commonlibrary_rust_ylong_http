@@ -765,3 +765,101 @@ fn decode_type(integer: u64) -> StreamType {
         _ => StreamType::Unknown,
     }
 }
+
+#[cfg(test)]
+mod h3_decoder {
+    use crate::h3::{FrameDecoder, FrameKind, Payload, StreamMessage};
+
+    /// UT test cases for `FrameDecoder` decoding `Settings` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a buf with encoded Settings frame bytes.
+    /// 3. Decode the bytes with unidirectional stream id.
+    /// 4. Checkout if the stream type is correct.
+    /// 5. Checkout if the frame type is correct.
+    #[allow(clippy::assertions_on_constants)]
+    #[test]
+    fn ut_decode_stream_control_with_setting() {
+        let mut decoder = FrameDecoder::new(100, 500);
+        let buf: [u8; 24] = [
+            0x0, 0x4, 0x15, 0x6, 0x80, 0x1, 0x0, 0x0, 0xF5, 0xEF, 0x9, 0x12, 0x8C, 0xC, 0x8E, 0x72,
+            0xDD, 0xB5, 0xB5, 0x15, 0xCD, 0x85, 0x44, 0xF8,
+        ];
+        let res = decoder.decode(3, &buf).unwrap();
+        if let StreamMessage::Control(frames) = res {
+            assert_eq!(frames.len(), 1);
+            for frame_kind in frames.iter() {
+                if let FrameKind::Complete(frame) = frame_kind {
+                    assert_eq!(*frame.frame_type(), 0x4);
+                    if let Payload::Settings(_setting) = frame.payload() {
+                        return;
+                    }
+                }
+            }
+        }
+        assert!(false)
+    }
+
+    /// UT test cases for `FrameDecoder` decoding `Headers` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a buf with encoded Headers frame bytes.
+    /// 3. Decode the bytes with bidirectional stream id.
+    /// 4. Checkout if the stream type is correct.
+    /// 5. Checkout if the frame type is correct.
+    #[allow(clippy::assertions_on_constants)]
+    #[test]
+    fn ut_decode_stream_request_with_header() {
+        let mut decoder = FrameDecoder::new(100, 500);
+        let buf: [u8; 117] = [
+            0x1, 0x40, 0x72, 0x0, 0x0, 0xD9, 0x56, 0x96, 0xC3, 0x61, 0xBE, 0x94, 0xB, 0xCA, 0x6A,
+            0x22, 0x54, 0x10, 0x4, 0xD2, 0x80, 0x15, 0xC6, 0x99, 0xB8, 0x27, 0x54, 0xC5, 0xA3,
+            0x7F, 0x5F, 0x1D, 0x87, 0x49, 0x7C, 0xA5, 0x89, 0xD3, 0x4D, 0x1F, 0x54, 0x85, 0x8,
+            0x9B, 0x7D, 0xB7, 0xFF, 0x5F, 0x4D, 0x87, 0x25, 0x7, 0xB6, 0x49, 0x68, 0x1D, 0x85,
+            0x2D, 0x24, 0xAB, 0x58, 0x3F, 0x5F, 0x8F, 0x7A, 0x46, 0x9B, 0x11, 0x5B, 0x64, 0x92,
+            0x46, 0xF1, 0x23, 0x7C, 0x8B, 0x67, 0x87, 0xF3, 0x5F, 0x44, 0x90, 0x9D, 0x98, 0x3F,
+            0x9B, 0x8D, 0x34, 0xCF, 0xF3, 0xF6, 0xA5, 0x23, 0x81, 0xE7, 0x1A, 0x0, 0x3F, 0x2F, 0x3,
+            0x41, 0x6C, 0xEE, 0x5B, 0x16, 0x49, 0xA9, 0x35, 0x53, 0x7F, 0x86, 0x24, 0xB8, 0x3C,
+            0xA7, 0x5D, 0x86,
+        ];
+        let res = decoder.decode(0, &buf).unwrap();
+        if let StreamMessage::Request(frames) = res {
+            assert_eq!(frames.len(), 1);
+            for frame_kind in frames.iter() {
+                if let FrameKind::Complete(frame) = frame_kind {
+                    assert_eq!(*frame.frame_type(), 0x1);
+                    if let Payload::Headers(header) = frame.payload() {
+                        assert!(header.get_instruction().is_none());
+                        let part = header.get_part();
+                        let (pseudo, _headers) = part.parts();
+                        assert_eq!(pseudo.status(), Some("200"));
+                        return;
+                    }
+                }
+            }
+        }
+        assert!(false)
+    }
+
+    /// UT test cases for `FrameDecoder` decoding `Unknown` frame.
+    ///
+    /// # Brief
+    /// 1. Creates a `FrameEncoder`.
+    /// 2. Creates a buf with encoded unknown type frame bytes.
+    /// 3. Decode the bytes with bidirectional stream id.
+    /// 4. Checkout if the stream type is correct.
+    #[allow(clippy::assertions_on_constants)]
+    #[test]
+    fn ut_decode_stream_request_with_unknown() {
+        let mut decoder = FrameDecoder::new(100, 500);
+        let buf: [u8; 9] = [0xDF, 0x6B, 0xED, 0xB9, 0x11, 0x75, 0x93, 0x91, 0x0];
+        let res = decoder.decode(0, &buf).unwrap();
+        if let StreamMessage::Request(frames) = res {
+            assert_eq!(frames.len(), 0);
+            return;
+        }
+        assert!(false)
+    }
+}
