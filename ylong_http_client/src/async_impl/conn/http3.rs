@@ -286,6 +286,10 @@ impl<S: Sync + Send + Unpin + 'static> StreamData for TextIo<S> {
     fn shutdown(&self) {
         self.handle.io_shutdown.store(true, Ordering::Relaxed);
     }
+
+    fn is_stream_closable(&self) -> bool {
+        self.is_closed
+    }
 }
 
 impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {

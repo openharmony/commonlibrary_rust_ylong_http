@@ -710,10 +710,6 @@ mod h3_encoder {
         encoder.set_max_table_capacity(400).unwrap();
         let mut parts = Parts::new();
         parts.update(
-            NameField::Other("content-length".to_string()),
-            "10".to_string(),
-        );
-        parts.update(
             NameField::Other("test-header".to_string()),
             "test-header".to_string(),
         );
@@ -730,9 +726,9 @@ mod h3_encoder {
         assert_eq!(
             data_buf[..data_idx],
             [
-                1, 47, 0, 0, 209, 95, 7, 133, 199, 191, 126, 189, 223, 80, 140, 241, 227, 194, 229,
-                242, 58, 107, 160, 171, 144, 244, 255, 84, 130, 8, 63, 43, 73, 80, 149, 167, 40,
-                228, 45, 159, 136, 73, 80, 149, 167, 40, 228, 45, 159
+                1, 43, 0, 0, 209, 95, 7, 133, 199, 191, 126, 189, 223, 80, 140, 241, 227, 194, 229,
+                242, 58, 107, 160, 171, 144, 244, 255, 43, 73, 80, 149, 167, 40, 228, 45, 159, 136,
+                73, 80, 149, 167, 40, 228, 45, 159
             ]
         );
         assert_eq!(&inst_buf[..inst_idx], [63, 241, 2]);

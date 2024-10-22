@@ -29,6 +29,8 @@ use crate::util::dispatcher::Conn;
 
 pub(crate) trait StreamData: AsyncRead {
     fn shutdown(&self);
+
+    fn is_stream_closable(&self) -> bool;
 }
 
 // TODO: Use structures instead of a function to reuse the io buf.

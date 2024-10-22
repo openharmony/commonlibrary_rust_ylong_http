@@ -26,9 +26,8 @@
 
 use std::convert::{Infallible, TryFrom};
 
-use crate::error::{ErrorKind, HttpError};
-
 use super::frame::StreamId;
+use crate::error::{ErrorKind, HttpError};
 
 /// The http2 error handle implementation
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

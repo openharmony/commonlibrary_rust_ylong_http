@@ -267,6 +267,10 @@ mod ut_downloader {
         fn shutdown(&self) {
             println!("Shutdown")
         }
+
+        fn is_stream_closable(&self) -> bool {
+            true
+        }
     }
 
     /// UT test cases for `Downloader::download`.
