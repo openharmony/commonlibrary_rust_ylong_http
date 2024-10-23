@@ -338,7 +338,12 @@ impl Text {
                 Some(Poll::Ready(err_from_msg!(BodyDecode, "Not eof")))
             }
             (true, true) => {
-                self.io = None;
+                if let Some(io) = self.io.take() {
+                    // stream not closed, waiting for the fin
+                    if !io.is_stream_closable() {
+                        self.io = Some(io);
+                    }
+                }
                 Some(Poll::Ready(Ok(read)))
             }
             // TextBodyDecoder decodes as much as possible here.
@@ -360,6 +365,10 @@ impl Text {
             Poll::Ready(Ok(())) => {
                 let filled = read_buf.filled().len();
                 if filled == 0 {
+                    // stream closed, and get the fin
+                    if io.is_stream_closable() && self.decoder.decode(&buf[..0]).0.is_complete() {
+                        return Poll::Ready(Ok(0));
+                    }
                     io.shutdown();
                     return Poll::Ready(err_from_msg!(BodyDecode, "Response body incomplete"));
                 }
@@ -372,7 +381,13 @@ impl Text {
                         io.shutdown();
                         Poll::Ready(err_from_msg!(BodyDecode, "Not eof"))
                     }
-                    (true, true) => Poll::Ready(Ok(read)),
+                    (true, true) => {
+                        if !io.is_stream_closable() {
+                            // stream not closed, waiting for the fin
+                            self.io = Some(io);
+                        }
+                        Poll::Ready(Ok(read))
+                    }
                     _ => {
                         self.io = Some(io);
                         Poll::Ready(Ok(read))

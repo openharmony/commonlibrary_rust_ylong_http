@@ -826,6 +826,14 @@ impl ReprValueString {
                     },
                 ))
             }
+            (_, DecResult::NeedMore(inner)) => {
+                DecResult::NeedMore(ReprDecodeState::ReprValueString(Self::from_inner(
+                    self.repr,
+                    self.mid_bit,
+                    self.name,
+                    inner,
+                )))
+            }
             (_, _) => Error(QpackError::ConnectionError(DecompressionFailed)),
         }
     }

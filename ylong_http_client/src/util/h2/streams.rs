@@ -266,7 +266,11 @@ impl Streams {
         }
     }
 
-    pub(crate) fn release_stream_recv_window(&mut self, id: StreamId, size: u32) -> Result<(), H2Error> {
+    pub(crate) fn release_stream_recv_window(
+        &mut self,
+        id: StreamId,
+        size: u32,
+    ) -> Result<(), H2Error> {
         if let Some(stream) = self.stream_map.get_mut(&id) {
             if stream.recv_window.notification_available() < size {
                 return Err(H2Error::StreamError(id, ErrorCode::FlowControlError));

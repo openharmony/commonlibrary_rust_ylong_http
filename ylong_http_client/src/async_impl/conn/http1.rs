@@ -291,4 +291,9 @@ impl<S: AsyncRead + Unpin> StreamData for Http1Conn<S> {
     fn shutdown(&self) {
         Self::shutdown(self)
     }
+
+    // HTTP1 can close the "stream" after reading the data
+    fn is_stream_closable(&self) -> bool {
+        true
+    }
 }
