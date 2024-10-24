@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "http3")]
 use ylong_http::request::uri::Authority;
-#[cfg(feature = "http2")]
+#[cfg(any(feature = "http2", feature = "http3"))]
 use ylong_http::request::uri::Scheme;
 use ylong_http::request::uri::Uri;
 

@@ -72,10 +72,13 @@ impl TryFrom<&[u8]> for HttpVersion {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value == b"h1" {
-            Ok(HttpVersion::Http1)
-        } else if value == b"h2" {
-            Ok(HttpVersion::Http2)
-        } else if value == b"h3" {
+            return Ok(HttpVersion::Http1);
+        }
+        #[cfg(feature = "http2")]
+        if value == b"h2" {
+            return Ok(HttpVersion::Http2);
+        }
+        if value == b"h3" {
             Ok(HttpVersion::Http3)
         } else {
             Err(ErrorKind::Other)

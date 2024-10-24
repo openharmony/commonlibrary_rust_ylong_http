@@ -25,6 +25,8 @@
 
 mod client;
 mod connector;
+
+mod dns;
 mod downloader;
 mod http_body;
 mod interceptor;
@@ -59,3 +61,5 @@ pub use ylong_http::body::{MultiPart, Part};
 // TODO: Remove these later.
 /// Client Adapter.
 pub type Client = client::Client<HttpConnector>;
+
+pub use dns::{Addrs, DefaultDnsResolver, Resolver, SocketFuture, StdError};

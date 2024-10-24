@@ -16,10 +16,12 @@
 #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 use super::FchownConfig;
 use crate::util::proxy::Proxies;
+use crate::Timeout;
 
 #[derive(Default)]
 pub(crate) struct ConnectorConfig {
     pub(crate) proxies: Proxies,
+    pub(crate) timeout: Timeout,
 
     #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
     pub(crate) fchown: Option<FchownConfig>,

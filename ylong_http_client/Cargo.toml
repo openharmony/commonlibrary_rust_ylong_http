@@ -32,8 +32,8 @@ full = [
 sync = []                               # Uses sync interfaces.
 async = []                              # Uses async interfaces.
 http1_1 = ["ylong_http/http1_1"]        # Uses HTTP/1.1.
-http2 = ["ylong_http/http2", "ylong_http/huffman"]            # Uses HTTP/2.
-http3 = ["ylong_http/http3", "quiche"]                              # Uses HTTP/3.
+http2 = ["ylong_http/http2", "ylong_http/huffman"]               # Uses HTTP/2.
+http3 = ["ylong_http/http3", "quiche", "ylong_http/huffman"]     # Uses HTTP/3.
 
 tokio_base = ["tokio", "ylong_http/tokio_base"]                  # Uses tokio runtime.
 ylong_base = ["ylong_runtime", "ylong_http/ylong_base"]          # Uses ylong runtime.
