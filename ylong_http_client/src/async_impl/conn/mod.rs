@@ -20,12 +20,12 @@ mod http2;
 #[cfg(feature = "http3")]
 mod http3;
 
-use crate::async_impl::connector::ConnInfo;
 use crate::async_impl::request::Message;
 use crate::async_impl::Response;
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncWrite};
 use crate::util::dispatcher::Conn;
+use crate::util::ConnInfo;
 
 pub(crate) trait StreamData: AsyncRead {
     fn shutdown(&self);

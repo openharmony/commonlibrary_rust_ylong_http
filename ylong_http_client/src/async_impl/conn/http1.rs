@@ -11,9 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::mem::take;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 use ylong_http::body::async_impl::Body;
 use ylong_http::body::{ChunkBody, TextBody};
@@ -23,13 +25,13 @@ use ylong_http::response::ResponsePart;
 use ylong_http::version::Version;
 
 use super::StreamData;
-use crate::async_impl::connector::ConnInfo;
-use crate::async_impl::interceptor::Interceptors;
 use crate::async_impl::request::Message;
 use crate::async_impl::{HttpBody, Request, Response};
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use crate::util::dispatcher::http1::Http1Conn;
+use crate::util::information::ConnInfo;
+use crate::util::interceptor::Interceptors;
 use crate::util::normalizer::BodyLengthParser;
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
@@ -43,12 +45,14 @@ where
 {
     message
         .interceptor
-        .intercept_connection(conn.raw_mut().conn_detail())?;
-    message
-        .interceptor
         .intercept_request(message.request.ref_mut())?;
     let mut buf = vec![0u8; TEMP_BUF_SIZE];
 
+    message
+        .request
+        .ref_mut()
+        .time_group_mut()
+        .set_transfer_start(Instant::now());
     encode_request_part(
         message.request.ref_mut(),
         &message.interceptor,
@@ -57,7 +61,6 @@ where
     )
     .await?;
     encode_various_body(message.request.ref_mut(), &mut conn, &mut buf).await?;
-
     // Decodes response part.
     let (part, pre) = {
         let mut decoder = ResponseDecoder::new();
@@ -67,7 +70,22 @@ where
                     conn.shutdown();
                     return err_from_msg!(Request, "Tcp closed");
                 }
-                Ok(size) => size,
+                Ok(size) => {
+                    if message
+                        .request
+                        .ref_mut()
+                        .time_group_mut()
+                        .transfer_end_time()
+                        .is_none()
+                    {
+                        message
+                            .request
+                            .ref_mut()
+                            .time_group_mut()
+                            .set_transfer_end(Instant::now())
+                    }
+                    size
+                }
                 Err(e) => {
                     conn.shutdown();
                     return err_from_io!(Request, e);
@@ -214,10 +232,11 @@ where
         }
     };
 
+    let time_group = take(message.request.ref_mut().time_group_mut());
     let body = HttpBody::new(message.interceptor, length, Box::new(conn), pre)?;
-    Ok(Response::new(
-        ylong_http::response::Response::from_raw_parts(part, body),
-    ))
+    let mut response = Response::new(ylong_http::response::Response::from_raw_parts(part, body));
+    response.set_time_group(time_group);
+    Ok(response)
 }
 
 async fn encode_body<S, T>(

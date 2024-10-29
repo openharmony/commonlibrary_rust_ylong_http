@@ -18,10 +18,11 @@ use std::task::{Context, Poll};
 
 use ylong_runtime::time::{sleep, Sleep};
 
-use crate::async_impl::{ConnInfo, QuicConn};
+use crate::async_impl::QuicConn;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf, UnboundedReceiver, UnboundedSender};
 use crate::util::dispatcher::http3::DispatchErrorKind;
 use crate::util::h3::stream_manager::UPD_RECV_BUF_SIZE;
+use crate::util::ConnInfo;
 
 const UDP_SEND_BUF_SIZE: usize = 1350;
 
@@ -97,7 +98,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Sync + Send + 'static> IOMan
         }
         match Pin::new(&mut self.io).poll_read(cx, &mut buf) {
             Poll::Ready(Ok(())) => {
-                let info = self.io.conn_detail();
+                let info = self.io.conn_data().detail();
                 self.recv_timeout = None;
                 let recv_info = quiche::RecvInfo {
                     to: info.local,

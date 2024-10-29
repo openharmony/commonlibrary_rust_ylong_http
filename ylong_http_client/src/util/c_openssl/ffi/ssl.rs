@@ -83,6 +83,7 @@ extern "C" {
     ) -> c_int;
 
     /// returns the selected protocol. It is not NUL-terminated.
+    #[cfg(feature = "http2")]
     pub(crate) fn SSL_get0_alpn_selected(
         ssl: *const SSL,
         data: *mut *const c_uchar,

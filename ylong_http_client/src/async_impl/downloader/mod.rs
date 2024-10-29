@@ -259,8 +259,8 @@ mod ut_downloader {
     use ylong_http::response::Response;
 
     use crate::async_impl::conn::StreamData;
-    use crate::async_impl::interceptor::IdleInterceptor;
     use crate::async_impl::{Downloader, HttpBody, Response as adpater_resp};
+    use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
 
     impl StreamData for &[u8] {

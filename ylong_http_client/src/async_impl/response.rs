@@ -18,16 +18,21 @@ use ylong_http::response::Response as Resp;
 
 use crate::async_impl::HttpBody;
 use crate::error::HttpClientError;
+use crate::util::monitor::TimeGroup;
 use crate::ErrorKind;
 
 /// A structure that represents an HTTP `Response`.
 pub struct Response {
     pub(crate) inner: Resp<HttpBody>,
+    pub(crate) time_group: TimeGroup,
 }
 
 impl Response {
     pub(crate) fn new(response: Resp<HttpBody>) -> Self {
-        Self { inner: response }
+        Self {
+            inner: response,
+            time_group: TimeGroup::default(),
+        }
     }
 
     /// Reads the data of the `HttpBody`.
@@ -48,6 +53,15 @@ impl Response {
         }
 
         String::from_utf8(vec).map_err(|e| HttpClientError::from_error(ErrorKind::BodyDecode, e))
+    }
+
+    /// Gets the time spent on each stage of the request.
+    pub fn time_group(&self) -> &TimeGroup {
+        &self.time_group
+    }
+
+    pub(crate) fn set_time_group(&mut self, time_group: TimeGroup) {
+        self.time_group = time_group
     }
 }
 

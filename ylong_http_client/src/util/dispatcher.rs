@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::util::ConnInfo;
+use crate::{ConnDetail, TimeGroup};
+
 pub(crate) trait Dispatcher {
     type Handle;
 
@@ -85,6 +88,42 @@ pub(crate) enum Conn<S> {
 
     #[cfg(feature = "http3")]
     Http3(http3::Http3Conn<S>),
+}
+
+impl<S: ConnInfo> Conn<S> {
+    pub(crate) fn get_detail(&mut self) -> ConnDetail {
+        match self {
+            #[cfg(feature = "http1_1")]
+            Conn::Http1(io) => io.raw_mut().conn_data().detail(),
+            #[cfg(feature = "http2")]
+            Conn::Http2(io) => io.detail.clone(),
+            #[cfg(feature = "http3")]
+            Conn::Http3(io) => io.detail.clone(),
+        }
+    }
+}
+
+pub(crate) struct TimeInfoConn<S> {
+    conn: Conn<S>,
+    time_group: TimeGroup,
+}
+
+impl<S> TimeInfoConn<S> {
+    pub(crate) fn new(conn: Conn<S>, time_group: TimeGroup) -> Self {
+        Self { conn, time_group }
+    }
+
+    pub(crate) fn time_group_mut(&mut self) -> &mut TimeGroup {
+        &mut self.time_group
+    }
+
+    pub(crate) fn time_group(&mut self) -> &TimeGroup {
+        &self.time_group
+    }
+
+    pub(crate) fn connection(self) -> Conn<S> {
+        self.conn
+    }
 }
 
 #[cfg(feature = "http1_1")]
@@ -204,7 +243,7 @@ pub(crate) mod http2 {
         StreamEndState, Streams,
     };
     use crate::ErrorKind::Request;
-    use crate::{ErrorKind, HttpClientError};
+    use crate::{ConnDetail, ErrorKind, HttpClientError};
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
     const DEFAULT_WINDOW_SIZE: u32 = 65535;
 
@@ -237,6 +276,7 @@ pub(crate) mod http2 {
     // HTTP2-based connection manager, which can dispatch connections to other
     // threads according to HTTP2 syntax.
     pub(crate) struct Http2Dispatcher<S> {
+        pub(crate) detail: ConnDetail,
         pub(crate) allowed_cache: usize,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
@@ -250,6 +290,7 @@ pub(crate) mod http2 {
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) receiver: RespReceiver,
         pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) detail: ConnDetail,
         pub(crate) _mark: PhantomData<S>,
     }
 
@@ -294,8 +335,8 @@ pub(crate) mod http2 {
     where
         S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
     {
-        pub(crate) fn http2(config: H2Config, io: S) -> Self {
-            Self::Http2(Http2Dispatcher::new(config, io))
+        pub(crate) fn http2(detail: ConnDetail, config: H2Config, io: S) -> Self {
+            Self::Http2(Http2Dispatcher::new(detail, config, io))
         }
     }
 
@@ -303,7 +344,7 @@ pub(crate) mod http2 {
     where
         S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
     {
-        pub(crate) fn new(config: H2Config, io: S) -> Self {
+        pub(crate) fn new(detail: ConnDetail, config: H2Config, io: S) -> Self {
             let settings = create_initial_settings(&config);
 
             let mut flow = FlowControl::new(DEFAULT_WINDOW_SIZE, DEFAULT_WINDOW_SIZE);
@@ -331,6 +372,7 @@ pub(crate) mod http2 {
                 );
             }
             Self {
+                detail,
                 allowed_cache: config.allowed_cache_frame_size(),
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
@@ -385,7 +427,12 @@ pub(crate) mod http2 {
 
         fn dispatch(&self) -> Option<Self::Handle> {
             let sender = self.sender.clone();
-            let handle = Http2Conn::new(self.allowed_cache, self.io_shutdown.clone(), sender);
+            let handle = Http2Conn::new(
+                self.allowed_cache,
+                self.io_shutdown.clone(),
+                sender,
+                self.detail.clone(),
+            );
             Some(handle)
         }
 
@@ -415,12 +462,14 @@ pub(crate) mod http2 {
             allow_cached_num: usize,
             io_shutdown: Arc<AtomicBool>,
             sender: UnboundedSender<ReqMessage>,
+            detail: ConnDetail,
         ) -> Self {
             Self {
                 allow_cached_frames: allow_cached_num,
                 sender,
                 receiver: RespReceiver::default(),
                 io_shutdown,
+                detail,
                 _mark: PhantomData,
             }
         }
@@ -678,7 +727,7 @@ pub(crate) mod http3 {
     use ylong_http::error::HttpError;
     use ylong_http::h3::{Frame, FrameDecoder, H3Error};
 
-    use crate::async_impl::{ConnInfo, QuicConn};
+    use crate::async_impl::QuicConn;
     use crate::runtime::{
         bounded_channel, unbounded_channel, AsyncRead, AsyncWrite, BoundedReceiver, BoundedSender,
         UnboundedSender,
@@ -689,9 +738,10 @@ pub(crate) mod http3 {
     use crate::util::h3::io_manager::IOManager;
     use crate::util::h3::stream_manager::StreamManager;
     use crate::ErrorKind::Request;
-    use crate::{ErrorKind, HttpClientError};
+    use crate::{ConnDetail, ConnInfo, ErrorKind, HttpClientError};
 
     pub(crate) struct Http3Dispatcher<S> {
+        pub(crate) detail: ConnDetail,
         pub(crate) req_tx: UnboundedSender<ReqMessage>,
         pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
         pub(crate) _mark: PhantomData<S>,
@@ -704,6 +754,7 @@ pub(crate) mod http3 {
         pub(crate) resp_receiver: BoundedReceiver<RespMessage>,
         pub(crate) resp_sender: BoundedSender<RespMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) detail: ConnDetail,
         pub(crate) _mark: PhantomData<S>,
     }
 
@@ -738,7 +789,12 @@ pub(crate) mod http3 {
     where
         S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
     {
-        pub(crate) fn new(config: H3Config, io: S, quic_connection: QuicConn) -> Self {
+        pub(crate) fn new(
+            detail: ConnDetail,
+            config: H3Config,
+            io: S,
+            quic_connection: QuicConn,
+        ) -> Self {
             let (req_tx, req_rx) = unbounded_channel();
             let (io_manager_tx, io_manager_rx) = unbounded_channel();
             let (stream_manager_tx, stream_manager_rx) = unbounded_channel();
@@ -774,6 +830,7 @@ pub(crate) mod http3 {
             // read_rx gets readable stream ids and writable client channels, then read
             // stream and send to the corresponding channel
             Self {
+                detail,
                 req_tx,
                 handles,
                 _mark: PhantomData,
@@ -785,6 +842,7 @@ pub(crate) mod http3 {
 
     impl<S> Http3Conn<S> {
         pub(crate) fn new(
+            detail: ConnDetail,
             sender: UnboundedSender<ReqMessage>,
             io_shutdown: Arc<AtomicBool>,
         ) -> Self {
@@ -796,6 +854,7 @@ pub(crate) mod http3 {
                 resp_receiver,
                 _mark: PhantomData,
                 io_shutdown,
+                detail,
             }
         }
 
@@ -838,8 +897,13 @@ pub(crate) mod http3 {
     where
         S: AsyncRead + AsyncWrite + ConnInfo + Sync + Send + Unpin + 'static,
     {
-        pub(crate) fn http3(config: H3Config, io: S, quic_connection: QuicConn) -> Self {
-            Self::Http3(Http3Dispatcher::new(config, io, quic_connection))
+        pub(crate) fn http3(
+            detail: ConnDetail,
+            config: H3Config,
+            io: S,
+            quic_connection: QuicConn,
+        ) -> Self {
+            Self::Http3(Http3Dispatcher::new(detail, config, io, quic_connection))
         }
     }
 
@@ -848,7 +912,11 @@ pub(crate) mod http3 {
 
         fn dispatch(&self) -> Option<Self::Handle> {
             let sender = self.req_tx.clone();
-            Some(Http3Conn::new(sender, self.io_shutdown.clone()))
+            Some(Http3Conn::new(
+                self.detail.clone(),
+                sender,
+                self.io_shutdown.clone(),
+            ))
         }
 
         fn is_shutdown(&self) -> bool {

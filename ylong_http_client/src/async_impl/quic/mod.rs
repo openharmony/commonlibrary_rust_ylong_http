@@ -25,10 +25,10 @@ use libc::{
 use ylong_runtime::fastrand::fast_random;
 use ylong_runtime::time::timeout;
 
-use crate::async_impl::connector::ConnInfo;
 use crate::c_openssl::ssl::verify_server_cert;
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::util::c_openssl::ssl::Ssl;
+use crate::util::ConnInfo;
 use crate::{ErrorKind, HttpClientError, TlsConfig};
 
 const MAX_DATAGRAM_SIZE: usize = 1350;
@@ -77,8 +77,8 @@ impl QuicConn {
         }
         let scid = quiche::ConnectionId::from_ref(&scid);
 
-        let local = stream.conn_detail().local();
-        let peer = stream.conn_detail().peer();
+        let local = stream.conn_data().detail().local();
+        let peer = stream.conn_data().detail().peer();
         let mut c_local: sockaddr_storage = unsafe { std::mem::zeroed() };
         let c_local_size = Self::std_addr_to_c(&local, &mut c_local);
         let mut c_peer: sockaddr_storage = unsafe { std::mem::zeroed() };
@@ -142,7 +142,8 @@ impl QuicConn {
                 break;
             }
             if self.is_established() {
-                let Some(key) = tls_config.pinning_host_match(stream.conn_detail().addr()) else {
+                let Some(key) = tls_config.pinning_host_match(stream.conn_data().detail().addr())
+                else {
                     break;
                 };
 
@@ -188,8 +189,8 @@ impl QuicConn {
         S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Sync + Send + 'static,
     {
         let recv_info = quiche::RecvInfo {
-            to: stream.conn_detail().local(),
-            from: stream.conn_detail().peer(),
+            to: stream.conn_data().detail().local(),
+            from: stream.conn_data().detail().peer(),
         };
         let mut recv_size = 0;
         let mut len = 0;

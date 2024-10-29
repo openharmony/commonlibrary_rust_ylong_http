@@ -43,6 +43,9 @@ pub(crate) mod data_ref;
 pub(crate) mod h2;
 #[cfg(feature = "http3")]
 pub(crate) mod h3;
+pub(crate) mod information;
+pub(crate) mod interceptor;
+pub(crate) mod monitor;
 #[cfg(all(test, feature = "ylong_base"))]
 pub(crate) mod test_utils;
 
@@ -58,3 +61,6 @@ pub use config::{CertVerifier, ServerCerts};
 pub use config::{Proxy, ProxyBuilder, Redirect, Retry, SpeedLimit, Timeout};
 #[cfg(all(feature = "async", feature = "ylong_base", feature = "http2"))]
 pub(crate) use h2::{split, Reader, Writer};
+pub use information::{ConnData, ConnDataBuilder, ConnDetail, ConnInfo, NegotiateInfo};
+pub use interceptor::{ConnProtocol, Interceptor};
+pub use monitor::TimeGroup;
