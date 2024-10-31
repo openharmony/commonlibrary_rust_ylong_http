@@ -133,3 +133,212 @@ impl RecvWindow {
         self.notification -= size as i32;
     }
 }
+
+#[cfg(test)]
+mod ut_send_window {
+    use ylong_http::h2::{ErrorCode, H2Error};
+
+    use super::*;
+
+    /// UT test case for `SendWindow::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a new `SendWindow` instance.
+    /// 2. Asserts that the window size is initialized to the provided value.
+    #[test]
+    fn ut_sw_new() {
+        let sw = SendWindow::new(100);
+        assert_eq!(sw.size, 100);
+    }
+
+    /// UT test case for `SendWindow::size_available`.
+    ///
+    /// # Brief
+    /// 1. Creates a new `SendWindow` instance.
+    /// 2. Checks that the available size is returns correctly.
+    #[test]
+    fn ut_sw_size_available() {
+        let sw = SendWindow::new(100);
+        assert_eq!(sw.size_available(), 100);
+        let sw = SendWindow::new(-1);
+        assert_eq!(sw.size_available(), 0);
+    }
+
+    /// UT test case for `SendWindow::reduce_size`.
+    ///
+    /// # Brief
+    /// 1. Reduces the send window size by a specified value.
+    /// 2. Asserts that the size is correctly reduce.
+    #[test]
+    fn ut_sw_reduce_size() {
+        let mut sw = SendWindow::new(100);
+        sw.reduce_size(50);
+        assert_eq!(sw.size, 50);
+    }
+
+    /// UT test case for `SendWindow::increase_size`.
+    ///
+    /// # Brief
+    /// 1. Increases the send window size.
+    /// 2. Asserts that the size is increased correctly.
+    /// 3. Attempts to increase the window size beyond the maximum allowable
+    ///    value or beyond the maximum flow control window size.
+    /// 4. Asserts that the operation fails.
+    #[test]
+    fn ut_sw_window_increase_size() {
+        let mut sw = SendWindow::new(100);
+        assert!(sw.increase_size(50).is_ok());
+        assert_eq!(sw.size, 150);
+
+        let mut sw = SendWindow::new(i32::MAX);
+        let res = sw.increase_size(1);
+        assert!(res.is_err());
+        if let Err(H2Error::ConnectionError(code)) = res {
+            assert_eq!(code, ErrorCode::FlowControlError);
+        }
+
+        let mut sw = SendWindow::new(1);
+        let res = sw.increase_size(crate::util::h2::MAX_FLOW_CONTROL_WINDOW);
+        assert!(res.is_err());
+        assert_eq!(
+            res,
+            Err(H2Error::ConnectionError(ErrorCode::FlowControlError))
+        );
+    }
+
+    /// UT test case for `SendWindow::send_data`.
+    ///
+    /// # Brief
+    /// 1. Sends data by reducing the send window size.
+    /// 2. Asserts that the send window size is correctly redueced after the
+    ///    data is sent.
+    #[test]
+    fn ut_sw_send_data() {
+        let mut sw = SendWindow::new(100);
+        sw.send_data(50);
+        assert_eq!(sw.size, 50);
+    }
+}
+
+#[cfg(test)]
+mod ut_recv_window {
+    use super::*;
+
+    /// UT test case for `RecvWindow::new`.
+    ///
+    /// # Brief
+    /// 1. Creates a new `RecvWindow` instance.
+    /// 2. Asserts that both the `notification` and `actual` sizes are
+    ///    initialized to the provided value.
+    #[test]
+    fn ut_rw_new() {
+        let rw = RecvWindow::new(100);
+        assert_eq!(rw.notification, 100);
+        assert_eq!(rw.actual, 100);
+    }
+
+    /// UT test case for `RecvWindow::unreleased_size`.
+    ///
+    /// # Brief
+    /// 1. Creates a `RecvWindow` instance.
+    /// 2. Asserts that no unreleased size is reported when the notification is
+    ///    greater than or equal to the actual size.
+    /// 3. Simulate a scenario where the notification size is smaller than the
+    ///    actual size and asserts that unreleased size is repoeted.
+    /// 4. Simulate a scenario where the notification size is slightly less than
+    ///    the actual size but still no unreleased size is reported.
+    #[test]
+    fn ut_rw_unreleased_size() {
+        let mut rw = RecvWindow::new(100);
+        assert_eq!(rw.unreleased_size(), None);
+        rw.notification = 50;
+        assert_eq!(rw.unreleased_size(), Some(50));
+        rw.notification = 80;
+        assert_eq!(rw.unreleased_size(), None);
+    }
+
+    /// UT test case for `RecvWindow::actual_size`.
+    ///
+    /// # Brief
+    /// 1. Retrieves the actual window size.
+    /// 2. Asserts that the size is returned correctly.
+    #[test]
+    fn ut_rw_actual_size() {
+        let rw = RecvWindow::new(100);
+        assert_eq!(rw.actual_size(), 100);
+    }
+
+    /// UT test case for `RecvWindow::notification_available`.
+    ///
+    /// # Brief
+    /// 1. Asserts that the available notification size is correctly reported
+    ///    for a positive value.
+    /// 2. Simulates a scenario where the notification size is negative and
+    ///    asserts that the available notification size reported as zero.
+    #[test]
+    fn ut_rw_notification_available() {
+        let rw = RecvWindow::new(100);
+        assert_eq!(rw.notification_available(), 100);
+        let rw = RecvWindow::new(-1);
+        assert_eq!(rw.notification_available(), 0);
+    }
+
+    /// UT test case for `RecvWindow::{reduce_actual,increase_actual}`
+    ///
+    /// # Brief
+    /// 1. Reduces and increase the actual window size.
+    /// 2. Asserts that the size is correctly reduced and increased.
+    #[test]
+    fn ut_rw_reduce_and_increase_actual() {
+        let mut rw = RecvWindow::new(100);
+        rw.reduce_actual(50);
+        assert_eq!(rw.actual, 50);
+        rw.increase_actual(50);
+        assert_eq!(rw.actual, 100);
+    }
+
+    /// UT test case for
+    /// `RecvWindow::{reduce_notification,increase_notificaiton}`
+    ///
+    /// # Brief
+    /// 1. Reduces and increase the notification window size.
+    /// 2. Asserts that the size is correctly reduced and increased.
+    #[test]
+    fn ut_rw_reduce_and_increase_notification() {
+        let mut rw = RecvWindow::new(100);
+        rw.reduce_notification(50);
+        assert_eq!(rw.notification, 50);
+        rw.increase_notification(50);
+        assert_eq!(rw.notification, 100);
+    }
+
+    /// UT test case for `RecvWindow::check_window_update`.
+    ///
+    /// # Brief
+    /// 1. Checks for a window update when there is no unreleased size.
+    /// 2. Asserts that no `Frame` is generated.
+    /// 3. Checks for a window update when there is unreleased size available.
+    /// 4. Asserts that a `Frame` is generated for the window update.
+    #[test]
+    fn ut_rw_check_window_update() {
+        let mut rw = RecvWindow::new(100);
+        let frame = rw.check_window_update(1);
+        assert!(frame.is_none());
+        rw.notification = 50;
+        let frame = rw.check_window_update(1);
+        assert!(frame.is_some());
+    }
+
+    /// UT test case for `RecvWindow::recv_data`.
+    ///
+    /// # Brief
+    /// 1. Simulates receiving data, whice reduces the notification size.
+    /// 2. Asserts that the notification size is correctly reduced after
+    ///    receiving data.
+    #[test]
+    fn ut_rw_send_data() {
+        let mut rw = RecvWindow::new(100);
+        rw.recv_data(50);
+        assert_eq!(rw.notification, 50);
+    }
+}

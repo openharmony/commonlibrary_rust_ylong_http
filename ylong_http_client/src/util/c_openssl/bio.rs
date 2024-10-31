@@ -273,3 +273,320 @@ unsafe extern "C" fn bread<S: Read>(bio: *mut BIO, buf: *mut c_char, len: c_int)
 unsafe extern "C" fn bputs<S: Write>(bio: *mut BIO, buf: *const c_char) -> c_int {
     bwrite::<S>(bio, buf, strlen(buf) as c_int)
 }
+
+#[cfg(test)]
+mod ut_bio_slice {
+    use super::*;
+
+    /// UT test case for `BioSlice::from_byte`.
+    ///
+    /// # Brief
+    /// 1. Calls `BioSlice::from_byte` with a byte slice.
+    /// 2. Verifies if the slice is created successfully.
+    /// 3. Retrieves the pointer.
+    /// 4. Checks if the pointer is not null;
+    #[test]
+    fn ut_from_byte() {
+        let data = b"TEST";
+        let slice = BioSlice::from_byte(data);
+        assert!(slice.is_ok());
+        let ptr = slice.unwrap().as_ptr();
+        assert!(!ptr.is_null());
+    }
+}
+
+#[cfg(test)]
+mod ut_bio_method_inner {
+    use std::io::Cursor;
+
+    use super::*;
+
+    /// UT test case for `BioMethodInner::new` and `BioMethodInner::get`.
+    ///
+    /// # Brief
+    /// 1. Creates a new `BioMethodInner` and check it successfully.
+    /// 2. Checks if the internal pointer is not null.
+    #[test]
+    fn ut_new_get() {
+        let inner = BioMethodInner::new::<Cursor<Vec<u8>>>();
+        assert!(inner.is_ok());
+        let inner = inner.unwrap();
+        assert!(!inner.get().is_null());
+        drop(inner);
+    }
+}
+
+#[cfg(test)]
+mod ut_bio_method {
+    use std::io::Cursor;
+
+    use super::*;
+
+    /// UT test case for `BioMethod::new` and `BioMethod::get`.
+    ///
+    /// # Brief
+    /// 1. Creates a new `BioMethod` and check it successfully.
+    /// 2. Checks if the internal pointer is not null.
+    #[test]
+    fn ut_new_get() {
+        let method = BioMethod::new::<Cursor<Vec<u8>>>();
+        assert!(method.is_ok());
+        let method = method.unwrap();
+        assert!(!method.get().is_null());
+    }
+}
+
+#[cfg(test)]
+mod ut_bio {
+    use std::io::Cursor;
+
+    use super::*;
+
+    /// UT test case for `Bio::new`.
+    ///
+    /// # Brief
+    /// 1. Create a BIO with a cursor stream.
+    /// 2. Verify if the BIO is created successfully.
+    #[test]
+    fn ut_new() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let bio = new(stream);
+        assert!(bio.is_ok());
+    }
+
+    /// UT test case for `Bio::get_state`.
+    ///
+    /// # Brief
+    /// 1. Create a BIO and retrieve the BIO state.
+    /// 2. Check if the stream length matches the expected value.
+    #[test]
+    fn ut_get_state() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let state = get_state::<Cursor<Vec<u8>>>(bio);
+            assert_eq!(state.stream.get_ref().len(), 10);
+        }
+    }
+
+    /// UT test case for `BIO::get_error`.
+    ///
+    /// # Brief
+    /// 1. Calls `get_error` to retrieve the error state.
+    /// 2. Verify that errors is as expected.
+    #[test]
+    fn ut_get_error() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let error = get_error::<Cursor<Vec<u8>>>(bio);
+            assert!(error.is_none());
+            let state = get_state::<Cursor<Vec<u8>>>(bio);
+            state.error = Some(io::Error::new(io::ErrorKind::Other, "ERROR TEST"));
+            let error = get_error::<Cursor<Vec<u8>>>(bio);
+            assert!(error.is_some());
+            let msg = error.unwrap().to_string();
+            assert_eq!(msg, "ERROR TEST");
+        }
+    }
+
+    /// UT test case for `BIO::get_panic`.
+    ///
+    /// # Brief
+    /// 1. Calls `get_panic` to retrieve the panic state.
+    /// 2. Verify that the panic is as expected.
+    #[test]
+    fn ut_get_panic() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let panic = get_panic::<Cursor<Vec<u8>>>(bio);
+            assert!(panic.is_none());
+            let state = get_state::<Cursor<Vec<u8>>>(bio);
+            state.panic = Some(Box::new("PANIC TEST"));
+            let panic = get_panic::<Cursor<Vec<u8>>>(bio);
+            assert!(panic.is_some());
+            assert_eq!(panic.unwrap().downcast_ref::<&str>(), Some(&"PANIC TEST"));
+        }
+    }
+
+    /// UT test case for `BIO::get_panic`.
+    ///
+    /// # Brief
+    /// 1. Calls `get_stream_ref` and `get_stream_mut` to retrieve the stream
+    ///    references.
+    /// 2. Verify that the stream length matches expected.
+    #[test]
+    fn ut_get_stream() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let stream_ref = get_stream_ref::<Cursor<Vec<u8>>>(bio);
+            assert_eq!(stream_ref.get_ref().len(), 10);
+            let stream_mut = get_stream_mut::<Cursor<Vec<u8>>>(bio);
+            assert_eq!(stream_mut.get_mut().len(), 10);
+        }
+    }
+
+    /// UT test case for `BIO::retry_error`.
+    ///
+    /// # Brief
+    /// 1. Calls `retry_error` with some IO errors.
+    /// 2. Verify that the result matches the error kind.
+    #[test]
+    fn ut_try_error() {
+        let error = io::Error::new(io::ErrorKind::WouldBlock, "operation would back");
+        assert!(retry_error(&error));
+        let error = io::Error::new(io::ErrorKind::NotConnected, "not connected");
+        assert!(retry_error(&error));
+        let error = io::Error::new(io::ErrorKind::Other, "some other error");
+        assert!(!retry_error(&error));
+    }
+
+    /// UT test case for `ctrl` with `BIO_CTRL_FLUSH`.
+    ///
+    /// # Brief
+    /// 1. Calls `ctrl` with `BIO_CTRL_FLUSH.
+    /// 2. Verify that the flush operation returns the expected result.
+    #[test]
+    fn ut_ctrl_flush() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let res = ctrl::<Cursor<Vec<u8>>>(bio, BIO_CTRL_FLUSH, 0, std::ptr::null_mut());
+            assert_eq!(res, 1);
+        }
+    }
+
+    /// UT test case for `ctrl` with `BIO_CTRL_DGRAM_QUERY`.
+    ///
+    /// # Brief
+    /// 1. Injects an MTU size into the BIO state.
+    /// 2. Calls `ctrl` with `BIO_CTRL_DGRAM_QUERY`.
+    /// 3. Verify that the MTU size is returned correctly.
+    #[test]
+    fn ut_ctrl_dgram_query() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let state = get_state::<Cursor<Vec<u8>>>(bio);
+            state.dtls_mtu_size = 100;
+            let res = ctrl::<Cursor<Vec<u8>>>(bio, BIO_CTRL_DGRAM_QUERY, 0, std::ptr::null_mut());
+            assert_eq!(res, 100);
+        }
+    }
+
+    /// UT test case for `ctrl` with unknow command.
+    ///
+    /// # Brief
+    /// 1. Calls `ctrl` with an unknown command.
+    /// 2. Verify that the default result is returned.
+    #[test]
+    fn ut_ctrl_default() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let res = ctrl::<Cursor<Vec<u8>>>(bio, 99, 0, std::ptr::null_mut());
+            assert_eq!(res, 0);
+        }
+    }
+
+    /// UT test case for `create`.
+    ///
+    /// # Brief
+    /// 1. Initialize a BIO by `create`.
+    /// 2. Verify that created successfully.
+    #[test]
+    fn ut_create() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        unsafe {
+            let res = create(bio);
+            assert_eq!(res, 1);
+        }
+    }
+
+    /// UT test case for `destroy`.
+    ///
+    /// # Brief
+    /// 1. Clean up the BIO by `destroy`.
+    /// 2. Verify that destroy successfully.
+    /// 3. Ensures that the BIO data is cleared.
+    #[test]
+    fn ut_destroy() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        assert!(!bio.is_null());
+        unsafe {
+            let res = destroy::<Cursor<Vec<u8>>>(bio);
+            assert_eq!(res, 1);
+            let data_ptr = BIO_get_data(bio);
+            assert!(data_ptr.is_null());
+        }
+        unsafe {
+            let res = destroy::<Cursor<Vec<u8>>>(std::ptr::null_mut());
+            assert_eq!(res, 0);
+        }
+    }
+
+    /// UT test case for `bwrite`.
+    ///
+    /// # Brief
+    /// 1. Write data to the BIO.
+    /// 2. Verify that the data is written correctly.
+    #[test]
+    fn ut_bwrite() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        let data = b"TEST TEST";
+        let len = data.len() as c_int;
+        unsafe {
+            let res = bwrite::<Cursor<Vec<u8>>>(bio, data.as_ptr() as *const c_char, len);
+            assert_eq!(res, len);
+            let state = get_stream_ref::<Cursor<Vec<u8>>>(bio);
+            let write_data = state.get_ref();
+            assert_eq!(&write_data[..len as usize], b"TEST TEST");
+        }
+    }
+
+    /// UT test case for `bread`.
+    ///
+    /// # Brief
+    /// 1. Read data to the BIO.
+    /// 2. Verify that the data is read correctly.
+    #[test]
+    fn ut_bread() {
+        let data = b"TEST TEST".to_vec();
+        let stream = Cursor::new(data.clone());
+        let (bio, _method) = new(stream).unwrap();
+        let mut buf = vec![0u8; data.len()];
+        let len = data.len() as c_int;
+        unsafe {
+            let res = bread::<Cursor<Vec<u8>>>(bio, buf.as_mut_ptr() as *mut c_char, len);
+            assert_eq!(res, len);
+            assert_eq!(buf, data);
+        }
+    }
+
+    /// UT test case for `bputs`.
+    ///
+    /// # Brief
+    /// 1. Write a null-terminated string to the BIO.
+    /// 2. Verify that the string is written correctly.
+    #[test]
+    fn ut_bput() {
+        let stream = Cursor::new(vec![0u8; 10]);
+        let (bio, _method) = new(stream).unwrap();
+        let data = "TEST TEST\0";
+        unsafe {
+            let res = bputs::<Cursor<Vec<u8>>>(bio, data.as_ptr() as *const c_char);
+            assert_eq!(res, strlen(data.as_ptr() as *const c_char) as c_int);
+            let state = get_stream_ref::<Cursor<Vec<u8>>>(bio);
+            let write_data = state.get_ref();
+            assert_eq!(
+                &write_data[..data.len() - 1],
+                data.as_bytes().strip_suffix(&[0]).unwrap()
+            )
+        }
+    }
+}

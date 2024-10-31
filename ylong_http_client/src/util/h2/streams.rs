@@ -31,6 +31,7 @@ const DEFAULT_MAX_STREAM_ID: StreamId = u32::MAX >> 1;
 const INITIAL_LATEST_REMOTE_ID: StreamId = 0;
 const DEFAULT_MAX_CONCURRENT_STREAMS: u32 = 100;
 
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub(crate) enum FrameRecvState {
     OK,
     Ignore,
@@ -44,7 +45,7 @@ pub(crate) enum DataReadState {
     Ready(Frame),
     Finish(Frame),
 }
-
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub(crate) enum StreamEndState {
     OK,
     Ignore,
@@ -80,6 +81,7 @@ pub(crate) enum StreamEndState {
 //     `----------------------->|        |<----------------------'
 //                              +--------+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) enum H2StreamState {
     Idle,
     // When response does not depend on request,
@@ -100,6 +102,7 @@ pub(crate) enum H2StreamState {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) enum CloseReason {
     LocalRst,
     RemoteRst,
@@ -109,6 +112,7 @@ pub(crate) enum CloseReason {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) enum ActiveState {
     WaitHeaders,
     WaitData,
@@ -778,5 +782,369 @@ impl Stream {
                 }
                 | H2StreamState::LocalHalfClosed(ActiveState::WaitData)
         )
+    }
+}
+
+#[cfg(test)]
+mod ut_h2streamstate {
+    use super::*;
+
+    /// UT test case for `H2StreamState` with some states.
+    ///
+    /// # Brief
+    /// 1. Creates an H2StreamState with open, LocalHalfClosed, Closed state.
+    /// 2. Asserts that the send and recv field are as expected.
+    #[test]
+    fn ut_hss() {
+        let state = H2StreamState::Open {
+            send: ActiveState::WaitHeaders,
+            recv: ActiveState::WaitData,
+        };
+        if let H2StreamState::Open { send, recv } = state {
+            assert_eq!(send, ActiveState::WaitHeaders);
+            assert_eq!(recv, ActiveState::WaitData);
+        };
+
+        let state = H2StreamState::LocalHalfClosed(ActiveState::WaitData);
+        if let H2StreamState::LocalHalfClosed(recv) = state {
+            assert_eq!(recv, ActiveState::WaitData);
+        };
+
+        let state = H2StreamState::Closed(CloseReason::EndStream);
+        if let H2StreamState::Closed(reason) = state {
+            assert_eq!(reason, CloseReason::EndStream);
+        }
+    }
+}
+
+#[cfg(test)]
+mod ut_streams {
+    use super::*;
+    use crate::async_impl::{Body, Request};
+    use crate::request::RequestArc;
+
+    fn stream_new(state: H2StreamState) -> Stream {
+        Stream {
+            send_window: SendWindow::new(100),
+            recv_window: RecvWindow::new(100),
+            state,
+            header: None,
+            data: BodyDataRef::new(RequestArc::new(
+                Request::builder().body(Body::empty()).unwrap(),
+            )),
+        }
+    }
+
+    /// UT test case for `Streams::apply_max_concurrent_streams`.
+    ///
+    /// # Brief
+    /// 1. Sets the max concurrent streams to 2.
+    /// 2. Increases current concurrency twice and checks if it reaches max
+    ///    concurrency.
+    #[test]
+    fn ut_streams_apply_max_concurrent_streams() {
+        let mut streams = Streams::new(100, 200, FlowControl::new(300, 400));
+        streams.apply_max_concurrent_streams(2);
+        streams.increase_current_concurrency();
+        assert!(!streams.reach_max_concurrency());
+        streams.increase_current_concurrency();
+        assert!(streams.reach_max_concurrency());
+    }
+
+    /// UT test case for `Streams::apply_send_initial_window_size` and
+    /// `Streams::apply_recv_initial_window_size`.
+    ///
+    /// # Brief
+    /// 1. Adjusts the initial send and recv window size and checks for correct
+    ///    application.
+    /// 2. Asserts correct window sizes and that `pending_send` queue is empty
+    ///    and correct notification window sizes.
+    #[test]
+    fn ut_streams_apply_send_initial_window_size() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+
+        assert!(streams.apply_send_initial_window_size(200).is_ok());
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.send_window.size_available(), 200);
+        assert!(streams.pending_send.is_empty());
+
+        assert!(streams.apply_send_initial_window_size(50).is_ok());
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.send_window.size_available(), 50);
+        assert!(streams.pending_send.is_empty());
+
+        assert!(streams.apply_send_initial_window_size(100).is_ok());
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.send_window.size_available(), 100);
+        assert!(streams.pending_send.is_empty());
+
+        streams.apply_recv_initial_window_size(200);
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.recv_window.notification_available(), 200);
+
+        streams.apply_recv_initial_window_size(50);
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.recv_window.notification_available(), 50);
+
+        streams.apply_recv_initial_window_size(100);
+        let stream = streams.stream_map.get(&1).unwrap();
+        assert_eq!(stream.recv_window.notification_available(), 100);
+    }
+
+    /// UT test case for `Streams::get_go_away_streams`.
+    ///
+    /// # Brief
+    /// 1. Insert streams with different states and sends go_away with a stream
+    ///    id.
+    /// 2. Asserts that only streams with IDs greater than or equal to the
+    ///    go_away ID are closed.
+    #[test]
+    fn ut_streams_get_go_away_streams() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.apply_max_concurrent_streams(4);
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+        streams.increase_current_concurrency();
+        streams
+            .stream_map
+            .insert(2, stream_new(H2StreamState::Idle));
+        streams.increase_current_concurrency();
+        streams.stream_map.insert(
+            3,
+            stream_new(H2StreamState::Open {
+                send: ActiveState::WaitHeaders,
+                recv: ActiveState::WaitData,
+            }),
+        );
+        streams.increase_current_concurrency();
+        streams
+            .stream_map
+            .insert(4, stream_new(H2StreamState::Closed(CloseReason::EndStream)));
+        streams.increase_current_concurrency();
+
+        let go_away_streams = streams.get_go_away_streams(2);
+        assert!([2, 3, 4].iter().all(|&e| go_away_streams.contains(&e)));
+
+        let state = streams.stream_state(1).unwrap();
+        assert_eq!(state, H2StreamState::Idle);
+        let state = streams.stream_state(2).unwrap();
+        assert_eq!(state, H2StreamState::Closed(CloseReason::RemoteGoAway));
+        let state = streams.stream_state(3).unwrap();
+        assert_eq!(state, H2StreamState::Closed(CloseReason::RemoteGoAway));
+        let state = streams.stream_state(4).unwrap();
+        assert_eq!(state, H2StreamState::Closed(CloseReason::EndStream));
+    }
+
+    /// UT test case for `Streams::get_all_unclosed_streams`.
+    ///
+    /// # Brief
+    /// 1. Inserts streams with different states.
+    /// 2. Asserts that only unclosed streams are returned.
+    #[test]
+    fn ut_streams_get_all_unclosed_streams() {
+        let mut streams = Streams::new(1000, 1000, FlowControl::new(1000, 1000));
+        streams.apply_max_concurrent_streams(2);
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+        streams.increase_current_concurrency();
+        streams
+            .stream_map
+            .insert(2, stream_new(H2StreamState::Closed(CloseReason::EndStream)));
+        streams.increase_current_concurrency();
+        assert_eq!(streams.get_all_unclosed_streams(), [1]);
+    }
+
+    /// UT test case for `Streams::clear_streams_states`.
+    ///
+    /// # Brief
+    /// 1. Clears all the pending and window updating stream states.
+    /// 2. Asserts that all relevant collections are empty after clearing.
+    #[test]
+    fn ut_streams_clear_streams_states() {
+        let mut streams = Streams::new(1000, 1000, FlowControl::new(1000, 1000));
+        streams.clear_streams_states();
+        assert!(streams.window_updating_streams.is_empty());
+        assert!(streams.pending_stream_window.is_empty());
+        assert!(streams.pending_send.is_empty());
+        assert!(streams.pending_conn_window.is_empty());
+        assert!(streams.pending_concurrency.is_empty());
+    }
+
+    /// UT test case for `Streams::send_local_reset`.
+    ///
+    /// # Brief
+    /// 1. Sends local reset on streams with different states.
+    /// 2. Asserts correct handing o each state.
+    #[test]
+    fn ut_streams_send_local_reset() {
+        let mut streams = Streams::new(1000, 1000, FlowControl::new(1000, 1000));
+        streams.apply_max_concurrent_streams(3);
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+        streams.increase_current_concurrency();
+        streams.stream_map.insert(
+            2,
+            stream_new(H2StreamState::Closed(CloseReason::RemoteGoAway)),
+        );
+        streams.increase_current_concurrency();
+        streams
+            .stream_map
+            .insert(3, stream_new(H2StreamState::Closed(CloseReason::EndStream)));
+        streams.increase_current_concurrency();
+        assert_eq!(
+            streams.send_local_reset(4),
+            StreamEndState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError))
+        );
+        assert_eq!(streams.send_local_reset(3), StreamEndState::Ignore);
+        assert_eq!(streams.send_local_reset(2), StreamEndState::Ignore);
+        assert_eq!(streams.send_local_reset(1), StreamEndState::OK);
+    }
+
+    /// UT test case for `Streams::send_headers_frame`.
+    ///
+    /// # Brief
+    /// 1. Send headers frame on a stream.
+    /// 2. Asserts correct handling of frame and stream state changes.
+    #[test]
+    fn ut_streams_send_headers_frame() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.apply_max_concurrent_streams(1);
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+        streams.increase_current_concurrency();
+        let res = streams.send_headers_frame(1, true);
+        assert_eq!(res, FrameRecvState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::LocalHalfClosed(ActiveState::WaitHeaders)
+        );
+        let res = streams.send_headers_frame(1, true);
+        assert_eq!(
+            res,
+            FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError))
+        );
+    }
+
+    /// UT test case for `Streams::send_data_frame`.
+    ///
+    /// # Brief
+    /// 1. Sends data frame on a stream.
+    /// 2. Asserts correct handling of frame and stream state changes.
+    #[test]
+    fn ut_streams_send_data_frame() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.stream_map.insert(
+            1,
+            stream_new(H2StreamState::Open {
+                send: ActiveState::WaitData,
+                recv: ActiveState::WaitHeaders,
+            }),
+        );
+        streams.increase_current_concurrency();
+        let res = streams.send_data_frame(1, true);
+        assert_eq!(res, FrameRecvState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::LocalHalfClosed(ActiveState::WaitHeaders)
+        );
+        let res = streams.send_data_frame(1, true);
+        assert_eq!(
+            res,
+            FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError))
+        );
+    }
+
+    /// UT test for `Streams::recv_remote_reset`.
+    ///
+    /// # Brief
+    /// 1. Receives remote reset on streams with different states.
+    /// 2. Asserts correct handling of each state.
+    #[test]
+    fn ut_streams_recv_remote_reset() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.apply_max_concurrent_streams(1);
+        streams.stream_map.insert(
+            1,
+            stream_new(H2StreamState::Open {
+                send: ActiveState::WaitData,
+                recv: ActiveState::WaitHeaders,
+            }),
+        );
+        streams.increase_current_concurrency();
+        let res = streams.recv_remote_reset(1);
+        assert_eq!(res, StreamEndState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::Closed(CloseReason::RemoteRst)
+        );
+        let res = streams.recv_remote_reset(1);
+        assert_eq!(res, StreamEndState::Ignore);
+    }
+
+    /// UT test case for `Streams::recv_headers`.
+    ///
+    /// # Brief
+    /// 1. Receives headers on a stream and checks for state changes.
+    /// 2. Asserts error handling when headers are received again.
+    #[test]
+    fn ut_streams_recv_headers() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.apply_max_concurrent_streams(1);
+        streams
+            .stream_map
+            .insert(1, stream_new(H2StreamState::Idle));
+        let res = streams.recv_headers(1, false);
+        assert_eq!(res, FrameRecvState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::Open {
+                send: ActiveState::WaitHeaders,
+                recv: ActiveState::WaitData,
+            }
+        );
+        let res = streams.recv_headers(1, false);
+        assert_eq!(
+            res,
+            FrameRecvState::Err(H2Error::ConnectionError(ErrorCode::ProtocolError))
+        );
+    }
+
+    /// UT test case for `Streams::recv_data`.
+    ///
+    /// # Brief
+    /// 1. Receives data on a stream and checks for state changes.
+    /// 2. Assert correct state when data is received with eos flag.
+    #[test]
+    fn ut_streams_recv_data() {
+        let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
+        streams.stream_map.insert(
+            1,
+            stream_new(H2StreamState::Open {
+                send: ActiveState::WaitHeaders,
+                recv: ActiveState::WaitData,
+            }),
+        );
+        let res = streams.recv_data(1, false);
+        assert_eq!(res, FrameRecvState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::Open {
+                send: ActiveState::WaitHeaders,
+                recv: ActiveState::WaitData,
+            }
+        );
+        let res = streams.recv_data(1, true);
+        assert_eq!(res, FrameRecvState::OK);
+        assert_eq!(
+            streams.stream_state(1).unwrap(),
+            H2StreamState::RemoteHalfClosed(ActiveState::WaitHeaders)
+        );
     }
 }
