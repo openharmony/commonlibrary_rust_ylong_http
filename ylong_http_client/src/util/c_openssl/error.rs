@@ -365,3 +365,145 @@ mod ut_c_openssl_error {
         assert_eq!(format!("{error}"), "Public Key Pinning Error: error");
     }
 }
+
+#[cfg(test)]
+mod ut_stack_error {
+    use super::*;
+
+    /// UT test case for `StackError::clone`.
+    ///
+    /// # Brief
+    /// 1. Creates a mock `StackError` and clone the error message.
+    /// 2. Verift the cloned error messsage is the same as the original.
+    #[test]
+    #[cfg(feature = "__c_openssl")]
+    fn ut_clone() {
+        let error1 = StackError {
+            code: 0x00000001,
+            #[cfg(feature = "c_openssl_1_1")]
+            file: ptr::null(),
+            #[cfg(feature = "c_openssl_3_0")]
+            file: CString::new("TEST").unwrap(),
+            line: 1,
+            #[cfg(feature = "c_openssl_3_0")]
+            func: None,
+            data: Some(Cow::Borrowed("Test")),
+        };
+        let error2 = error1.clone();
+        let msg = format!("{}", error2);
+        #[cfg(feature = "c_openssl_1_1")]
+        assert_eq!(
+            msg,
+            "error:00000001lib: (0), func: (0), reason: (1), :0x0:1:Test"
+        );
+        #[cfg(feature = "c_openssl_3_0")]
+        assert_eq!(
+            msg,
+            "error:00000001lib: (0), :func(0)reason(1), :\"TEST\":1:Test"
+        );
+    }
+
+    /// UT test case for `StackError::fmt`.
+    ///
+    /// # Brief
+    /// 1. Creates a mock `StackError` and format the error message.
+    /// 2. Verify that the formatted message is correct.
+    #[test]
+    #[cfg(feature = "__c_openssl")]
+    fn ut_fmt() {
+        let error = StackError {
+            code: 0x00000001,
+            #[cfg(feature = "c_openssl_1_1")]
+            file: ptr::null(),
+            #[cfg(feature = "c_openssl_3_0")]
+            file: CString::new("TEST").unwrap(),
+            line: 1,
+            #[cfg(feature = "c_openssl_3_0")]
+            func: None,
+            data: Some(Cow::Borrowed("Test")),
+        };
+        let msg = format!("{}", error);
+        #[cfg(feature = "c_openssl_1_1")]
+        assert_eq!(
+            msg,
+            "error:00000001lib: (0), func: (0), reason: (1), :0x0:1:Test"
+        );
+        #[cfg(feature = "c_openssl_3_0")]
+        assert_eq!(
+            msg,
+            "error:00000001lib: (0), :func(0)reason(1), :\"TEST\":1:Test"
+        );
+    }
+
+    /// UT test case for `error_get_func`.
+    ///
+    /// # Brief
+    /// 1. Creates a error code and return error get code by `error_get_func`
+    /// 2. Verify the error get code is correct.
+    #[test]
+    fn ut_ut_error_get_func() {
+        let code = 0x12345;
+        let get_code = error_get_func(code);
+        #[cfg(feature = "c_openssl_1_1")]
+        assert_eq!(get_code, 18);
+        #[cfg(feature = "c_openssl_3_0")]
+        assert_eq!(get_code, 0);
+    }
+}
+
+#[cfg(test)]
+mod ut_error_stack {
+    use super::*;
+
+    /// UT test case for `ErrorStack::fmt`.
+    ///
+    /// # Brief
+    /// 1. Create an `ErrorStack` with multiple errors.
+    /// 2. Formats the entire error stack.
+    /// 3. Verify if the formatted message is correct.
+    #[test]
+    #[cfg(feature = "__c_openssl")]
+    fn ut_fmt() {
+        let error1 = StackError {
+            code: 0x00000001,
+            #[cfg(feature = "c_openssl_1_1")]
+            file: ptr::null(),
+            #[cfg(feature = "c_openssl_3_0")]
+            file: CString::new("TEST").unwrap(),
+            line: 1,
+            #[cfg(feature = "c_openssl_3_0")]
+            func: None,
+            data: Some(Cow::Borrowed("Error 1")),
+        };
+        let error2 = StackError {
+            code: 0x00000002,
+            #[cfg(feature = "c_openssl_1_1")]
+            file: ptr::null(),
+            #[cfg(feature = "c_openssl_3_0")]
+            file: CString::new("TEST").unwrap(),
+            line: 2,
+            #[cfg(feature = "c_openssl_3_0")]
+            func: None,
+            data: Some(Cow::Borrowed("Error 2")),
+        };
+        let error3 = StackError {
+            code: 0x00000003,
+            #[cfg(feature = "c_openssl_1_1")]
+            file: ptr::null(),
+            #[cfg(feature = "c_openssl_3_0")]
+            file: CString::new("TEST").unwrap(),
+            line: 3,
+            #[cfg(feature = "c_openssl_3_0")]
+            func: None,
+            data: Some(Cow::Borrowed("Error 3")),
+        };
+        let error_stack = ErrorStack(vec![error1, error2, error3]);
+        let msg = format!("{}", error_stack);
+        assert!(msg.contains("error:00000001"));
+        assert!(msg.contains("error:00000002"));
+        assert!(msg.contains("error:00000003"));
+        assert!(msg.contains("Error 1"));
+        assert!(msg.contains("Error 2"));
+        assert!(msg.contains("Error 3"));
+    }
+}

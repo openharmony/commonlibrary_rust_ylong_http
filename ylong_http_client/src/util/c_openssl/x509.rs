@@ -308,7 +308,7 @@ foreign_type!(
 
 #[cfg(test)]
 mod ut_x509 {
-
+    use crate::util::c_openssl::x509::X509;
     /// UT test cases for `X509::clone`.
     ///
     /// # Brief
@@ -318,10 +318,84 @@ mod ut_x509 {
     #[test]
     #[allow(clippy::redundant_clone)]
     fn ut_x509_clone() {
-        use crate::util::c_openssl::x509::X509;
-
         let pem = include_bytes!("../../../tests/file/root-ca.pem");
         let x509 = X509::from_pem(pem).unwrap();
         drop(x509.clone());
+    }
+
+    /// UT test case for `X509::get_cert_version` and `X509::get_cert`
+    ///
+    /// # Brief
+    /// 1. Creates a `X509` by calling `X509::from_pem`.
+    /// 2. Retrieve the certificate version using `get_cert_version`.
+    /// 3. Verify that the returned version is as expected.
+    #[test]
+    fn ut_get_cert_version() {
+        let pem = include_bytes!("../../../tests/file/root-ca.pem");
+        let x509 = X509::from_pem(pem).unwrap();
+        assert!(x509.get_cert().is_ok());
+        assert_eq!(x509.get_cert_version(), 2);
+    }
+
+    /// UT test case for `X509::cmp_certs`.
+    ///
+    /// # Brief
+    /// 1. Creates a `X509` by calling `X509::from_pem`.
+    /// 2. Retrieves the public key using `get_cert`.
+    /// 3. Compares the certificate using `cmp_certs` and verify that the
+    ///    comparison is valid
+    #[test]
+    fn ut_cmp_certs() {
+        let pem = include_bytes!("../../../tests/file/root-ca.pem");
+        let x509 = X509::from_pem(pem).unwrap();
+        let key = x509.get_cert().unwrap();
+        assert!(x509.cmp_certs(key) != 0);
+    }
+}
+
+#[cfg(test)]
+mod ut_x509_verify_result {
+    use super::*;
+
+    /// UT test case for `X509VerifyResult::error_string`.
+    ///
+    /// # Brief
+    /// 1. Creates a `X509VerifyResult` using a known error code.
+    /// 2. Verify that the `error_string` returns a non-empty string.
+    #[test]
+    fn ut_error_string() {
+        let res = X509VerifyResult::from_raw(10);
+        let string = res.error_string();
+        assert!(!string.is_empty());
+    }
+
+    /// UT test case for `X509VerifyResult::from_raw`.
+    ///
+    /// # Brief
+    /// 1. Creates a `X509VerifyResult` using a raw error code.
+    /// 2. Verify that the error code is correct.
+    #[test]
+    fn ut_from_raw() {
+        let code = 20;
+        let res = X509VerifyResult::from_raw(code);
+        assert_eq!(res.0, code);
+    }
+
+    /// UT test code for `fmt::Display` and `fmt::Debug`.
+    ///
+    /// # Brief
+    /// 1. Creates a `X509VerifyResult` using an error code.
+    /// 2. Uses the `fmt::Display` and `fmt::Debug` to format the result as a
+    ///    string.
+    /// 3. Verify that the output string is correct.
+    #[test]
+    fn ut_fmt_display() {
+        let res = X509VerifyResult::from_raw(10);
+        let fmt_dis = format!("{}", res);
+        assert!(!fmt_dis.is_empty());
+        let dbg_dis = format!("{:?}", res);
+        assert!(dbg_dis.contains("X509VerifyResult"));
+        assert!(dbg_dis.contains("code"));
+        assert!(dbg_dis.contains("error"));
     }
 }
