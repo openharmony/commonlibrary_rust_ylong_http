@@ -237,10 +237,14 @@ impl UntilClose {
         let mut read = read;
         let mut read_buf = ReadBuf::new(&mut buf[read..]);
         match Pin::new(&mut io).poll_read(cx, &mut read_buf) {
-            // Disconnected.
             Poll::Ready(Ok(())) => {
                 let filled = read_buf.filled().len();
                 if filled == 0 {
+                    // Stream closed, and get the fin.
+                    if io.is_stream_closable() {
+                        return Poll::Ready(Ok(0));
+                    }
+                    // Disconnected for http1.
                     io.shutdown();
                 } else {
                     self.interceptors

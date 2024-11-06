@@ -399,7 +399,7 @@ mod ut_stack_error {
         #[cfg(feature = "c_openssl_3_0")]
         assert_eq!(
             msg,
-            "error:00000001lib: (0), :func(0)reason(1), :\"TEST\":1:Test"
+            "error:00000001lib: (0), :func(0)reason: (1), :\"TEST\":1:Test"
         );
     }
 
@@ -431,7 +431,7 @@ mod ut_stack_error {
         #[cfg(feature = "c_openssl_3_0")]
         assert_eq!(
             msg,
-            "error:00000001lib: (0), :func(0)reason(1), :\"TEST\":1:Test"
+            "error:00000001lib: (0), :func(0)reason: (1), :\"TEST\":1:Test"
         );
     }
 
