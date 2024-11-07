@@ -152,10 +152,6 @@ impl ConnManager {
         if let Some(code) = self.controller.recved_go_away {
             self.poll_deal_with_go_away(code)?;
         }
-        self.controller.streams.window_update_conn(&self.input_tx)?;
-        self.controller
-            .streams
-            .window_update_streams(&self.input_tx)?;
         self.poll_recv_request(cx)?;
         if self.handshakes.local && self.handshakes.peer {
             self.poll_input_request(cx)?;
@@ -309,7 +305,7 @@ impl ConnManager {
                 return self.recv_header_frame(cx, frame).map_err(Into::into);
             }
             Payload::Data(_data) => {
-                return self.recv_data_frame(cx, frame).map_err(Into::into);
+                return self.recv_data_frame(cx, frame);
             }
             Payload::WindowUpdate(_windows) => {
                 self.recv_window_frame(frame)?;
@@ -467,7 +463,11 @@ impl ConnManager {
         }
     }
 
-    fn recv_data_frame(&mut self, cx: &mut Context<'_>, frame: Frame) -> Poll<Result<(), H2Error>> {
+    fn recv_data_frame(
+        &mut self,
+        cx: &mut Context<'_>,
+        frame: Frame,
+    ) -> Poll<Result<(), DispatchErrorKind>> {
         let data = if let Payload::Data(data) = frame.payload() {
             data
         } else {
@@ -477,23 +477,19 @@ impl ConnManager {
         let id = frame.stream_id();
         let len = data.size() as u32;
 
-        self.controller.streams.release_conn_recv_window(len)?;
-        self.controller
-            .streams
-            .release_stream_recv_window(id, len)?;
+        self.update_window(id, len)?;
 
         match self
             .controller
             .streams
             .recv_data(id, frame.flags().is_end_stream())
         {
-            FrameRecvState::OK => self.controller.send_message_to_stream(
-                cx,
-                frame.stream_id(),
-                RespMessage::Output(frame),
-            ),
+            FrameRecvState::OK => self
+                .controller
+                .send_message_to_stream(cx, frame.stream_id(), RespMessage::Output(frame))
+                .map_err(Into::into),
             FrameRecvState::Ignore => Poll::Ready(Ok(())),
-            FrameRecvState::Err(e) => Poll::Ready(Err(e)),
+            FrameRecvState::Err(e) => Poll::Ready(Err(e.into())),
         }
     }
 
@@ -741,5 +737,19 @@ impl ConnManager {
             }
         }
         blocked
+    }
+
+    pub(crate) fn update_window(
+        &mut self,
+        id: StreamId,
+        len: u32,
+    ) -> Result<(), DispatchErrorKind> {
+        self.controller
+            .streams
+            .release_conn_recv_window(len, &self.input_tx)?;
+        self.controller
+            .streams
+            .release_stream_recv_window(id, len, &self.input_tx)?;
+        Ok(())
     }
 }

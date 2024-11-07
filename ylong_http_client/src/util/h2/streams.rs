@@ -274,24 +274,43 @@ impl Streams {
         &mut self,
         id: StreamId,
         size: u32,
-    ) -> Result<(), H2Error> {
+        sender: &UnboundedSender<Frame>,
+    ) -> Result<(), DispatchErrorKind> {
         if let Some(stream) = self.stream_map.get_mut(&id) {
             if stream.recv_window.notification_available() < size {
-                return Err(H2Error::StreamError(id, ErrorCode::FlowControlError));
+                return Err(H2Error::StreamError(id, ErrorCode::FlowControlError).into());
             }
             stream.recv_window.recv_data(size);
+            // determine whether it is necessary to update the stream window
             if stream.recv_window.unreleased_size().is_some() {
-                self.window_updating_streams.push_back(id);
+                if !stream.is_init_or_active_flow_control() {
+                    return Ok(());
+                }
+                if let Some(window_update) = stream.recv_window.check_window_update(id) {
+                    sender
+                        .send(window_update)
+                        .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
+                }
             }
         }
         Ok(())
     }
 
-    pub(crate) fn release_conn_recv_window(&mut self, size: u32) -> Result<(), H2Error> {
+    pub(crate) fn release_conn_recv_window(
+        &mut self,
+        size: u32,
+        sender: &UnboundedSender<Frame>,
+    ) -> Result<(), DispatchErrorKind> {
         if self.flow_control.recv_notification_size_available() < size {
-            return Err(H2Error::ConnectionError(ErrorCode::FlowControlError));
+            return Err(H2Error::ConnectionError(ErrorCode::FlowControlError).into());
         }
         self.flow_control.recv_data(size);
+        // determine whether it is necessary to update the connection window
+        if let Some(window_update) = self.flow_control.check_conn_recv_window_update() {
+            sender
+                .send(window_update)
+                .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
+        }
         Ok(())
     }
 
@@ -383,41 +402,6 @@ impl Streams {
             self.pending_send.push_back(id);
         }
         Ok(())
-    }
-
-    pub(crate) fn window_update_conn(
-        &mut self,
-        sender: &UnboundedSender<Frame>,
-    ) -> Result<(), DispatchErrorKind> {
-        if let Some(window_update) = self.flow_control.check_conn_recv_window_update() {
-            sender
-                .send(window_update)
-                .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn window_update_streams(
-        &mut self,
-        sender: &UnboundedSender<Frame>,
-    ) -> Result<(), DispatchErrorKind> {
-        loop {
-            match self.window_updating_streams.pop_front() {
-                None => return Ok(()),
-                Some(id) => {
-                    if let Some(stream) = self.stream_map.get_mut(&id) {
-                        if !stream.is_init_or_active_flow_control() {
-                            return Ok(());
-                        }
-                        if let Some(window_update) = stream.recv_window.check_window_update(id) {
-                            sender
-                                .send(window_update)
-                                .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
-                        }
-                    }
-                }
-            }
-        }
     }
 
     pub(crate) fn headers(&mut self, id: StreamId) -> Result<Option<Frame>, H2Error> {
