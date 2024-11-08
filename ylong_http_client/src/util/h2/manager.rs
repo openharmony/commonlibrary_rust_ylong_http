@@ -48,12 +48,6 @@ pub(crate) struct ConnManager {
     // channel receiver between manager and stream coroutine.
     req_rx: UnboundedReceiver<ReqMessage>,
     controller: StreamController,
-    handshakes: HandShakes,
-}
-
-struct HandShakes {
-    local: bool,
-    peer: bool,
 }
 
 impl Future for ConnManager {
@@ -137,10 +131,6 @@ impl ConnManager {
             resp_rx,
             req_rx,
             controller,
-            handshakes: HandShakes {
-                local: false,
-                peer: false,
-            },
         }
     }
 
@@ -153,9 +143,7 @@ impl ConnManager {
             self.poll_deal_with_go_away(code)?;
         }
         self.poll_recv_request(cx)?;
-        if self.handshakes.local && self.handshakes.peer {
-            self.poll_input_request(cx)?;
-        }
+        self.poll_input_request(cx)?;
         Poll::Pending
     }
 
@@ -337,7 +325,6 @@ impl ConnManager {
                 }
             }
             connection.settings = SettingsState::Synced;
-            self.handshakes.local = true;
             Ok(())
         } else {
             for setting in settings.get_settings() {
@@ -362,7 +349,6 @@ impl ConnManager {
             self.input_tx
                 .send(new_settings)
                 .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
-            self.handshakes.peer = true;
             Ok(())
         }
     }
