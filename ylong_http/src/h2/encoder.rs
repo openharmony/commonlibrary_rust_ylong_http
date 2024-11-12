@@ -1767,8 +1767,8 @@ mod ut_frame_encoder {
 
         // Validate the encoded GOAWAY frame.
         let mut expected_encoded_goaway = [0u8; 13];
-        expected_encoded_goaway[0..4].copy_from_slice(&(last_stream_id as u32).to_be_bytes());
-        expected_encoded_goaway[4..8].copy_from_slice(&(error_code).to_be_bytes());
+        expected_encoded_goaway[0..4].copy_from_slice(&last_stream_id.to_be_bytes());
+        expected_encoded_goaway[4..8].copy_from_slice(&error_code.to_be_bytes());
 
         expected_encoded_goaway[8..13].copy_from_slice(&debug_data[..]);
 
