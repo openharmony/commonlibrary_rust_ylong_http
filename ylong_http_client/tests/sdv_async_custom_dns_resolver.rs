@@ -57,7 +57,7 @@ fn sdv_client_custom_dns_resolver() {
 
     let handle = handles_vec.pop().expect("No more handles !");
 
-    let resolver = DefaultDnsResolver {};
+    let resolver = DefaultDnsResolver::default();
     let client = Client::builder().dns_resolver(resolver).build().unwrap();
 
     let shutdown_handle = ylong_runtime::spawn(async move {
