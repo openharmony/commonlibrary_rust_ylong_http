@@ -350,6 +350,10 @@ impl Body {
         Self { inner }
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        matches!(self.inner, BodyKind::Empty)
+    }
+
     pub(crate) async fn reuse(&mut self) -> std::io::Result<()> {
         match self.inner {
             BodyKind::Empty => Ok(()),
@@ -447,12 +451,13 @@ mod ut_client_request {
         let builder = RequestBuilder::default().append_header("name", "value");
         let request = builder.body(Body::empty());
         assert!(request.is_ok());
+        assert!(request.unwrap().body().is_empty());
 
         let request = RequestBuilder::default()
             .append_header("name", "value")
             .url("http://")
             .body(Body::empty());
-        assert!(request.is_err())
+        assert!(request.is_err());
     }
 
     /// UT test cases for `RequestBuilder::body`.
