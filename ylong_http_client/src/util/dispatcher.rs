@@ -280,6 +280,7 @@ pub(crate) mod http2 {
         pub(crate) allowed_cache: usize,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) io_goaway: Arc<AtomicBool>,
         pub(crate) handles: Vec<crate::runtime::JoinHandle<()>>,
         pub(crate) _mark: PhantomData<S>,
     }
@@ -298,13 +299,14 @@ pub(crate) mod http2 {
         // The connection close flag organizes new stream commits to the current connection when
         // closed.
         pub(crate) io_shutdown: Arc<AtomicBool>,
+        pub(crate) io_goaway: Arc<AtomicBool>,
         // The senders of all connected stream channels of response.
         pub(crate) senders: HashMap<StreamId, BoundedSender<RespMessage>>,
         pub(crate) curr_message: HashMap<StreamId, ManagerSendFut>,
         // Stream information on the connection.
         pub(crate) streams: Streams,
         // Received GO_AWAY frame.
-        pub(crate) recved_go_away: Option<StreamId>,
+        pub(crate) go_away_error_code: Option<u32>,
         // The last GO_AWAY frame sent by the client.
         pub(crate) go_away_sync: GoAwaySync,
     }
@@ -350,7 +352,9 @@ pub(crate) mod http2 {
 
             let streams = Streams::new(config.stream_window_size(), DEFAULT_WINDOW_SIZE, flow);
             let shutdown_flag = Arc::new(AtomicBool::new(false));
-            let mut controller = StreamController::new(streams, shutdown_flag.clone());
+            let goaway_flag = Arc::new(AtomicBool::new(false));
+            let mut controller =
+                StreamController::new(streams, shutdown_flag.clone(), goaway_flag.clone());
 
             let (input_tx, input_rx) = unbounded_channel();
             let (req_tx, req_rx) = unbounded_channel();
@@ -382,6 +386,7 @@ pub(crate) mod http2 {
                 allowed_cache: config.allowed_cache_frame_size(),
                 sender: req_tx,
                 io_shutdown: shutdown_flag,
+                io_goaway: goaway_flag,
                 handles,
                 _mark: PhantomData,
             }
@@ -447,8 +452,7 @@ pub(crate) mod http2 {
         }
 
         fn is_goaway(&self) -> bool {
-            // todo: goaway and shutdown
-            false
+            self.io_goaway.load(Ordering::Relaxed)
         }
     }
 
@@ -498,19 +502,28 @@ pub(crate) mod http2 {
     }
 
     impl StreamController {
-        pub(crate) fn new(streams: Streams, shutdown: Arc<AtomicBool>) -> Self {
+        pub(crate) fn new(
+            streams: Streams,
+            shutdown: Arc<AtomicBool>,
+            goaway: Arc<AtomicBool>,
+        ) -> Self {
             Self {
                 io_shutdown: shutdown,
+                io_goaway: goaway,
                 senders: HashMap::new(),
                 curr_message: HashMap::new(),
                 streams,
-                recved_go_away: None,
+                go_away_error_code: None,
                 go_away_sync: GoAwaySync::default(),
             }
         }
 
         pub(crate) fn shutdown(&self) {
             self.io_shutdown.store(true, Ordering::Release);
+        }
+
+        pub(crate) fn goaway(&self) {
+            self.io_goaway.store(true, Ordering::Release);
         }
 
         pub(crate) fn get_unsent_streams(
@@ -523,7 +536,7 @@ pub(crate) mod http2 {
                 return Err(H2Error::ConnectionError(ErrorCode::ProtocolError));
             }
             self.streams.max_send_id = last_stream_id;
-            Ok(self.streams.get_go_away_streams(last_stream_id))
+            Ok(self.streams.get_unset_streams(last_stream_id))
         }
 
         pub(crate) fn send_message_to_stream(

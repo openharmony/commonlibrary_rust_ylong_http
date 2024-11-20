@@ -419,13 +419,16 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         lock: &mut crate::runtime::MutexGuard<Vec<ConnDispatcher<S>>>,
     ) -> Option<Conn<S>> {
         if let Some(dispatcher) = lock.pop() {
-            // todo: shutdown and goaway
-            if !dispatcher.is_shutdown() {
+            if dispatcher.is_shutdown() {
+                return None;
+            }
+            if !dispatcher.is_goaway() {
                 if let Some(conn) = dispatcher.dispatch() {
                     lock.push(dispatcher);
                     return Some(conn);
                 }
             }
+            lock.push(dispatcher);
         }
         None
     }

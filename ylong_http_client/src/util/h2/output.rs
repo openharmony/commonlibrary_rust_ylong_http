@@ -93,7 +93,12 @@ impl<S: AsyncRead + Unpin + Sync + Send + 'static> RecvData<S> {
                     }
                     let read = read_buf.filled().len();
                     if read == 0 {
-                        return self.transmit_error(cx, DispatchErrorKind::Disconnect);
+                        let _ = self.transmit_message(
+                            cx,
+                            OutputMessage::OutputExit(DispatchErrorKind::Disconnect),
+                        );
+                        self.state = DecodeState::Send;
+                        return Poll::Pending;
                     }
 
                     match self.decoder.decode(&buf[..read]) {
