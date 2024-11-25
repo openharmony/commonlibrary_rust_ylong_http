@@ -84,14 +84,13 @@ pub(crate) mod runtime {
     pub(crate) use tokio::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
-        task::{spawn_blocking, JoinHandle},
+        task::JoinHandle,
         time::{sleep, timeout, Sleep},
     };
     #[cfg(feature = "ylong_base")]
     pub(crate) use ylong_runtime::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
-        spawn_blocking,
         task::JoinHandle,
         time::{sleep, timeout, Sleep},
     };
