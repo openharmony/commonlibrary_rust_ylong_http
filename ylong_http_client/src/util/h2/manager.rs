@@ -211,7 +211,12 @@ impl ConnManager {
         match self.controller.streams.headers(id)? {
             None => {}
             Some(header) => {
+                let is_end_stream = header.flags().is_end_stream();
                 self.poll_send_frame(header)?;
+                // Prevent sending empty data frames
+                if is_end_stream {
+                    return Ok(());
+                }
             }
         }
 
@@ -341,13 +346,14 @@ impl ConnManager {
             // The reason for copying the payload is to pass information to the io input to
             // set the frame encoder, and the input will empty the
             // payload when it is sent
-            let new_settings = Frame::new(
+            let ack_settings = Frame::new(
                 frame.stream_id(),
                 FrameFlags::new(0x1),
                 frame.payload().clone(),
             );
+
             self.input_tx
-                .send(new_settings)
+                .send(ack_settings)
                 .map_err(|_e| DispatchErrorKind::ChannelClosed)?;
             Ok(())
         }

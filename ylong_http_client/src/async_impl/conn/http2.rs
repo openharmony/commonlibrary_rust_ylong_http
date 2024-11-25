@@ -53,7 +53,8 @@ where
     let part = message.request.ref_mut().part().clone();
 
     // TODO Implement trailer.
-    let (flag, payload) = build_headers_payload(part, false)
+    let is_end_stream = message.request.ref_mut().body().is_empty();
+    let (flag, payload) = build_headers_payload(part, is_end_stream)
         .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
     let data = BodyDataRef::new(message.request.clone());
     let stream = RequestWrapper {

@@ -345,22 +345,28 @@ pub(crate) mod http2 {
         S: AsyncRead + AsyncWrite + Sync + Send + Unpin + 'static,
     {
         pub(crate) fn new(detail: ConnDetail, config: H2Config, io: S) -> Self {
-            let settings = create_initial_settings(&config);
-
             let mut flow = FlowControl::new(DEFAULT_WINDOW_SIZE, DEFAULT_WINDOW_SIZE);
             flow.setup_recv_window(config.conn_window_size());
 
             let streams = Streams::new(config.stream_window_size(), DEFAULT_WINDOW_SIZE, flow);
             let shutdown_flag = Arc::new(AtomicBool::new(false));
-            let controller = StreamController::new(streams, shutdown_flag.clone());
+            let mut controller = StreamController::new(streams, shutdown_flag.clone());
 
             let (input_tx, input_rx) = unbounded_channel();
             let (req_tx, req_rx) = unbounded_channel();
 
+            let settings = create_initial_settings(&config);
+
             // Error is not possible, so it is not handled for the time
             // being.
             let mut handles = Vec::with_capacity(3);
-            if input_tx.send(settings).is_ok() {
+            // send initial settings and update conn recv window
+            if input_tx.send(settings).is_ok()
+                && controller
+                    .streams
+                    .release_conn_recv_window(0, &input_tx)
+                    .is_ok()
+            {
                 Self::launch(
                     config.allowed_cache_frame_size(),
                     config.use_huffman_coding(),
