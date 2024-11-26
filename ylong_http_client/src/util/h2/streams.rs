@@ -493,10 +493,12 @@ impl Streams {
         }
     }
 
-    pub(crate) fn get_go_away_streams(&mut self, last_stream_id: StreamId) -> Vec<StreamId> {
+    // Get unset streams less than or equal to last_stream_id and change the state
+    // of streams greater than last_stream_id to RemoteAaway
+    pub(crate) fn get_unset_streams(&mut self, last_stream_id: StreamId) -> Vec<StreamId> {
         let mut ids = vec![];
         for (id, unsent_stream) in self.stream_map.iter_mut() {
-            if *id >= last_stream_id {
+            if *id > last_stream_id {
                 match unsent_stream.state {
                     // TODO Whether the close state needs to be selected.
                     H2StreamState::Closed(_) => {}
@@ -910,13 +912,13 @@ mod ut_streams {
             .insert(4, stream_new(H2StreamState::Closed(CloseReason::EndStream)));
         streams.increase_current_concurrency();
 
-        let go_away_streams = streams.get_go_away_streams(2);
-        assert!([2, 3, 4].iter().all(|&e| go_away_streams.contains(&e)));
+        let go_away_streams = streams.get_unset_streams(2);
+        assert!([3, 4].iter().all(|&e| go_away_streams.contains(&e)));
 
         let state = streams.stream_state(1).unwrap();
         assert_eq!(state, H2StreamState::Idle);
         let state = streams.stream_state(2).unwrap();
-        assert_eq!(state, H2StreamState::Closed(CloseReason::RemoteGoAway));
+        assert_eq!(state, H2StreamState::Idle);
         let state = streams.stream_state(3).unwrap();
         assert_eq!(state, H2StreamState::Closed(CloseReason::RemoteGoAway));
         let state = streams.stream_state(4).unwrap();

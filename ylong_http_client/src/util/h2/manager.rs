@@ -74,6 +74,10 @@ impl Future for ConnManager {
                             }
                             // io output occurs error.
                             OutputMessage::OutputExit(e) => {
+                                // Ever received a goaway frame
+                                if let Some(_) = manager.controller.go_away_error_code {
+                                    continue;
+                                }
                                 // Note error returned immediately.
                                 if manager.manage_resp_error(cx, e)?.is_pending() {
                                     return Poll::Pending;
@@ -139,8 +143,9 @@ impl ConnManager {
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), DispatchErrorKind>> {
         // The manager previously accepted a GOAWAY Frame.
-        if let Some(code) = self.controller.recved_go_away {
-            self.poll_deal_with_go_away(code)?;
+        if let Some(error_code) = self.controller.go_away_error_code {
+            self.poll_deal_with_go_away(error_code)?;
+            return Poll::Pending;
         }
         self.poll_recv_request(cx)?;
         self.poll_input_request(cx)?;
@@ -389,7 +394,7 @@ impl ConnManager {
             return Poll::Ready(Ok(()));
         };
         // Prevents the current connection from generating a new stream.
-        self.controller.shutdown();
+        self.controller.goaway();
         self.req_rx.close();
         let last_stream_id = go_away.get_last_stream_id();
         let streams = self.controller.get_unsent_streams(last_stream_id)?;
@@ -411,7 +416,7 @@ impl ConnManager {
             }
         }
         // Exit after the allowed stream is complete.
-        self.controller.recved_go_away = Some(go_away.get_error_code());
+        self.controller.go_away_error_code = Some(go_away.get_error_code());
         if blocked {
             Poll::Pending
         } else {
@@ -630,6 +635,8 @@ impl ConnManager {
             );
 
             self.send_peer_goaway(frame, go_away_payload, error_code)?;
+            // close connection
+            self.controller.shutdown();
             return Err(H2Error::ConnectionError(ErrorCode::try_from(error_code)?).into());
         }
         Ok(())
