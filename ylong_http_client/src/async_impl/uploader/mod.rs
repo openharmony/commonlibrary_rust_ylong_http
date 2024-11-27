@@ -156,8 +156,15 @@ where
             }
             Poll::Pending => return Poll::Pending,
         }
-
-        Pin::new(&mut this.reader).poll_read(cx, buf)
+        match Pin::new(&mut this.reader).poll_read(cx, buf) {
+            Poll::Ready(Ok(_)) => {
+                let filled = buf.filled().len();
+                info.uploaded_bytes += filled as u64;
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
