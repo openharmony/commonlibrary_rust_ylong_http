@@ -26,7 +26,6 @@ use crate::c_openssl::error::ErrorStack;
 use crate::c_openssl::ffi::ssl::{SSL_connect, SSL_set_bio, SSL_shutdown};
 use crate::c_openssl::foreign::Foreign;
 use crate::c_openssl::verify::PinsVerifyInfo;
-
 use crate::util::base64::encode;
 use crate::util::c_openssl::bio::BioMethod;
 use crate::util::c_openssl::error::VerifyError;
@@ -256,8 +255,9 @@ pub(crate) enum ShutdownResult {
 }
 
 pub(crate) fn verify_server_root_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
-    use crate::c_openssl::ffi::{ssl::SSL_get_peer_cert_chain, ssl::X509_chain_up_ref};
-    use crate::c_openssl::{stack::Stack, x509::X509};
+    use crate::c_openssl::ffi::ssl::{SSL_get_peer_cert_chain, X509_chain_up_ref};
+    use crate::c_openssl::stack::Stack;
+    use crate::c_openssl::x509::X509;
 
     let cert_chain = unsafe { X509_chain_up_ref(SSL_get_peer_cert_chain(ssl)) };
     if cert_chain.is_null() {

@@ -12,6 +12,7 @@
 // limitations under the License.
 
 //! HTTP configure module.
+use crate::util::progress::SpeedConfig;
 #[cfg(feature = "http3")]
 use crate::ErrorKind;
 
@@ -19,6 +20,7 @@ use crate::ErrorKind;
 #[derive(Clone)]
 pub(crate) struct HttpConfig {
     pub(crate) version: HttpVersion,
+    pub(crate) speed_config: SpeedConfig,
 
     #[cfg(feature = "http1_1")]
     pub(crate) http1_config: http1::H1Config,
@@ -35,13 +37,11 @@ impl HttpConfig {
     pub(crate) fn new() -> Self {
         Self {
             version: HttpVersion::Negotiate,
-
+            speed_config: SpeedConfig::none(),
             #[cfg(feature = "http1_1")]
             http1_config: http1::H1Config::default(),
-
             #[cfg(feature = "http2")]
             http2_config: http2::H2Config::new(),
-
             #[cfg(feature = "http3")]
             http3_config: http3::H3Config::new(),
         }

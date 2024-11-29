@@ -38,6 +38,7 @@ use crate::util::config::{HttpConfig, HttpVersion};
 use crate::util::dispatcher::http1::{WrappedSemPermit, WrappedSemaphore};
 use crate::util::dispatcher::{Conn, ConnDispatcher, Dispatcher, TimeInfoConn};
 use crate::util::pool::{Pool, PoolKey};
+use crate::util::progress::SpeedConfig;
 #[cfg(feature = "http3")]
 use crate::util::request::RequestArc;
 use crate::util::ConnInfo;
@@ -76,7 +77,12 @@ impl<C: Connector> ConnPool<C, C::Stream> {
         #[cfg(feature = "http3")]
         let alt_svc = self.alt_svcs.get_alt_svcs(&key);
         self.pool
-            .get(key, Conns::new, self.config.http1_config.max_conn_num())
+            .get(
+                key,
+                Conns::new,
+                self.config.http1_config.max_conn_num(),
+                self.config.speed_config,
+            )
             .conn(
                 self.config.clone(),
                 self.connector.clone(),
@@ -99,6 +105,7 @@ pub(crate) enum H1ConnOption<T> {
 }
 
 pub(crate) struct Conns<S> {
+    speed_config: SpeedConfig,
     usable: WrappedSemaphore,
     list: Arc<Mutex<Vec<ConnDispatcher<S>>>>,
     #[cfg(feature = "http2")]
@@ -108,8 +115,9 @@ pub(crate) struct Conns<S> {
 }
 
 impl<S> Conns<S> {
-    fn new(max_conn_num: usize) -> Self {
+    fn new(max_conn_num: usize, speed_config: SpeedConfig) -> Self {
         Self {
+            speed_config,
             usable: WrappedSemaphore::new(max_conn_num),
 
             list: Arc::new(Mutex::new(Vec::new())),
@@ -128,6 +136,7 @@ impl<S> Conns<S> {
 impl<S> Clone for Conns<S> {
     fn clone(&self) -> Self {
         Self {
+            speed_config: self.speed_config,
             usable: self.usable.clone(),
             list: self.list.clone(),
 
@@ -218,7 +227,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         // resulting in the creation of multiple tcp connections
         let mut lock = self.h2_conn.lock().await;
 
-        if let Some(conn) = Self::exist_h2_conn(&mut lock) {
+        if let Some(conn) = self.exist_h2_conn(&mut lock) {
             return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
         }
         let stream = connector.connect(url, HttpVersion::Http2).await?;
@@ -236,7 +245,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
             _ => {}
         }
         let time_group = take(data.time_group_mut());
-        let conn = Self::dispatch_h2_conn(data.detail(), config, stream, &mut lock);
+        let conn = self.dispatch_h2_conn(data.detail(), config, stream, &mut lock);
         Ok(TimeInfoConn::new(conn, time_group))
     }
 
@@ -252,7 +261,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
     {
         let mut lock = self.h3_conn.lock().await;
 
-        if let Some(conn) = Self::exist_h3_conn(&mut lock) {
+        if let Some(conn) = self.exist_h3_conn(&mut lock) {
             return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
         }
         let mut stream = connector.connect(url, HttpVersion::Http3).await?;
@@ -265,7 +274,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         let mut data = stream.conn_data();
         let time_group = take(data.time_group_mut());
         Ok(TimeInfoConn::new(
-            Self::dispatch_h3_conn(data.detail(), config, stream, quic_conn, &mut lock),
+            self.dispatch_h3_conn(data.detail(), config, stream, quic_conn, &mut lock),
             time_group,
         ))
     }
@@ -283,7 +292,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         match *url.scheme().unwrap() {
             Scheme::HTTPS => {
                 let mut lock = self.h2_conn.lock().await;
-                if let Some(conn) = Self::exist_h2_conn(&mut lock) {
+                if let Some(conn) = self.exist_h2_conn(&mut lock) {
                     return Ok(TimeInfoConn::new(conn, TimeGroup::default()));
                 }
                 let permit = self.usable.acquire().await;
@@ -315,7 +324,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                     ))
                 } else if protocol == b"h2" {
                     std::mem::drop(permit);
-                    let conn = Self::dispatch_h2_conn(data.detail(), h2_config, stream, &mut lock);
+                    let conn = self.dispatch_h2_conn(data.detail(), h2_config, stream, &mut lock);
                     Ok(TimeInfoConn::new(conn, time_group))
                 } else {
                     std::mem::drop(permit);
@@ -338,7 +347,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         C: Connector<Stream = S>,
     {
         let mut lock = self.h3_conn.lock().await;
-        if let Some(conn) = Self::exist_h3_conn(&mut lock) {
+        if let Some(conn) = self.exist_h3_conn(&mut lock) {
             return Some(TimeInfoConn::new(conn, TimeGroup::default()));
         }
         if let Some(alt_svcs) = alt_svcs {
@@ -364,7 +373,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 let mut data = stream.conn_data();
                 let time_group = take(data.time_group_mut());
                 return Some(TimeInfoConn::new(
-                    Self::dispatch_h3_conn(
+                    self.dispatch_h3_conn(
                         data.detail(),
                         h3_config.clone(),
                         stream,
@@ -385,11 +394,13 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         list.push(dispatcher);
         #[cfg(any(feature = "http2", feature = "http3"))]
         if let Conn::Http1(ref mut h1) = conn {
+            h1.speed_controller.set_speed_limit(self.speed_config);
             h1.occupy_sem(permit)
         }
         #[cfg(all(not(feature = "http2"), not(feature = "http3")))]
         {
             let Conn::Http1(ref mut h1) = conn;
+            h1.speed_controller.set_speed_limit(self.speed_config);
             h1.occupy_sem(permit)
         }
         conn
@@ -397,19 +408,24 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
 
     #[cfg(feature = "http2")]
     fn dispatch_h2_conn(
+        &self,
         detail: ConnDetail,
         config: H2Config,
         stream: S,
         lock: &mut crate::runtime::MutexGuard<Vec<ConnDispatcher<S>>>,
     ) -> Conn<S> {
         let dispatcher = ConnDispatcher::http2(detail, config, stream);
-        let conn = dispatcher.dispatch().unwrap();
+        let mut conn = dispatcher.dispatch().unwrap();
         lock.push(dispatcher);
+        if let Conn::Http2(ref mut h2) = conn {
+            h2.speed_controller.set_speed_limit(self.speed_config);
+        }
         conn
     }
 
     #[cfg(feature = "http3")]
     fn dispatch_h3_conn(
+        &self,
         detail: ConnDetail,
         config: H3Config,
         stream: S,
@@ -417,8 +433,11 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         lock: &mut crate::runtime::MutexGuard<Vec<ConnDispatcher<S>>>,
     ) -> Conn<S> {
         let dispatcher = ConnDispatcher::http3(detail, config, stream, quic_connection);
-        let conn = dispatcher.dispatch().unwrap();
+        let mut conn = dispatcher.dispatch().unwrap();
         lock.push(dispatcher);
+        if let Conn::Http3(ref mut h3) = conn {
+            h3.speed_controller.set_speed_limit(self.speed_config);
+        }
         conn
     }
 
@@ -440,6 +459,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         match conn {
             Some(Conn::Http1(mut h1)) => {
                 h1.occupy_sem(permit);
+                h1.speed_controller.set_speed_limit(self.speed_config);
                 H1ConnOption::Some(Conn::Http1(h1))
             }
             _ => H1ConnOption::None(permit),
@@ -448,6 +468,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
 
     #[cfg(feature = "http2")]
     fn exist_h2_conn(
+        &self,
         lock: &mut crate::runtime::MutexGuard<Vec<ConnDispatcher<S>>>,
     ) -> Option<Conn<S>> {
         if let Some(dispatcher) = lock.pop() {
@@ -455,9 +476,10 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 return None;
             }
             if !dispatcher.is_goaway() {
-                if let Some(conn) = dispatcher.dispatch() {
+                if let Some(Conn::Http2(mut h2)) = dispatcher.dispatch() {
                     lock.push(dispatcher);
-                    return Some(conn);
+                    h2.speed_controller.set_speed_limit(self.speed_config);
+                    return Some(Conn::Http2(h2));
                 }
             }
             lock.push(dispatcher);
@@ -467,6 +489,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
 
     #[cfg(feature = "http3")]
     fn exist_h3_conn(
+        &self,
         lock: &mut crate::runtime::MutexGuard<Vec<ConnDispatcher<S>>>,
     ) -> Option<Conn<S>> {
         if let Some(dispatcher) = lock.pop() {
@@ -474,9 +497,10 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 return None;
             }
             if !dispatcher.is_goaway() {
-                if let Some(conn) = dispatcher.dispatch() {
+                if let Some(Conn::Http3(mut h3)) = dispatcher.dispatch() {
                     lock.push(dispatcher);
-                    return Some(conn);
+                    h3.speed_controller.set_speed_limit(self.speed_config);
+                    return Some(Conn::Http3(h3));
                 }
             }
             // Not all requests have been processed yet

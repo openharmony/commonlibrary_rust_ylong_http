@@ -20,6 +20,8 @@ use std::sync::{Arc, Mutex};
 
 use ylong_http::request::uri::{Authority, Scheme};
 
+use crate::util::progress::SpeedConfig;
+
 pub(crate) struct Pool<K, V> {
     pool: Arc<Mutex<HashMap<K, V>>>,
 }
@@ -33,14 +35,20 @@ impl<K, V> Pool<K, V> {
 }
 
 impl<K: Eq + Hash, V: Clone> Pool<K, V> {
-    pub(crate) fn get<F>(&self, key: K, create_fn: F, allowed_num: usize) -> V
+    pub(crate) fn get<F>(
+        &self,
+        key: K,
+        create_fn: F,
+        allowed_num: usize,
+        speed_conf: SpeedConfig,
+    ) -> V
     where
-        F: FnOnce(usize) -> V,
+        F: FnOnce(usize, SpeedConfig) -> V,
     {
         let mut inner = self.pool.lock().unwrap();
         match (*inner).entry(key) {
             Entry::Occupied(conns) => conns.get().clone(),
-            Entry::Vacant(e) => e.insert(create_fn(allowed_num)).clone(),
+            Entry::Vacant(e) => e.insert(create_fn(allowed_num, speed_conf)).clone(),
         }
     }
 }
@@ -59,6 +67,7 @@ mod ut_pool {
     use ylong_http::request::uri::Uri;
 
     use crate::pool::{Pool, PoolKey};
+    use crate::util::progress::SpeedConfig;
 
     /// UT test cases for `Pool::get`.
     ///
@@ -74,9 +83,9 @@ mod ut_pool {
             uri.authority().unwrap().clone(),
         );
         let data = String::from("Data info");
-        let consume_and_return_data = move |_size: usize| data;
+        let consume_and_return_data = move |_size: usize, _conf: SpeedConfig| data;
         let pool = Pool::new();
-        let res = pool.get(key, consume_and_return_data, 6);
+        let res = pool.get(key, consume_and_return_data, 6, SpeedConfig::none());
         assert_eq!(res, "Data info".to_string());
     }
 }

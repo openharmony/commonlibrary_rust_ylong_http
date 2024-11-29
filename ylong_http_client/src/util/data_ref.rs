@@ -17,15 +17,19 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::runtime::{AsyncRead, ReadBuf};
+use crate::util::progress::SpeedController;
 use crate::util::request::RequestArc;
+use crate::HttpClientError;
 
 pub(crate) struct BodyDataRef {
+    pub(crate) speed_controller: SpeedController,
     body: Option<RequestArc>,
 }
 
 impl BodyDataRef {
-    pub(crate) fn new(request: RequestArc) -> Self {
+    pub(crate) fn new(request: RequestArc, speed_controller: SpeedController) -> Self {
         Self {
+            speed_controller,
             body: Some(request),
         }
     }
@@ -38,18 +42,33 @@ impl BodyDataRef {
         &mut self,
         cx: &mut Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<Option<usize>> {
+    ) -> Poll<Result<usize, HttpClientError>> {
         let request = if let Some(ref mut request) = self.body {
             request
         } else {
-            return Poll::Ready(Some(0));
+            return Poll::Ready(Ok(0));
         };
+        self.speed_controller.init_min_send_if_not_start();
+        if self
+            .speed_controller
+            .poll_max_send_delay_time(cx)
+            .is_pending()
+        {
+            return Poll::Pending;
+        }
+        self.speed_controller.init_max_send_if_not_start();
         let data = request.ref_mut().body_mut();
         let mut read_buf = ReadBuf::new(buf);
         let data = Pin::new(data);
         match data.poll_read(cx, &mut read_buf) {
-            Poll::Ready(Err(_)) => Poll::Ready(None),
-            Poll::Ready(Ok(_)) => Poll::Ready(Some(read_buf.filled().len())),
+            Poll::Ready(Err(e)) => Poll::Ready(err_from_io!(BodyTransfer, e)),
+            Poll::Ready(Ok(_)) => {
+                let filled: usize = read_buf.filled().len();
+                // Limit the write I/O speed by limiting the read file speed.
+                self.speed_controller.min_send_speed_limit(filled)?;
+                self.speed_controller.delay_max_send_speed_limit(filled);
+                Poll::Ready(Ok(filled))
+            }
             Poll::Pending => Poll::Pending,
         }
     }

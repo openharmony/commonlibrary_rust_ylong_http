@@ -35,6 +35,7 @@ use crate::util::config::HttpVersion;
 use crate::util::data_ref::BodyDataRef;
 use crate::util::dispatcher::http3::{DispatchErrorKind, Http3Conn, RequestWrapper, RespMessage};
 use crate::util::normalizer::BodyLengthParser;
+use crate::ErrorKind::BodyTransfer;
 use crate::{ErrorKind, HttpClientError};
 
 pub(crate) async fn request<S>(
@@ -52,7 +53,7 @@ where
     // TODO Implement trailer.
     let headers = build_headers_frame(part)
         .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
-    let data = BodyDataRef::new(message.request.clone());
+    let data = BodyDataRef::new(message.request.clone(), conn.speed_controller.clone());
     let stream = RequestWrapper {
         header: headers,
         data,
@@ -303,15 +304,51 @@ impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        let text_io = self.get_mut();
         let mut buf = HttpReadBuf { buf };
-
+        let text_io = self.get_mut();
         if buf.remaining() == 0 || text_io.is_closed {
             return Poll::Ready(Ok(()));
         }
+        if text_io
+            .handle
+            .speed_controller
+            .poll_recv_pending_timeout(cx)
+        {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                HttpClientError::from_str(BodyTransfer, "Below low speed limit"),
+            )));
+        }
+        text_io.handle.speed_controller.init_min_recv_if_not_start();
+        if text_io
+            .handle
+            .speed_controller
+            .poll_max_recv_delay_time(cx)
+            .is_pending()
+        {
+            return Poll::Pending;
+        }
+        text_io.handle.speed_controller.init_max_recv_if_not_start();
         while buf.remaining() != 0 {
             if let Some(result) = Self::read_remaining_data(text_io, &mut buf) {
-                return result;
+                return match result {
+                    Poll::Ready(Ok(_)) => {
+                        let filled: usize = buf.filled().len();
+                        text_io
+                            .handle
+                            .speed_controller
+                            .min_recv_speed_limit(filled)
+                            .map_err(|_e| std::io::Error::from(std::io::ErrorKind::Other))?;
+                        text_io
+                            .handle
+                            .speed_controller
+                            .delay_max_recv_speed_limit(filled);
+                        text_io.handle.speed_controller.reset_recv_pending_timeout();
+                        Poll::Ready(Ok(()))
+                    }
+                    Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                    Poll::Pending => Poll::Pending,
+                };
             }
 
             let poll_result = text_io
@@ -321,7 +358,24 @@ impl<S: Sync + Send + Unpin + 'static> AsyncRead for TextIo<S> {
                 .map_err(|_e| std::io::Error::from(std::io::ErrorKind::ConnectionAborted))?;
 
             if let Some(result) = Self::match_channel_message(poll_result, text_io, &mut buf) {
-                return result;
+                return match result {
+                    Poll::Ready(Ok(_)) => {
+                        let filled: usize = buf.filled().len();
+                        text_io
+                            .handle
+                            .speed_controller
+                            .min_recv_speed_limit(filled)
+                            .map_err(|_e| std::io::Error::from(std::io::ErrorKind::Other))?;
+                        text_io
+                            .handle
+                            .speed_controller
+                            .delay_max_recv_speed_limit(filled);
+                        text_io.handle.speed_controller.reset_recv_pending_timeout();
+                        Poll::Ready(Ok(()))
+                    }
+                    Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                    Poll::Pending => Poll::Pending,
+                };
             }
         }
         Poll::Ready(Ok(()))
