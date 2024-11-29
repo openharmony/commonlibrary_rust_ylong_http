@@ -33,14 +33,14 @@ impl<K, V> Pool<K, V> {
 }
 
 impl<K: Eq + Hash, V: Clone> Pool<K, V> {
-    pub(crate) fn get<F>(&self, key: K, create_fn: F) -> V
+    pub(crate) fn get<F>(&self, key: K, create_fn: F, allowed_num: usize) -> V
     where
-        F: FnOnce() -> V,
+        F: FnOnce(usize) -> V,
     {
         let mut inner = self.pool.lock().unwrap();
         match (*inner).entry(key) {
             Entry::Occupied(conns) => conns.get().clone(),
-            Entry::Vacant(e) => e.insert(create_fn()).clone(),
+            Entry::Vacant(e) => e.insert(create_fn(allowed_num)).clone(),
         }
     }
 }
@@ -74,9 +74,9 @@ mod ut_pool {
             uri.authority().unwrap().clone(),
         );
         let data = String::from("Data info");
-        let consume_and_return_data = move || data;
+        let consume_and_return_data = move |_size: usize| data;
         let pool = Pool::new();
-        let res = pool.get(key, consume_and_return_data);
+        let res = pool.get(key, consume_and_return_data, 6);
         assert_eq!(res, "Data info".to_string());
     }
 }

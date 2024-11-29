@@ -124,7 +124,7 @@ macro_rules! async_client_assert_on_tcp {
             Body: $resp_body: expr,
         },)*
     ) => {{
-        let client = ylong_http_client::async_impl::Client::new();
+        let client = ylong_http_client::async_impl::Client::builder().max_h1_conn_number(10).build().unwrap();
         let client = std::sync::Arc::new(client);
         for _i in 0..$server_num {
             let handle = $handle_vec.pop().expect("No more handles !");

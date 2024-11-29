@@ -133,6 +133,9 @@ pub(crate) mod http1 {
     use std::sync::Arc;
 
     use super::{ConnDispatcher, Dispatcher};
+    use crate::runtime::Semaphore;
+    #[cfg(feature = "tokio_base")]
+    use crate::runtime::SemaphorePermit;
 
     impl<S> ConnDispatcher<S> {
         pub(crate) fn http1(io: S) -> Self {
@@ -178,9 +181,7 @@ pub(crate) mod http1 {
                 .occupied
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .ok()
-                .map(|_| Http1Conn {
-                    inner: self.inner.clone(),
-                })
+                .map(|_| Http1Conn::from_inner(self.inner.clone()))
         }
 
         fn is_shutdown(&self) -> bool {
@@ -194,10 +195,19 @@ pub(crate) mod http1 {
 
     /// Handle returned to other threads for I/O operations.
     pub(crate) struct Http1Conn<S> {
+        pub(crate) sem: Option<WrappedSemPermit>,
         pub(crate) inner: Arc<Inner<S>>,
     }
 
     impl<S> Http1Conn<S> {
+        pub(crate) fn from_inner(inner: Arc<Inner<S>>) -> Self {
+            Self { sem: None, inner }
+        }
+
+        pub(crate) fn occupy_sem(&mut self, sem: WrappedSemPermit) {
+            self.sem = Some(sem);
+        }
+
         pub(crate) fn raw_mut(&mut self) -> &mut S {
             // SAFETY: In the case of `HTTP1`, only one coroutine gets the handle
             // at the same time.
@@ -212,6 +222,59 @@ pub(crate) mod http1 {
     impl<S> Drop for Http1Conn<S> {
         fn drop(&mut self) {
             self.inner.occupied.store(false, Ordering::Release)
+        }
+    }
+
+    pub(crate) struct WrappedSemaphore {
+        sem: Arc<Semaphore>,
+    }
+
+    impl WrappedSemaphore {
+        pub(crate) fn new(permits: usize) -> Self {
+            Self {
+                #[cfg(feature = "tokio_base")]
+                sem: Arc::new(tokio::sync::Semaphore::new(permits)),
+                #[cfg(feature = "ylong_base")]
+                sem: Arc::new(ylong_runtime::sync::Semaphore::new(permits).unwrap()),
+            }
+        }
+
+        pub(crate) async fn acquire(&self) -> WrappedSemPermit {
+            #[cfg(feature = "ylong_base")]
+            {
+                let semaphore = self.sem.clone();
+                let _permit = semaphore.acquire().await.unwrap();
+                WrappedSemPermit { sem: semaphore }
+            }
+
+            #[cfg(feature = "tokio_base")]
+            {
+                let permit = self.sem.clone().acquire_owned().await.unwrap();
+                WrappedSemPermit { permit }
+            }
+        }
+    }
+
+    impl Clone for WrappedSemaphore {
+        fn clone(&self) -> Self {
+            Self {
+                sem: self.sem.clone(),
+            }
+        }
+    }
+
+    pub(crate) struct WrappedSemPermit {
+        #[cfg(feature = "ylong_base")]
+        pub(crate) sem: Arc<Semaphore>,
+        #[cfg(feature = "tokio_base")]
+        #[allow(dead_code)]
+        pub(crate) permit: SemaphorePermit,
+    }
+
+    #[cfg(feature = "ylong_base")]
+    impl Drop for WrappedSemPermit {
+        fn drop(&mut self) {
+            self.sem.release();
         }
     }
 }

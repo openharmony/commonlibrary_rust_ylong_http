@@ -84,6 +84,7 @@ pub(crate) mod runtime {
     pub(crate) use tokio::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
+        sync::{OwnedSemaphorePermit as SemaphorePermit, Semaphore},
         task::JoinHandle,
         time::{sleep, timeout, Sleep},
     };
@@ -91,6 +92,7 @@ pub(crate) mod runtime {
     pub(crate) use ylong_runtime::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
+        sync::Semaphore,
         task::JoinHandle,
         time::{sleep, timeout, Sleep},
     };

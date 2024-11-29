@@ -221,6 +221,7 @@ macro_rules! async_client_assert {
         },)*
     ) => {{
         let client = ylong_http_client::async_impl::Client::builder()
+        .max_h1_conn_number(10)
         .tls_ca_file($ca_file)
         .danger_accept_invalid_hostnames(true)
         .build()
