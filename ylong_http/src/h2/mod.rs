@@ -11,9 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [Http/2 Protocol] Implementation.
+//! [Http/2] Protocol Implementation.
 //!
-//! [Http/2 Protocol]: https://httpwg.org/specs/rfc9113.html
 //! # Introduction
 //! The performance of applications using the Hypertext Transfer Protocol
 //! ([HTTP]) is linked to how each version of HTTP uses the underlying
@@ -48,6 +47,7 @@
 //!
 //! [HTTP]: https://www.rfc-editor.org/rfc/rfc9110.html
 //! [HTTP/1.1]: https://www.rfc-editor.org/rfc/rfc9112.html
+//! [Http/2]: https://httpwg.org/specs/rfc9113.html
 //! [TCP]: https://www.rfc-editor.org/rfc/rfc793.html
 
 mod decoder;
