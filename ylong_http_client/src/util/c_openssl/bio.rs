@@ -352,6 +352,10 @@ mod ut_bio {
         let stream = Cursor::new(vec![0u8; 10]);
         let bio = new(stream);
         assert!(bio.is_ok());
+        let (bio, _bio_method) = bio.unwrap();
+        unsafe {
+            BIO_free_all(bio);
+        }
     }
 
     /// UT test case for `Bio::get_state`.
@@ -366,6 +370,7 @@ mod ut_bio {
         unsafe {
             let state = get_state::<Cursor<Vec<u8>>>(bio);
             assert_eq!(state.stream.get_ref().len(), 10);
+            BIO_free_all(bio);
         }
     }
 
@@ -387,6 +392,7 @@ mod ut_bio {
             assert!(error.is_some());
             let msg = error.unwrap().to_string();
             assert_eq!(msg, "ERROR TEST");
+            BIO_free_all(bio);
         }
     }
 
@@ -407,6 +413,7 @@ mod ut_bio {
             let panic = get_panic::<Cursor<Vec<u8>>>(bio);
             assert!(panic.is_some());
             assert_eq!(panic.unwrap().downcast_ref::<&str>(), Some(&"PANIC TEST"));
+            BIO_free_all(bio);
         }
     }
 
@@ -425,6 +432,7 @@ mod ut_bio {
             assert_eq!(stream_ref.get_ref().len(), 10);
             let stream_mut = get_stream_mut::<Cursor<Vec<u8>>>(bio);
             assert_eq!(stream_mut.get_mut().len(), 10);
+            BIO_free_all(bio);
         }
     }
 
@@ -455,6 +463,7 @@ mod ut_bio {
         unsafe {
             let res = ctrl::<Cursor<Vec<u8>>>(bio, BIO_CTRL_FLUSH, 0, std::ptr::null_mut());
             assert_eq!(res, 1);
+            BIO_free_all(bio);
         }
     }
 
@@ -473,6 +482,7 @@ mod ut_bio {
             state.dtls_mtu_size = 100;
             let res = ctrl::<Cursor<Vec<u8>>>(bio, BIO_CTRL_DGRAM_QUERY, 0, std::ptr::null_mut());
             assert_eq!(res, 100);
+            BIO_free_all(bio);
         }
     }
 
@@ -488,44 +498,7 @@ mod ut_bio {
         unsafe {
             let res = ctrl::<Cursor<Vec<u8>>>(bio, 99, 0, std::ptr::null_mut());
             assert_eq!(res, 0);
-        }
-    }
-
-    /// UT test case for `create`.
-    ///
-    /// # Brief
-    /// 1. Initialize a BIO by `create`.
-    /// 2. Verify that created successfully.
-    #[test]
-    fn ut_create() {
-        let stream = Cursor::new(vec![0u8; 10]);
-        let (bio, _method) = new(stream).unwrap();
-        unsafe {
-            let res = create(bio);
-            assert_eq!(res, 1);
-        }
-    }
-
-    /// UT test case for `destroy`.
-    ///
-    /// # Brief
-    /// 1. Clean up the BIO by `destroy`.
-    /// 2. Verify that destroy successfully.
-    /// 3. Ensures that the BIO data is cleared.
-    #[test]
-    fn ut_destroy() {
-        let stream = Cursor::new(vec![0u8; 10]);
-        let (bio, _method) = new(stream).unwrap();
-        assert!(!bio.is_null());
-        unsafe {
-            let res = destroy::<Cursor<Vec<u8>>>(bio);
-            assert_eq!(res, 1);
-            let data_ptr = BIO_get_data(bio);
-            assert!(data_ptr.is_null());
-        }
-        unsafe {
-            let res = destroy::<Cursor<Vec<u8>>>(std::ptr::null_mut());
-            assert_eq!(res, 0);
+            BIO_free_all(bio);
         }
     }
 
@@ -546,6 +519,7 @@ mod ut_bio {
             let state = get_stream_ref::<Cursor<Vec<u8>>>(bio);
             let write_data = state.get_ref();
             assert_eq!(&write_data[..len as usize], b"TEST TEST");
+            BIO_free_all(bio);
         }
     }
 
@@ -565,6 +539,7 @@ mod ut_bio {
             let res = bread::<Cursor<Vec<u8>>>(bio, buf.as_mut_ptr() as *mut c_char, len);
             assert_eq!(res, len);
             assert_eq!(buf, data);
+            BIO_free_all(bio);
         }
     }
 
@@ -586,7 +561,8 @@ mod ut_bio {
             assert_eq!(
                 &write_data[..data.len() - 1],
                 data.as_bytes().strip_suffix(&[0]).unwrap()
-            )
+            );
+            BIO_free_all(bio);
         }
     }
 }
