@@ -75,7 +75,7 @@ impl Future for ConnManager {
                             // io output occurs error.
                             OutputMessage::OutputExit(e) => {
                                 // Ever received a goaway frame
-                                if let Some(_) = manager.controller.go_away_error_code {
+                                if manager.controller.go_away_error_code.is_some() {
                                     continue;
                                 }
                                 // Note error returned immediately.
@@ -93,6 +93,10 @@ impl Future for ConnManager {
                             }
                             // io output occurs error.
                             OutputMessage::OutputExit(e) => {
+                                // Ever received a goaway frame
+                                if manager.controller.go_away_error_code.is_some() {
+                                    continue;
+                                }
                                 if manager.manage_resp_error(cx, e)?.is_pending() {
                                     return Poll::Pending;
                                 }
