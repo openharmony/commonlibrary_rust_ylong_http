@@ -350,6 +350,7 @@ impl Body {
         Self { inner }
     }
 
+    #[cfg(feature = "http2")]
     pub(crate) fn is_empty(&self) -> bool {
         matches!(self.inner, BodyKind::Empty)
     }
@@ -451,6 +452,7 @@ mod ut_client_request {
         let builder = RequestBuilder::default().append_header("name", "value");
         let request = builder.body(Body::empty());
         assert!(request.is_ok());
+        #[cfg(feature = "http2")]
         assert!(request.unwrap().body().is_empty());
 
         let request = RequestBuilder::default()
