@@ -18,7 +18,9 @@
 //! You can use these components to build a HTTP client, a HTTP server, etc.
 //!
 //! # Support HTTP Version
-//! - `HTTP1.1`
+//! - `HTTP/1.1`
+//! - `HTTP/2`
+//! - `HTTP/3`
 // TODO: Need doc.
 
 #[cfg(feature = "http1_1")]
@@ -33,6 +35,9 @@ pub mod h3;
 
 #[cfg(feature = "huffman")]
 mod huffman;
+
+#[cfg(any(feature = "http2", feature = "http3"))]
+pub mod pseudo;
 
 #[cfg(any(feature = "ylong_base", feature = "tokio_base"))]
 pub mod body;

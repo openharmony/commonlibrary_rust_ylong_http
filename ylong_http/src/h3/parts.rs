@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::h3::pseudo::PseudoHeaders;
 use crate::h3::qpack::table::NameField;
+use crate::h3::PseudoHeaders;
 use crate::headers::Headers;
 
 /// HTTP3 HEADERS frame payload implementation.

@@ -18,7 +18,6 @@ use std::sync::Arc;
 use std::{mem, result};
 
 use crate::h3::parts::Parts;
-use crate::h3::pseudo::PseudoHeaders;
 use crate::h3::qpack::encoder::{EncodeMessage, UnackFields};
 use crate::h3::qpack::error::ErrorCode::DecoderStreamError;
 use crate::h3::qpack::error::QpackError;
@@ -26,6 +25,7 @@ use crate::h3::qpack::format::decoder::{DecResult, LiteralString};
 use crate::h3::qpack::integer::{Integer, IntegerDecoder, IntegerEncoder};
 use crate::h3::qpack::table::{DynamicTable, NameField, SearchResult, TableIndex, TableSearcher};
 use crate::h3::qpack::{DecoderInstPrefixBit, DecoderInstruction, EncoderInstruction, PrefixMask};
+use crate::h3::PseudoHeaders;
 use crate::headers::HeadersIntoIter;
 use crate::huffman::huffman_encode;
 
