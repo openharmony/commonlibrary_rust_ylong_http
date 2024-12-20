@@ -880,15 +880,14 @@ mod ut_streams {
         assert_eq!(stream.recv_window.notification_available(), 100);
     }
 
-    /// UT test case for `Streams::get_go_away_streams`.
+    /// UT test case for `Streams::get_unset_streams`.
     ///
     /// # Brief
     /// 1. Insert streams with different states and sends go_away with a stream
     ///    id.
-    /// 2. Asserts that only streams with IDs greater than or equal to the
-    ///    go_away ID are closed.
+    /// 2. Asserts that only streams with IDs greater than to the go_away ID are closed.
     #[test]
-    fn ut_streams_get_go_away_streams() {
+    fn ut_streams_get_unset_streams() {
         let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));
         streams.apply_max_concurrent_streams(4);
         streams
