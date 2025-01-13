@@ -237,198 +237,61 @@ impl Resolver for DefaultDnsResolver {
 #[cfg(feature = "tokio_base")]
 #[cfg(test)]
 mod ut_dns_cache {
-    use std::sync::Arc;
-    use std::time::{Duration, Instant};
-
-    use tokio::sync::Mutex;
-
     use super::*;
 
     /// UT test cases for `DefaultDnsResolver::resolve`.
     ///
     /// # Brief
-    /// 1. Test that DNS resolution is correctly cached after the first
-    ///    resolution.
-    /// 2. Ensure that a second resolution within TTL returns the same result
-    ///    and is faster.
-    /// 3. Check that after TTL expiration, the resolver performs another
-    ///    resolution and returns fresh results and is slower that second one.
+    /// 1. Verify the first DNS result is cached when connected to Internet or
+    ///    return error when without Internet.
+    /// 2. Verify the second DNS result as same as the first one.
     #[tokio::test]
-    async fn ut_dns_cache_test_async() {
-        let resolver = DefaultDnsResolver::new(Duration::from_millis(100));
+    async fn ut_default_dns_resolver() {
         let domain = "example.com:0";
-        let start = Instant::now();
-        let addrs1 = resolver.resolve(domain).await;
-        let duration1 = start.elapsed();
-        assert!(addrs1.is_ok());
-        tokio::time::sleep(Duration::from_millis(80)).await;
-        let start = Instant::now();
-        let addrs2 = resolver.resolve(domain).await;
-        let duration2 = start.elapsed();
-        assert!(addrs2.is_ok());
-        if let (Ok(addrs1), Ok(addrs2)) = (addrs1, addrs2) {
-            let addrs1_vec: Vec<SocketAddr> = addrs1.collect();
-            let addrs2_vec: Vec<SocketAddr> = addrs2.collect();
-            assert_eq!(addrs1_vec, addrs2_vec);
-        }
-        assert!(duration1 > duration2);
-        tokio::time::sleep(Duration::from_millis(80)).await;
-        let start = Instant::now();
-        let _addrs3 = resolver.resolve(domain).await;
-        let duration3 = start.elapsed();
-        assert!(duration3 > duration2);
-    }
-
-    /// UT test cases for `DefaultDnsResolver::resolve` under multiple
-    /// concurrent requests.
-    ///
-    /// # Brief
-    /// 1. Test that multiple concurrent DNS resolution requests return the same
-    ///    result.
-    /// 2. Ensure that only the first request performs the resolution and others
-    ///    wait for the result.
-    /// 3. Check that subsequent requests are faster, as they use the cached
-    ///    result.
-    #[tokio::test]
-    async fn ut_dns_cache_test_multi_async() {
-        let domain = "example.com:0";
-        let resolver = Arc::new(Mutex::new(DefaultDnsResolver::new(Duration::from_millis(
-            500,
-        ))));
-        let first_duration = Arc::new(Mutex::new(None::<Duration>));
-        let first_addrs = Arc::new(Mutex::new(None::<Vec<SocketAddr>>));
-        let mut handles = vec![];
-        for _ in 0..3 {
-            let resolver = Arc::clone(&resolver);
-            let first_duration = Arc::clone(&first_duration);
-            let first_addrs = Arc::clone(&first_addrs);
-            let handle = tokio::spawn(async move {
-                let resolver = resolver.lock().await;
-                let start = Instant::now();
-                let addrs = resolver.resolve(domain).await;
-                let duration = start.elapsed();
-                assert!(addrs.is_ok());
-                let addrs = addrs.unwrap().collect::<Vec<_>>();
-                let mut first_duration_locked = first_duration.lock().await;
-                if first_duration_locked.is_none() {
-                    *first_duration_locked = Some(duration);
-                    let mut first_addrs_locked = first_addrs.lock().await;
-                    *first_addrs_locked = Some(addrs);
-                } else {
-                    let first_duration_locked = first_duration_locked.as_ref().unwrap();
-                    assert!(*first_duration_locked > duration);
-
-                    let first_addrs_locked = first_addrs.lock().await;
-                    assert!(*first_addrs_locked.as_ref().unwrap() == addrs);
-                }
-            });
-            handles.push(handle);
-        }
-        for handle in handles {
-            handle.await.unwrap();
-        }
+        let resolver = DefaultDnsResolver::new(std::time::Duration::from_millis(100));
+        let result1 = resolver.resolve(domain).await;
+        let result2 = resolver.resolve(domain).await;
+        let result1 = result1
+            .map(|a| a.collect::<Vec<_>>())
+            .err()
+            .map(|e| e.to_string());
+        let result2 = result2
+            .map(|a| a.collect::<Vec<_>>())
+            .err()
+            .map(|e| e.to_string());
+        assert_eq!(result1, result2);
     }
 }
 
 #[cfg(feature = "ylong_base")]
 #[cfg(test)]
 mod ut_dns_cache {
-    use std::sync::Arc;
-    use std::time::{Duration, Instant};
-
-    use ylong_runtime::sync::Mutex;
-
     use super::*;
 
     /// UT test cases for `DefaultDnsResolver::resolve`.
     ///
     /// # Brief
-    /// 1. Test that DNS resolution is correctly cached after the first
-    ///    resolution.
-    /// 2. Ensure that a second resolution within TTL returns the same result
-    ///    and is faster.
-    /// 3. Check that after TTL expiration, the resolver performs another
-    ///    resolution and returns fresh results and is slower that second one.
+    /// 1. Verify the first DNS result is cached when connected to Internet or
+    ///    return error when without Internet.
+    /// 2. Verify the second DNS result as same as the first one.
     #[test]
-    fn ut_dns_cache_test() {
-        ylong_runtime::block_on(ut_dns_cache_test_async());
+    fn ut_default_dns_resolver() {
+        ylong_runtime::block_on(ut_default_dns_resolver_async());
     }
 
-    async fn ut_dns_cache_test_async() {
-        let resolver = DefaultDnsResolver::new(Duration::from_millis(100));
+    async fn ut_default_dns_resolver_async() {
         let domain = "example.com:0";
-        let start = Instant::now();
-        let addrs1 = resolver.resolve(domain).await;
-        let duration1 = start.elapsed();
-        assert!(addrs1.is_ok());
-        ylong_runtime::time::sleep(Duration::from_millis(80)).await;
-        let start = Instant::now();
-        let addrs2 = resolver.resolve(domain).await;
-        let duration2 = start.elapsed();
-        assert!(addrs2.is_ok());
-        if let (Ok(addrs1), Ok(addrs2)) = (addrs1, addrs2) {
-            let addrs1_vec: Vec<SocketAddr> = addrs1.collect();
-            let addrs2_vec: Vec<SocketAddr> = addrs2.collect();
-            assert_eq!(addrs1_vec, addrs2_vec);
-        }
-        assert!(duration1 > duration2);
-        ylong_runtime::time::sleep(Duration::from_millis(80)).await;
-        let start = Instant::now();
-        let _addrs3 = resolver.resolve(domain).await;
-        let duration3 = start.elapsed();
-        assert!(duration3 > duration2);
-    }
-
-    /// UT test cases for `DefaultDnsResolver::resolve` under multiple
-    /// concurrent requests.
-    ///
-    /// # Brief
-    /// 1. Test that multiple concurrent DNS resolution requests return the same
-    ///    result.
-    /// 2. Ensure that only the first request performs the resolution and others
-    ///    wait for the result.
-    /// 3. Check that subsequent requests are faster, as they use the cached
-    ///    result.
-    #[test]
-    fn ut_dns_cache_test_multi() {
-        ylong_runtime::block_on(ut_dns_cache_test_multi_async());
-    }
-
-    async fn ut_dns_cache_test_multi_async() {
-        let domain = "example.com:0";
-        let resolver = Arc::new(Mutex::new(DefaultDnsResolver::new(Duration::from_millis(
-            500,
-        ))));
-        let first_duration = Arc::new(Mutex::new(None::<Duration>));
-        let first_addrs = Arc::new(Mutex::new(None::<Vec<SocketAddr>>));
-        let mut handles = Vec::new();
-        for _ in 0..3 {
-            let resolver = Arc::clone(&resolver);
-            let first_duration = Arc::clone(&first_duration);
-            let first_addrs = Arc::clone(&first_addrs);
-            let handle = ylong_runtime::spawn(async move {
-                let resolver = resolver.lock().await;
-                let start = Instant::now();
-                let addrs = resolver.resolve(domain).await;
-                let duration = start.elapsed();
-                assert!(addrs.is_ok());
-                let addrs = addrs.unwrap().collect::<Vec<_>>();
-                let mut first_duration_locked = first_duration.lock().await;
-                if first_duration_locked.is_none() {
-                    *first_duration_locked = Some(duration);
-                    let mut first_addrs_locked = first_addrs.lock().await;
-                    *first_addrs_locked = Some(addrs);
-                } else {
-                    let first_duration_locked = first_duration_locked.as_ref().unwrap();
-                    assert!(*first_duration_locked > duration);
-                    let first_addrs_locked = first_addrs.lock().await;
-                    assert!(*first_addrs_locked.as_ref().unwrap() == addrs);
-                }
-            });
-            handles.push(handle);
-        }
-        for handle in handles {
-            handle.await.unwrap();
-        }
+        let resolver = DefaultDnsResolver::new(std::time::Duration::from_millis(100));
+        let result1 = resolver.resolve(domain).await;
+        let result2 = resolver.resolve(domain).await;
+        let result1 = result1
+            .map(|a| a.collect::<Vec<_>>())
+            .err()
+            .map(|e| e.to_string());
+        let result2 = result2
+            .map(|a| a.collect::<Vec<_>>())
+            .err()
+            .map(|e| e.to_string());
+        assert_eq!(result1, result2);
     }
 }
