@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use crate::h2::hpack::table::Header;
-use crate::h2::pseudo::PseudoHeaders;
+use crate::h2::PseudoHeaders;
 use crate::headers::Headers;
 
 /// HTTP2 HEADERS frame payload implementation.

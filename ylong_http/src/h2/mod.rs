@@ -56,8 +56,8 @@ mod error;
 mod frame;
 mod hpack;
 mod parts;
-mod pseudo;
 
+pub use crate::pseudo::PseudoHeaders;
 pub use decoder::{FrameDecoder, FrameKind, Frames, FramesIntoIter};
 pub use encoder::FrameEncoder;
 pub use error::{ErrorCode, H2Error};
@@ -67,4 +67,3 @@ pub use frame::{
 };
 pub(crate) use hpack::{HpackDecoder, HpackEncoder};
 pub use parts::Parts;
-pub use pseudo::PseudoHeaders;
