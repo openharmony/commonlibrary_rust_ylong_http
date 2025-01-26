@@ -444,7 +444,7 @@ mod ut_stack_error {
     fn ut_ut_error_get_func() {
         let code = 0x12345;
         let get_code = error_get_func(code);
-        #[cfg(feature = "c_openssl_1_1")]
+        #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
         assert_eq!(get_code, 18);
         #[cfg(feature = "c_openssl_3_0")]
         assert_eq!(get_code, 0);
@@ -452,6 +452,7 @@ mod ut_stack_error {
 }
 
 #[cfg(test)]
+#[cfg(feature = "__c_openssl")]
 mod ut_error_stack {
     use super::*;
 
@@ -462,7 +463,6 @@ mod ut_error_stack {
     /// 2. Formats the entire error stack.
     /// 3. Verify if the formatted message is correct.
     #[test]
-    #[cfg(feature = "__c_openssl")]
     fn ut_fmt() {
         let error1 = StackError {
             code: 0x00000001,

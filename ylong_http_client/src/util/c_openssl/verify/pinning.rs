@@ -44,7 +44,36 @@ use crate::HttpClientError;
 /// ```
 #[derive(Clone)]
 pub struct PubKeyPins {
-    pub(crate) pub_keys: HashMap<String, String>,
+    pub(crate) pub_keys: HashMap<String, PinsVerifyInfo>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct PinsVerifyInfo {
+    strategy: PinsVerifyStrategy,
+    digest: String,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum PinsVerifyStrategy {
+    RootCertificate,
+    LeafCertificate,
+}
+
+impl PinsVerifyInfo {
+    fn new(strategy: PinsVerifyStrategy, digest: &str) -> Self {
+        Self {
+            strategy,
+            digest: digest.to_string(),
+        }
+    }
+
+    pub fn is_root(&self) -> bool {
+        matches!(self.strategy, PinsVerifyStrategy::RootCertificate)
+    }
+
+    pub fn get_digest(&self) -> &str {
+        &self.digest
+    }
 }
 
 /// A builder which is used to construct `PubKeyPins`.
@@ -57,7 +86,7 @@ pub struct PubKeyPins {
 /// let builder = PubKeyPinsBuilder::new();
 /// ```
 pub struct PubKeyPinsBuilder {
-    pub_keys: Result<HashMap<String, String>, HttpClientError>,
+    pub_keys: Result<HashMap<String, PinsVerifyInfo>, HttpClientError>,
 }
 
 impl PubKeyPinsBuilder {
@@ -76,7 +105,8 @@ impl PubKeyPinsBuilder {
         }
     }
 
-    /// Sets a tuple of (server, public key digest) for `PubKeyPins`.
+    /// Sets a tuple of (server, public key digest) for `PubKeyPins`, using
+    /// the server certificate pinning strategy.
     ///
     /// # Examples
     ///
@@ -93,20 +123,39 @@ impl PubKeyPinsBuilder {
     /// ```
     pub fn add(mut self, uri: &str, digest: &str) -> Self {
         self.pub_keys = self.pub_keys.and_then(move |mut keys| {
-            let parsed = Uri::try_from(uri).map_err(|e| HttpClientError::from_error(Build, e))?;
-            let auth = match (parsed.host(), parsed.port()) {
-                (None, _) => {
-                    return err_from_msg!(Build, "uri has no host");
-                }
-                (Some(host), Some(port)) => {
-                    format!("{}:{}", host.as_str(), port.as_str())
-                }
-                (Some(host), None) => {
-                    format!("{}:443", host.as_str())
-                }
-            };
-            let pub_key = String::from(digest);
-            let _ = keys.insert(auth, pub_key);
+            let auth = parse_uri(uri)?;
+            let info = PinsVerifyInfo::new(PinsVerifyStrategy::LeafCertificate, digest);
+            let _ = keys.insert(auth, info);
+            Ok(keys)
+        });
+        self
+    }
+
+    /// Sets a tuple of (server, public key digest) for `PubKeyPins`, using
+    /// the root certificate pinning strategy.
+    /// <div class="warning">
+    /// Ensure that the server returns the complete certificate chain, including the root certificate;
+    /// otherwise, the client's public key pinning validation will fail and return an error.
+    /// </div>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::PubKeyPinsBuilder;
+    ///
+    /// let pins = PubKeyPinsBuilder::new()
+    ///     .add_with_root_strategy(
+    ///         "https://example.com",
+    ///         "sha256//VHQAbNl67nmkZJNESeYKvTxb5bTmd1maWnMKG/tjcAY=",
+    ///     )
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn add_with_root_strategy(mut self, uri: &str, digest: &str) -> Self {
+        self.pub_keys = self.pub_keys.and_then(move |mut keys| {
+            let auth = parse_uri(uri)?;
+            let info = PinsVerifyInfo::new(PinsVerifyStrategy::RootCertificate, digest);
+            let _ = keys.insert(auth, info);
             Ok(keys)
         });
         self
@@ -147,7 +196,9 @@ impl PubKeyPins {
     pub fn builder() -> PubKeyPinsBuilder {
         PubKeyPinsBuilder::new()
     }
-    pub(crate) fn get_pin(&self, domain: &str) -> Option<String> {
+
+    /// Get the Public Key Pinning for a domain
+    pub(crate) fn get_pin(&self, domain: &str) -> Option<PinsVerifyInfo> {
         self.pub_keys.get(&String::from(domain)).cloned()
     }
 }
@@ -166,6 +217,22 @@ impl Default for PubKeyPinsBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn parse_uri(uri: &str) -> Result<String, HttpClientError> {
+    let parsed = Uri::try_from(uri).map_err(|e| HttpClientError::from_error(Build, e))?;
+    let auth = match (parsed.host(), parsed.port()) {
+        (None, _) => {
+            return err_from_msg!(Build, "uri has no host");
+        }
+        (Some(host), Some(port)) => {
+            format!("{}:{}", host.as_str(), port.as_str())
+        }
+        (Some(host), None) => {
+            format!("{}:443", host.as_str())
+        }
+    };
+    Ok(auth)
 }
 
 // TODO The SSLError thrown here is meaningless and has no information.
@@ -205,6 +272,7 @@ mod ut_verify_pinning {
 
     use libc::c_int;
 
+    use super::{PinsVerifyInfo, PinsVerifyStrategy};
     use crate::util::c_openssl::verify::sha256_digest;
     use crate::{PubKeyPins, PubKeyPinsBuilder};
 
@@ -219,11 +287,21 @@ mod ut_verify_pinning {
         let mut map = HashMap::new();
         let _value = map.insert(
             "ylong_http.com:443".to_string(),
-            "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=".to_string(),
+            PinsVerifyInfo::new(
+                PinsVerifyStrategy::LeafCertificate,
+                "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=",
+            ),
         );
         let pins = PubKeyPins { pub_keys: map };
         let pins_clone = pins.clone();
         assert_eq!(pins.pub_keys, pins_clone.pub_keys);
+
+        let pins_info = PinsVerifyInfo::new(
+            PinsVerifyStrategy::RootCertificate,
+            "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=",
+        );
+        let pins_info_clone = pins_info.clone();
+        assert_eq!(pins_info, pins_info_clone);
     }
 
     /// UT test cases for `PubKeyPinsBuilder::add`.
@@ -254,7 +332,24 @@ mod ut_verify_pinning {
             .unwrap();
         assert_eq!(
             pins.get_pin("ylong_http.com:443"),
-            Some("sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=".to_string())
+            Some(PinsVerifyInfo::new(
+                PinsVerifyStrategy::LeafCertificate,
+                "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno="
+            ))
+        );
+        let pins = PubKeyPinsBuilder::default()
+            .add_with_root_strategy(
+                "https://ylong_http.com",
+                "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=",
+            )
+            .build()
+            .unwrap();
+        assert_eq!(
+            pins.get_pin("ylong_http.com:443"),
+            Some(PinsVerifyInfo::new(
+                PinsVerifyStrategy::RootCertificate,
+                "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno="
+            ))
         );
     }
 

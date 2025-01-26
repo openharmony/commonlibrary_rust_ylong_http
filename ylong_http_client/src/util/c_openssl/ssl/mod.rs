@@ -25,6 +25,6 @@ pub(crate) use filetype::SslFiletype;
 pub(crate) use method::SslMethod;
 pub(crate) use ssl_base::{Ssl, SslRef};
 #[cfg(feature = "http3")]
-pub(crate) use stream::verify_server_cert;
+pub(crate) use stream::{verify_server_cert, verify_server_root_cert};
 pub(crate) use stream::{MidHandshakeSslStream, ShutdownResult, SslStream};
 pub(crate) use version::SslVersion;

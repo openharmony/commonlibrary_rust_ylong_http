@@ -44,7 +44,7 @@ pub struct PseudoHeaders {
 // TODO: 去掉冗余的方法。
 impl PseudoHeaders {
     /// Create a new `PseudoHeaders`.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             authority: None,
             method: None,
