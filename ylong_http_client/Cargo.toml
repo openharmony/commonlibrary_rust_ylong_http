@@ -56,6 +56,16 @@ path = "examples/async_http.rs"
 required-features = ["async", "http1_1", "ylong_base"]
 
 [[example]]
+name = "async_http_dns"
+path = "examples/async_http_dns.rs"
+required-features = ["async", "http1_1", "ylong_base"]
+
+[[example]]
+name = "async_http_doh"
+path = "examples/async_http_doh.rs"
+required-features = ["async", "http1_1", "ylong_base", "__c_openssl"]
+
+[[example]]
 name = "async_http_multi"
 path = "examples/async_http_multi.rs"
 required-features = ["async", "http1_1", "ylong_base"]

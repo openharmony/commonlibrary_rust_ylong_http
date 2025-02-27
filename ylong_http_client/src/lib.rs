@@ -85,13 +85,14 @@ pub(crate) mod runtime {
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
         sync::{OwnedSemaphorePermit as SemaphorePermit, Semaphore},
-        task::JoinHandle,
+        task::{spawn_blocking, JoinHandle},
         time::{sleep, timeout, Sleep},
     };
     #[cfg(feature = "ylong_base")]
     pub(crate) use ylong_runtime::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
+        spawn_blocking,
         sync::Semaphore,
         task::JoinHandle,
         time::{sleep, timeout, Sleep},
