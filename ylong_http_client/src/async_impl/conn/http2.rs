@@ -21,7 +21,7 @@ use std::time::Instant;
 
 use ylong_http::error::HttpError;
 use ylong_http::h2;
-use ylong_http::h2::{ErrorCode, Frame, FrameFlags, H2Error, Payload, PseudoHeaders};
+use ylong_http::h2::{ErrorCode, Frame, FrameFlags, H2Error, Payload, PseudoHeaders, StreamId};
 use ylong_http::headers::Headers;
 use ylong_http::request::uri::Scheme;
 use ylong_http::request::RequestPart;
@@ -92,12 +92,9 @@ where
                 Some(status) => StatusCode::from_bytes(status.as_bytes())
                     .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?,
                 None => {
-                    return Err(HttpClientError::from_error(
-                        ErrorKind::Request,
-                        HttpError::from(H2Error::StreamError(
-                            headers_frame.stream_id(),
-                            ErrorCode::ProtocolError,
-                        )),
+                    return Err(build_client_error(
+                        headers_frame.stream_id(),
+                        ErrorCode::ProtocolError,
                     ));
                 }
             };
@@ -108,21 +105,15 @@ where
             }
         }
         Payload::RstStream(reset) => {
-            return Err(HttpClientError::from_error(
-                ErrorKind::Request,
-                HttpError::from(H2Error::StreamError(
-                    headers_frame.stream_id(),
-                    ErrorCode::try_from(reset.error_code()).unwrap_or(ErrorCode::ProtocolError),
-                )),
+            return Err(build_client_error(
+                headers_frame.stream_id(),
+                ErrorCode::try_from(reset.error_code()).unwrap_or(ErrorCode::ProtocolError),
             ));
         }
         _ => {
-            return Err(HttpClientError::from_error(
-                ErrorKind::Request,
-                HttpError::from(H2Error::StreamError(
-                    headers_frame.stream_id(),
-                    ErrorCode::ProtocolError,
-                )),
+            return Err(build_client_error(
+                headers_frame.stream_id(),
+                ErrorCode::ProtocolError,
             ));
         }
     };
@@ -207,6 +198,13 @@ fn build_pseudo_headers(request_part: &mut RequestPart) -> Result<PseudoHeaders,
         .and_then(|auth| auth.to_string().ok());
     pseudo.set_authority(host);
     Ok(pseudo)
+}
+
+fn build_client_error(id: StreamId, code: ErrorCode) -> HttpClientError {
+    HttpClientError::from_error(
+        ErrorKind::Request,
+        HttpError::from(H2Error::StreamError(id, code)),
+    )
 }
 
 struct TextIo<S> {
