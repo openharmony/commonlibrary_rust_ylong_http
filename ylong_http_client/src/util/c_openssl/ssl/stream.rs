@@ -25,6 +25,8 @@ use crate::c_openssl::bio::{self, get_error, get_panic, get_stream_mut, get_stre
 use crate::c_openssl::error::ErrorStack;
 use crate::c_openssl::ffi::ssl::{SSL_connect, SSL_set_bio, SSL_shutdown};
 use crate::c_openssl::foreign::Foreign;
+use crate::c_openssl::verify::PinsVerifyInfo;
+
 use crate::util::base64::encode;
 use crate::util::c_openssl::bio::BioMethod;
 use crate::util::c_openssl::error::VerifyError;
@@ -37,7 +39,7 @@ use crate::util::c_openssl::verify::sha256_digest;
 pub struct SslStream<S> {
     pub(crate) ssl: ManuallyDrop<Ssl>,
     method: ManuallyDrop<BioMethod>,
-    pinned_pubkey: Option<String>,
+    pinned_pubkey: Option<PinsVerifyInfo>,
     p: PhantomData<S>,
 }
 
@@ -141,7 +143,7 @@ impl<S: Read + Write> SslStream<S> {
     pub(crate) fn new_base(
         ssl: Ssl,
         stream: S,
-        pinned_pubkey: Option<String>,
+        pinned_pubkey: Option<PinsVerifyInfo>,
     ) -> Result<Self, ErrorStack> {
         unsafe {
             let (bio, method) = bio::new(stream)?;
@@ -158,17 +160,18 @@ impl<S: Read + Write> SslStream<S> {
 
     pub(crate) fn connect(&mut self) -> Result<(), SslError> {
         let ret = unsafe { SSL_connect(self.ssl.as_ptr()) };
-        if ret > 0 {
-            match &self.pinned_pubkey {
-                None => {}
-                Some(key) => {
-                    verify_server_cert(self.ssl.as_ptr(), key.as_str())?;
-                }
-            }
-            Ok(())
-        } else {
-            Err(self.get_error(ret))
+        if ret <= 0 {
+            return Err(self.get_error(ret));
         }
+
+        if let Some(pins_info) = &self.pinned_pubkey {
+            if pins_info.is_root() {
+                verify_server_root_cert(self.ssl.as_ptr(), pins_info.get_digest())?;
+            } else {
+                verify_server_cert(self.ssl.as_ptr(), pins_info.get_digest())?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn shutdown(&mut self) -> Result<ShutdownResult, SslError> {
@@ -252,6 +255,27 @@ pub(crate) enum ShutdownResult {
     Received,
 }
 
+pub(crate) fn verify_server_root_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
+    use crate::c_openssl::ffi::{ssl::SSL_get_peer_cert_chain, ssl::X509_chain_up_ref};
+    use crate::c_openssl::{stack::Stack, x509::X509};
+
+    let cert_chain = unsafe { X509_chain_up_ref(SSL_get_peer_cert_chain(ssl)) };
+    if cert_chain.is_null() {
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
+        });
+    }
+
+    let cert_chain: Stack<X509> = Stack::from_ptr(cert_chain);
+    let root_certificate = cert_chain.into_iter().last().ok_or_else(|| SslError {
+        code: SslErrorCode::SSL,
+        internal: Some(InternalError::Ssl(ErrorStack::get())),
+    })?;
+
+    verify_pinned_pubkey(pinned_key, root_certificate.as_ptr())
+}
+
 // TODO The SSLError thrown here is meaningless and has no information.
 pub(crate) fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<(), SslError> {
     #[cfg(feature = "c_openssl_3_0")]
@@ -276,18 +300,26 @@ pub(crate) fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<()
         });
     }
 
-    let size_1 = unsafe { i2d_X509_PUBKEY(X509_get_X509_PUBKEY(certificate), ptr::null_mut()) };
-    if size_1 < 1 {
+    verify_pinned_pubkey(pinned_key, certificate)
+}
+
+fn verify_pinned_pubkey(pinned_key: &str, certificate: *mut C_X509) -> Result<(), SslError> {
+    let pubkey = unsafe { X509_get_X509_PUBKEY(certificate) };
+    // Get the length of the serialized data
+    let buf_size = unsafe { i2d_X509_PUBKEY(pubkey, ptr::null_mut()) };
+
+    if buf_size < 1 {
         unsafe { X509_free(certificate) };
         return Err(SslError {
             code: SslErrorCode::SSL,
             internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
-    let key = vec![0u8; size_1 as usize];
-    let size_2 = unsafe { i2d_X509_PUBKEY(X509_get_X509_PUBKEY(certificate), &mut key.as_ptr()) };
+    let key = vec![0u8; buf_size as usize];
+    // The actual serialization
+    let serialized_data_size = unsafe { i2d_X509_PUBKEY(pubkey, &mut key.as_ptr()) };
 
-    if size_1 != size_2 || size_2 <= 0 {
+    if buf_size != serialized_data_size || serialized_data_size <= 0 {
         unsafe { X509_free(certificate) };
         return Err(SslError {
             code: SslErrorCode::SSL,
@@ -297,7 +329,7 @@ pub(crate) fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<()
 
     // sha256 length.
     let mut digest = [0u8; 32];
-    unsafe { sha256_digest(key.as_slice(), size_2, &mut digest)? }
+    unsafe { sha256_digest(key.as_slice(), serialized_data_size, &mut digest)? }
 
     compare_pinned_digest(&digest, pinned_key.as_bytes(), certificate)
 }

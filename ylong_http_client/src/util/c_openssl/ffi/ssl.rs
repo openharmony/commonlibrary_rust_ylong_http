@@ -14,7 +14,7 @@
 use libc::{c_char, c_int, c_long, c_uchar, c_uint, c_void};
 
 use super::bio::BIO;
-use super::x509::{C_X509, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM};
+use super::x509::{C_X509, STACK_X509, X509_STORE, X509_STORE_CTX, X509_VERIFY_PARAM};
 
 /// This is the global context structure which is created by a server or client
 /// once per program life-time and which holds mainly default values for the
@@ -176,6 +176,12 @@ extern "C" {
 
     #[cfg(any(feature = "c_openssl_1_1", feature = "c_boringssl"))]
     pub(crate) fn SSL_get_peer_certificate(ssl: *const SSL) -> *mut C_X509;
+
+    pub(crate) fn SSL_get_peer_cert_chain(ssl: *const SSL) -> *mut STACK_X509;
+
+    /// Increases the reference count of all certificates in chain x and returns
+    /// a copy of the stack
+    pub(crate) fn X509_chain_up_ref(stack_x509: *mut STACK_X509) -> *mut STACK_X509;
 
     pub(crate) fn SSL_set_bio(ssl: *mut SSL, rbio: *mut BIO, wbio: *mut BIO);
 

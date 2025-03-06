@@ -17,6 +17,7 @@ use core::{future, ptr, slice};
 use std::io::{self, Read, Write};
 
 use crate::async_impl::ssl_stream::{check_io_to_poll, Wrapper};
+use crate::c_openssl::verify::PinsVerifyInfo;
 use crate::runtime::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ssl::{self, ShutdownResult, Ssl, SslErrorCode};
@@ -61,7 +62,7 @@ where
     pub(crate) fn new(
         ssl: Ssl,
         stream: S,
-        pinned_pubkey: Option<String>,
+        pinned_pubkey: Option<PinsVerifyInfo>,
     ) -> Result<Self, ErrorStack> {
         // This corresponds to `SSL_set_bio`.
         ssl::SslStream::new_base(

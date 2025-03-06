@@ -17,5 +17,5 @@
 
 mod pinning;
 
-pub(crate) use pinning::sha256_digest;
+pub(crate) use pinning::{sha256_digest, PinsVerifyInfo};
 pub use pinning::{PubKeyPins, PubKeyPinsBuilder};

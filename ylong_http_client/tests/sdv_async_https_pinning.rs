@@ -212,6 +212,246 @@ fn sdv_client_public_key_pinning() {
 ///
 /// # Brief
 /// 1. Starts a hyper https server with the tokio coroutine.
+/// 2. Creates an async::Client that with Root public key pinning.
+/// 3. The client sends a request message.
+/// 4. Verifies the received request on the server.
+/// 5. The server sends a response message.
+/// 6. Verifies the received response on the client.
+/// 7. Shuts down the server.
+#[test]
+fn sdv_client_public_key_root_pinning() {
+    define_service_handle!(HTTPS;);
+    set_server_fn!(
+        ASYNC;
+        ylong_server_fn,
+        Request: {
+            Method: "GET",
+            Header: "Content-Length", "5",
+            Body: "hello",
+        },
+        Response: {
+            Status: 200,
+            Version: "HTTP/1.1",
+            Header: "Content-Length", "3",
+            Body: "hi!",
+        },
+    );
+    let runtime = init_test_work_runtime(1);
+    let mut handles_vec = vec![];
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let root_ca_path = PathBuf::from(dir).join("tests/file/cert_chain/rootCA.crt.pem");
+    let server_key_path = "tests/file/cert_chain/server.key.pem";
+    let server_crt_chain_path = "tests/file/cert_chain/chain.crt.pem";
+
+    // Root certificate pinning.
+    {
+        start_server!(
+            HTTPS;
+            ServerNum: 1,
+            Runtime: runtime,
+            Handles: handles_vec,
+            ServeFnName: ylong_server_fn,
+            ServeKeyPath: server_key_path,
+            ServeCrtPath: server_crt_chain_path,
+        );
+        let handle = handles_vec.pop().expect("No more handles !");
+
+        let pins = PubKeyPins::builder()
+            .add_with_root_strategy(
+                format!("https://127.0.0.1:{}", handle.port).as_str(),
+                "sha256//OTEKj2hCyGOWxN8Bdt2LPRMzJ4zs0e59cjgIPQgQe30=",
+            )
+            .build()
+            .unwrap();
+
+        let client = ylong_http_client::async_impl::Client::builder()
+            .tls_ca_file(root_ca_path.to_str().unwrap())
+            .add_public_key_pins(pins)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .unwrap();
+
+        let shutdown_handle = runtime.spawn(async move {
+            async_client_assertions!(
+                ServerHandle: handle,
+                ClientRef: client,
+                Request: {
+                    Method: "GET",
+                    Host: "127.0.0.1",
+                    Header: "Content-Length", "5",
+                    Body: "hello",
+                },
+                Response: {
+                    Status: 200,
+                    Version: "HTTP/1.1",
+                    Header: "Content-Length", "3",
+                    Body: "hi!",
+                },
+            );
+        });
+        runtime
+            .block_on(shutdown_handle)
+            .expect("Runtime block on server shutdown failed");
+    }
+
+    // Server certificate pinning.
+    {
+        start_server!(
+            HTTPS;
+            ServerNum: 1,
+            Runtime: runtime,
+            Handles: handles_vec,
+            ServeFnName: ylong_server_fn,
+            ServeKeyPath: server_key_path,
+            ServeCrtPath: server_crt_chain_path,
+        );
+        let handle = handles_vec.pop().expect("No more handles !");
+
+        // Two wrong public keys and a correct public key in the middle.
+        let pins = PubKeyPins::builder()
+            .add(
+                format!("https://127.0.0.1:{}", handle.port).as_str(),
+                "sha256//tldbIOQrcXdIACltObylTwTPzdxTm0E2VYDf3B1IQxU=",
+            )
+            .build()
+            .unwrap();
+
+        let client = ylong_http_client::async_impl::Client::builder()
+            .tls_ca_file(root_ca_path.to_str().unwrap())
+            .add_public_key_pins(pins)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .unwrap();
+
+        let shutdown_handle = runtime.spawn(async move {
+            async_client_assertions!(
+                ServerHandle: handle,
+                ClientRef: client,
+                Request: {
+                    Method: "GET",
+                    Host: "127.0.0.1",
+                    Header: "Content-Length", "5",
+                    Body: "hello",
+                },
+                Response: {
+                    Status: 200,
+                    Version: "HTTP/1.1",
+                    Header: "Content-Length", "3",
+                    Body: "hi!",
+                },
+            );
+        });
+        runtime
+            .block_on(shutdown_handle)
+            .expect("Runtime block on server shutdown failed");
+    }
+
+    // Public keys from unrelated domains will not verify public key pinning.
+    {
+        start_server!(
+            HTTPS;
+            ServerNum: 1,
+            Runtime: runtime,
+            Handles: handles_vec,
+            ServeFnName: ylong_server_fn,
+            ServeKeyPath: server_key_path,
+            ServeCrtPath: server_crt_chain_path,
+        );
+        let handle = handles_vec.pop().expect("No more handles !");
+
+        let pins = PubKeyPins::builder()
+            .add_with_root_strategy(
+                "https://ylong_http.test:6789",
+                "sha256//t62CeU2tQiqkexU74Gxa2eg7fRbEgoChTociMee9wno=",
+            )
+            .build()
+            .unwrap();
+
+        let client = ylong_http_client::async_impl::Client::builder()
+            .tls_ca_file(root_ca_path.to_str().unwrap())
+            .add_public_key_pins(pins)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .unwrap();
+
+        let shutdown_handle = runtime.spawn(async move {
+            async_client_assertions!(
+                ServerHandle: handle,
+                ClientRef: client,
+                Request: {
+                    Method: "GET",
+                    Host: "127.0.0.1",
+                    Header: "Content-Length", "5",
+                    Body: "hello",
+                },
+                Response: {
+                    Status: 200,
+                    Version: "HTTP/1.1",
+                    Header: "Content-Length", "3",
+                    Body: "hi!",
+                },
+            );
+        });
+        runtime
+            .block_on(shutdown_handle)
+            .expect("Runtime block on server shutdown failed");
+    }
+
+    // Root certificate pinning strategy, but using the server certificate public key hash
+    {
+        start_server!(
+            HTTPS;
+            ServerNum: 1,
+            Runtime: runtime,
+            Handles: handles_vec,
+            ServeFnName: ylong_server_fn,
+            ServeKeyPath: server_key_path,
+            ServeCrtPath: server_crt_chain_path,
+        );
+        let handle = handles_vec.pop().expect("No more handles !");
+
+        let pins = PubKeyPins::builder()
+            .add_with_root_strategy(
+                format!("https://127.0.0.1:{}", handle.port).as_str(),
+                "sha256//tldbIOQrcXdIACltObylTwTPzdxTm0E2VYDf3B1IQxU=",
+            )
+            .build()
+            .unwrap();
+
+        let client = ylong_http_client::async_impl::Client::builder()
+            .tls_ca_file(root_ca_path.to_str().unwrap())
+            .add_public_key_pins(pins)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .unwrap();
+
+        let shutdown_handle = runtime.spawn(async move {
+           let request = ylong_http_client::async_impl::Request::builder()
+               .method("GET")
+               .url(format!("{}:{}", "127.0.0.1", handle.port).as_str())
+               .header("Content-Length", "5")
+               .body(ylong_http_client::async_impl::Body::slice("hello"))
+               .expect("Request build failed");
+
+           let response = client.request(request).await.err();
+
+           assert_eq!(
+               format!("{:?}", response.expect("response is not an error")),
+               "HttpClientError { ErrorKind: Connect, Cause: Custom { kind: Other, error: SslError { \
+             code: SslErrorCode(1), internal: Some(User(VerifyError { ErrorKind: PubKeyPinning, \
+             Cause: Pinned public key verification failed. })) } } }"
+           );
+        });
+        runtime
+            .block_on(shutdown_handle)
+            .expect("Runtime block on server shutdown failed");
+    }
+}
+
+/// SDV test cases for `async::Client`.
+///
+/// # Brief
+/// 1. Starts a hyper https server with the tokio coroutine.
 /// 2. Creates an async::Client with an error public key pinning.
 /// 3. The client sends a request message.
 /// 4. Verifies the received request on the server.

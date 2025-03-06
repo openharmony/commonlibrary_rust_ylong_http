@@ -25,7 +25,7 @@ use libc::{
 use ylong_runtime::fastrand::fast_random;
 use ylong_runtime::time::timeout;
 
-use crate::c_openssl::ssl::verify_server_cert;
+use crate::c_openssl::ssl::{verify_server_cert, verify_server_root_cert};
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::util::c_openssl::ssl::Ssl;
 use crate::util::ConnInfo;
@@ -142,14 +142,22 @@ impl QuicConn {
                 break;
             }
             if self.is_established() {
-                let Some(key) = tls_config.pinning_host_match(stream.conn_data().detail().addr())
+                let Some(pins_info) =
+                    tls_config.pinning_host_match(stream.conn_data().detail().addr())
                 else {
                     break;
                 };
 
-                if verify_server_cert(ssl.get_raw_ptr(), key.as_str()).is_ok() {
+                // cert pins verify
+                let verify_result = if pins_info.is_root() {
+                    verify_server_root_cert(ssl.get_raw_ptr(), pins_info.get_digest())
+                } else {
+                    verify_server_cert(ssl.get_raw_ptr(), pins_info.get_digest())
+                };
+                if verify_result.is_ok() {
                     return Ok(());
                 }
+
                 e = Err(HttpClientError::from_str(
                     ErrorKind::Connect,
                     "verify server cert failed",

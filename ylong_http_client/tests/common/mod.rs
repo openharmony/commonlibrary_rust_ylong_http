@@ -56,12 +56,53 @@ macro_rules! start_server {
         Handles: $handle_vec: expr,
         ServeFnName: $service_fn: ident,
     ) => {{
+        let key_path = std::path::PathBuf::from( "tests/file/key.pem");
+        let cert_path = std::path::PathBuf::from("tests/file/cert.pem");
+
         for _i in 0..$server_num {
             let (tx, rx) = std::sync::mpsc::channel();
+            let key = key_path.clone();
+            let cert = cert_path.clone();
             let server_handle = $runtime.spawn(async move {
                 let handle = start_http_server!(
                     HTTPS;
-                    $service_fn
+                    $service_fn,
+                    key,
+                    cert
+                );
+                tx.send(handle)
+                    .expect("Failed to send the handle to the test thread.");
+            });
+            $runtime
+                .block_on(server_handle)
+                .expect("Runtime start server coroutine failed");
+            let handle = rx
+                .recv()
+                .expect("Handle send channel (Server-Half) be closed unexpectedly");
+            $handle_vec.push(handle);
+        }
+    }};
+    (
+        HTTPS;
+        ServerNum: $server_num: expr,
+        Runtime: $runtime: expr,
+        Handles: $handle_vec: expr,
+        ServeFnName: $service_fn: ident,
+        ServeKeyPath: $server_key_path: ident,
+        ServeCrtPath: $server_crt_path: ident,
+    ) => {{
+        let key_path = std::path::PathBuf::from($server_key_path);
+        let cert_path = std::path::PathBuf::from($server_crt_path);
+        for _i in 0..$server_num {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let key_path = key_path.clone();
+            let cert_path = cert_path.clone();
+            let server_handle = $runtime.spawn(async move {
+                let handle = start_http_server!(
+                    HTTPS;
+                    $service_fn,
+                    key_path,
+                    cert_path
                 );
                 tx.send(handle)
                     .expect("Failed to send the handle to the test thread.");
@@ -159,7 +200,9 @@ macro_rules! start_http_server {
     }};
     (
         HTTPS;
-        $service_fn: ident
+        $service_fn: ident,
+        $server_key_path: expr,
+        $server_cert_path: expr
     ) => {{
         let mut port = 10000;
         let listener = loop {
@@ -184,10 +227,10 @@ macro_rules! start_http_server {
                 .set_session_id_context(b"test")
                 .expect("Set session id error");
             acceptor
-                .set_private_key_file("tests/file/key.pem", openssl::ssl::SslFiletype::PEM)
+                .set_private_key_file($server_key_path, openssl::ssl::SslFiletype::PEM)
                 .expect("Set private key error");
             acceptor
-                .set_certificate_chain_file("tests/file/cert.pem")
+                .set_certificate_chain_file($server_cert_path)
                 .expect("Set cert error");
             acceptor.set_alpn_protos(b"\x08http/1.1").unwrap();
             acceptor.set_alpn_select_callback(|_, client| {

@@ -18,9 +18,8 @@ use core::ops::{Deref, DerefMut, Range};
 
 use libc::c_int;
 
-use super::ffi::stack::{
-    OPENSSL_sk_free, OPENSSL_sk_num, OPENSSL_sk_pop, OPENSSL_sk_value, OPENSSL_STACK,
-};
+use super::ffi::stack::{unified_sk_free, unified_sk_num, unified_sk_pop, unified_sk_value, STACK};
+
 use crate::c_openssl::foreign::{Foreign, ForeignRef, ForeignRefWrapper};
 
 pub(crate) trait Stackof: Foreign {
@@ -69,7 +68,7 @@ impl<T: Stackof> Drop for Stack<T> {
     fn drop(&mut self) {
         unsafe {
             while self.pop().is_some() {}
-            OPENSSL_sk_free(self.0 as *mut _)
+            unified_sk_free(self.0 as *mut _)
         }
     }
 }
@@ -89,7 +88,7 @@ impl<'a, T: Stackof> Iterator for StackRefIter<'a, T> {
         unsafe {
             self.index
                 .next()
-                .map(|i| T::Ref::from_ptr(OPENSSL_sk_value(self.stack.as_stack(), i) as *mut _))
+                .map(|i| T::Ref::from_ptr(unified_sk_value(self.stack.as_stack(), i) as *mut _))
         }
     }
 
@@ -101,12 +100,12 @@ impl<'a, T: Stackof> Iterator for StackRefIter<'a, T> {
 impl<T: Stackof> StackRef<T> {
     #[allow(clippy::len_without_is_empty)]
     pub(crate) fn len(&self) -> usize {
-        unsafe { OPENSSL_sk_num(self.as_stack()) as usize }
+        unsafe { unified_sk_num(self.as_stack()) as usize }
     }
 
     pub(crate) fn pop(&mut self) -> Option<T> {
         unsafe {
-            let ptr = OPENSSL_sk_pop(self.as_stack());
+            let ptr = unified_sk_pop(self.as_stack());
             match ptr.is_null() {
                 true => None,
                 false => Some(T::from_ptr(ptr as *mut _)),
@@ -120,7 +119,7 @@ impl<T: Stackof> ForeignRef for StackRef<T> {
 }
 
 impl<T: Stackof> StackRef<T> {
-    fn as_stack(&self) -> *mut OPENSSL_STACK {
+    fn as_stack(&self) -> STACK {
         self.as_ptr() as *mut _
     }
 }
@@ -150,7 +149,7 @@ impl<T: Stackof> Iterator for IntoStackIter<T> {
         unsafe {
             self.index
                 .next()
-                .map(|i| T::from_ptr(OPENSSL_sk_value(self.stack as *mut _, i) as *mut _))
+                .map(|i| T::from_ptr(unified_sk_value(self.stack as *mut _, i) as *mut _))
         }
     }
 }
@@ -159,7 +158,7 @@ impl<T: Stackof> Drop for IntoStackIter<T> {
     fn drop(&mut self) {
         unsafe {
             while self.next().is_some() {}
-            OPENSSL_sk_free(self.stack as *mut _);
+            unified_sk_free(self.stack as *mut _);
         }
     }
 }

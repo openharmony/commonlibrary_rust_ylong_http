@@ -20,7 +20,7 @@ use crate::util::c_openssl::error::ErrorStack;
 use crate::util::c_openssl::ssl::{
     Ssl, SslContext, SslContextBuilder, SslFiletype, SslMethod, SslVersion,
 };
-use crate::util::c_openssl::verify::PubKeyPins;
+use crate::util::c_openssl::verify::{PinsVerifyInfo, PubKeyPins};
 use crate::util::c_openssl::x509::{X509Store, X509};
 use crate::util::config::tls::DefaultCertVerifier;
 use crate::util::AlpnProtocolList;
@@ -451,7 +451,7 @@ impl TlsConfig {
         Ok(TlsSsl(ssl))
     }
 
-    pub(crate) fn pinning_host_match(&self, domain: &str) -> Option<String> {
+    pub(crate) fn pinning_host_match(&self, domain: &str) -> Option<PinsVerifyInfo> {
         match &self.pins {
             None => None,
             Some(pins) => pins.get_pin(domain),
