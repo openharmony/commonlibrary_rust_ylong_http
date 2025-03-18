@@ -18,6 +18,7 @@ mod stream;
 use core::future::Future;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use ylong_http::request::uri::Uri;
@@ -111,6 +112,9 @@ async fn dns_query(
     resolver: Arc<dyn Resolver>,
     addr: &str,
 ) -> Result<Vec<SocketAddr>, HttpClientError> {
+    if let Ok(socket_addr) = SocketAddr::from_str(addr) {
+        return Ok(vec![socket_addr]);
+    }
     let addr_fut = resolver.resolve(addr);
     let socket_addr = addr_fut.await.map_err(|e| {
         HttpClientError::from_dns_error(

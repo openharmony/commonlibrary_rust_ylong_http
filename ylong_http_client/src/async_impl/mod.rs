@@ -60,4 +60,6 @@ pub use ylong_http::body::{MultiPart, Part};
 /// Client Adapter.
 pub type Client = client::Client<HttpConnector>;
 
+#[cfg(feature = "__c_openssl")]
+pub use dns::DohResolver;
 pub use dns::{Addrs, DefaultDnsResolver, Resolver, SocketFuture, StdError};

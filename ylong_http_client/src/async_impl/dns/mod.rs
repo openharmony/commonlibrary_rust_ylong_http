@@ -21,8 +21,14 @@
 //!
 //! - [`DefaultDnsResolver`]: Default dns resolver.
 
+mod default;
+#[cfg(feature = "__c_openssl")]
+mod doh;
 mod happy_eyeballs;
 mod resolver;
 
+pub use default::DefaultDnsResolver;
+#[cfg(feature = "__c_openssl")]
+pub use doh::DohResolver;
 pub(crate) use happy_eyeballs::{EyeBallConfig, HappyEyeballs};
-pub use resolver::{Addrs, DefaultDnsResolver, Resolver, SocketFuture, StdError};
+pub use resolver::{Addrs, Resolver, SocketFuture, StdError};
