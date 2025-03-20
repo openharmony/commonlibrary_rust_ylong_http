@@ -26,6 +26,7 @@ use ylong_http::headers::Headers;
 use super::conn::StreamData;
 use crate::error::{ErrorKind, HttpClientError};
 use crate::runtime::{AsyncRead, ReadBuf, Sleep};
+use crate::util::config::HttpVersion;
 use crate::util::interceptor::Interceptors;
 use crate::util::normalizer::BodyLength;
 
@@ -171,7 +172,9 @@ impl Drop for HttpBody {
         };
         // If response body is not totally read, shutdown io.
         if let Some(io) = io {
-            io.shutdown()
+            if io.http_version() == HttpVersion::Http1 {
+                io.shutdown()
+            }
         }
     }
 }

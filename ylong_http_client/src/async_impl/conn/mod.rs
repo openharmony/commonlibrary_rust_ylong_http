@@ -24,6 +24,7 @@ use crate::async_impl::request::Message;
 use crate::async_impl::Response;
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncWrite};
+use crate::util::config::HttpVersion;
 use crate::util::dispatcher::Conn;
 use crate::util::ConnInfo;
 
@@ -31,6 +32,8 @@ pub(crate) trait StreamData: AsyncRead {
     fn shutdown(&self);
 
     fn is_stream_closable(&self) -> bool;
+
+    fn http_version(&self) -> HttpVersion;
 }
 
 // TODO: Use structures instead of a function to reuse the io buf.

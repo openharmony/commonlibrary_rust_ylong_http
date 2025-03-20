@@ -31,6 +31,7 @@ use crate::async_impl::conn::StreamData;
 use crate::async_impl::request::Message;
 use crate::async_impl::{HttpBody, Response};
 use crate::runtime::AsyncRead;
+use crate::util::config::HttpVersion;
 use crate::util::data_ref::BodyDataRef;
 use crate::util::dispatcher::http3::{DispatchErrorKind, Http3Conn, RequestWrapper, RespMessage};
 use crate::util::normalizer::BodyLengthParser;
@@ -289,6 +290,10 @@ impl<S: Sync + Send + Unpin + 'static> StreamData for TextIo<S> {
 
     fn is_stream_closable(&self) -> bool {
         self.is_closed
+    }
+
+    fn http_version(&self) -> HttpVersion {
+        HttpVersion::Http3
     }
 }
 

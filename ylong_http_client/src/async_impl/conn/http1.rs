@@ -29,6 +29,7 @@ use crate::async_impl::request::Message;
 use crate::async_impl::{HttpBody, Request, Response};
 use crate::error::HttpClientError;
 use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use crate::util::config::HttpVersion;
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::util::information::ConnInfo;
 use crate::util::interceptor::Interceptors;
@@ -314,5 +315,9 @@ impl<S: AsyncRead + Unpin> StreamData for Http1Conn<S> {
     // HTTP1 can close the "stream" after reading the data
     fn is_stream_closable(&self) -> bool {
         true
+    }
+
+    fn http_version(&self) -> HttpVersion {
+        HttpVersion::Http1
     }
 }
