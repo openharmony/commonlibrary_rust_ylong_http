@@ -429,7 +429,8 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         // TODO Distinguish between http2 connections and http1 connections.
         for dispatcher in curr.into_iter() {
             // Discard invalid dispatchers.
-            if dispatcher.is_shutdown() {
+            // Running dispatchers means tcp canceled while read and write.
+            if dispatcher.is_shutdown() || dispatcher.is_running() {
                 continue;
             }
             if conn.is_none() {
