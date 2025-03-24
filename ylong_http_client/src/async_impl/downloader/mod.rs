@@ -260,6 +260,7 @@ mod ut_downloader {
 
     use crate::async_impl::conn::StreamData;
     use crate::async_impl::{Downloader, HttpBody, Response as adpater_resp};
+    use crate::util::config::HttpVersion;
     use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
 
@@ -270,6 +271,10 @@ mod ut_downloader {
 
         fn is_stream_closable(&self) -> bool {
             true
+        }
+
+        fn http_version(&self) -> HttpVersion {
+            HttpVersion::Negotiate
         }
     }
 
