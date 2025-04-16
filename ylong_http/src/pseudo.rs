@@ -12,8 +12,9 @@
 // limitations under the License.
 
 //! HTTP [`PseudoHeaders`], HTTP/2 uses a special pseudo-header file beginning
-//! with the “:” character (ASCII 0x3a) to replace the message start line in HTTP/1.x
-//! to convey the target URI, request method, and status code of the response.
+//! with the “:” character (ASCII 0x3a) to replace the message start line in
+//! HTTP/1.x to convey the target URI, request method, and status code of the
+//! response.
 //!
 //!
 //! # Example
@@ -23,7 +24,6 @@
 //! pseudo.set_method(Some("GET".to_string()));
 //! assert_eq!(pseudo.method(), Some("GET"));
 //! ```
-//!
 
 /// [Pseudo-Header fields] that may appear in http2 and http3 header fields.
 ///
