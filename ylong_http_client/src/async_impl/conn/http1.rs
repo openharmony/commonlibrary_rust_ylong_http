@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::future::Future;
 use std::mem::take;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -28,12 +29,13 @@ use super::StreamData;
 use crate::async_impl::request::Message;
 use crate::async_impl::{HttpBody, Request, Response};
 use crate::error::HttpClientError;
-use crate::runtime::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use crate::runtime::{poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use crate::util::config::HttpVersion;
 use crate::util::dispatcher::http1::Http1Conn;
 use crate::util::information::ConnInfo;
 use crate::util::interceptor::Interceptors;
 use crate::util::normalizer::BodyLengthParser;
+use crate::ErrorKind::BodyTransfer;
 
 const TEMP_BUF_SIZE: usize = 16 * 1024;
 
@@ -67,33 +69,28 @@ where
     let (part, pre) = {
         let mut decoder = ResponseDecoder::new();
         loop {
-            let size = match conn.raw_mut().read(buf.as_mut_slice()).await {
-                Ok(0) => {
-                    conn.shutdown();
-                    return err_from_msg!(Request, "Tcp closed");
+            let size = poll_fn(|cx| {
+                if conn.speed_controller.poll_recv_pending_timeout(cx) {
+                    return Poll::Ready(Err(HttpClientError::from_str(
+                        BodyTransfer,
+                        "Below low speed limit",
+                    )));
                 }
-                Ok(size) => {
-                    if message
-                        .request
-                        .ref_mut()
-                        .time_group_mut()
-                        .transfer_end_time()
-                        .is_none()
-                    {
-                        message
-                            .request
-                            .ref_mut()
-                            .time_group_mut()
-                            .set_transfer_end(Instant::now())
-                    }
-                    size
+                let result = {
+                    let mut read_fut = Box::pin(read_status_line(
+                        &mut conn,
+                        message.request.ref_mut(),
+                        buf.as_mut_slice(),
+                    ));
+                    read_fut.as_mut().poll(cx)?
+                };
+                if let Poll::Ready(filled) = result {
+                    conn.speed_controller.reset_recv_pending_timeout();
+                    return Poll::Ready(Ok(filled));
                 }
-                Err(e) => {
-                    conn.shutdown();
-                    return err_from_io!(Request, e);
-                }
-            };
-
+                Poll::Pending
+            })
+            .await?;
             message.interceptor.intercept_output(&buf[..size])?;
             match decoder.decode(&buf[..size]) {
                 Ok(None) => {}
@@ -108,6 +105,32 @@ where
     conn.running(false);
 
     decode_response(message, part, conn, pre)
+}
+
+async fn read_status_line<S>(
+    conn: &mut Http1Conn<S>,
+    request: &mut Request,
+    buf: &mut [u8],
+) -> Result<usize, HttpClientError>
+where
+    S: AsyncRead + Sync + Send + Unpin + 'static,
+{
+    match conn.raw_mut().read(buf).await {
+        Ok(0) => {
+            conn.shutdown();
+            err_from_msg!(Request, "Tcp closed")
+        }
+        Ok(size) => {
+            if request.time_group_mut().transfer_end_time().is_none() {
+                request.time_group_mut().set_transfer_end(Instant::now())
+            }
+            Ok(size)
+        }
+        Err(e) => {
+            conn.shutdown();
+            err_from_io!(Request, e)
+        }
+    }
 }
 
 async fn encode_various_body<S>(
@@ -262,10 +285,31 @@ where
             end_body = end;
         }
         if written == buf.len() || end_body {
-            if let Err(e) = conn.raw_mut().write_all(&buf[..written]).await {
+            conn.speed_controller.init_min_send_if_not_start();
+            conn.speed_controller.init_max_send_if_not_start();
+            let write_res = poll_fn(|cx| {
+                if conn.speed_controller.poll_send_pending_timeout(cx) {
+                    return Poll::Ready(Err(HttpClientError::from_str(
+                        BodyTransfer,
+                        "Below low speed limit",
+                    )));
+                }
+                let mut write_fut = Box::pin(conn.raw_mut().write_all(&buf[..written]));
+                let write_poll = write_fut.as_mut().poll(cx);
+                if let Poll::Ready(Ok(_)) = write_poll {
+                    conn.speed_controller.reset_send_pending_timeout();
+                }
+                write_poll.map_err(|e| HttpClientError::from_error(BodyTransfer, e))
+            })
+            .await;
+            if let Err(e) = write_res {
                 conn.shutdown();
-                return err_from_io!(BodyTransfer, e);
+                return Err(e);
             }
+            if conn.speed_controller.need_limit_max_send_speed() {
+                conn.speed_controller.max_send_speed_limit(written).await;
+            }
+            conn.speed_controller.min_send_speed_limit(written)?;
             written = 0;
         }
     }
@@ -305,7 +349,34 @@ impl<S: AsyncRead + Unpin> AsyncRead for Http1Conn<S> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        Pin::new(self.raw_mut()).poll_read(cx, buf)
+        if self.speed_controller.poll_recv_pending_timeout(cx) {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                HttpClientError::from_str(BodyTransfer, "Below low speed limit"),
+            )));
+        }
+        self.speed_controller.init_min_recv_if_not_start();
+        if self
+            .speed_controller
+            .poll_max_recv_delay_time(cx)
+            .is_pending()
+        {
+            return Poll::Pending;
+        }
+        self.speed_controller.init_max_recv_if_not_start();
+        match Pin::new(self.raw_mut()).poll_read(cx, buf) {
+            Poll::Ready(Ok(_)) => {
+                let filled: usize = buf.filled().len();
+                self.speed_controller
+                    .min_recv_speed_limit(filled)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                self.speed_controller.delay_max_recv_speed_limit(filled);
+                self.speed_controller.reset_recv_pending_timeout();
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

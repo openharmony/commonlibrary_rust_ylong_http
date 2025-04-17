@@ -230,23 +230,34 @@ impl ConnManager {
         }
 
         loop {
-            match self.controller.streams.poll_read_body(cx, id)? {
-                DataReadState::Closed => {
-                    break;
-                }
-                DataReadState::Pending => {
-                    break;
-                }
-                DataReadState::Ready(data) => {
-                    self.poll_send_frame(data)?;
-                }
-                DataReadState::Finish(frame) => {
-                    self.poll_send_frame(frame)?;
-                    break;
-                }
+            match self.controller.streams.poll_read_body(cx, id) {
+                Ok(state) => match state {
+                    DataReadState::Closed => break,
+                    DataReadState::Pending => break,
+                    DataReadState::Ready(data) => self.poll_send_frame(data)?,
+                    DataReadState::Finish(frame) => {
+                        self.poll_send_frame(frame)?;
+                        break;
+                    }
+                },
+                Err(e) => return self.deal_poll_body_error(cx, e),
             }
         }
         Ok(())
+    }
+
+    fn deal_poll_body_error(
+        &mut self,
+        cx: &mut Context<'_>,
+        e: H2Error,
+    ) -> Result<(), DispatchErrorKind> {
+        match e {
+            H2Error::StreamError(id, code) => match self.manage_stream_error(cx, id, code) {
+                Poll::Ready(res) => res,
+                Poll::Pending => Ok(()),
+            },
+            H2Error::ConnectionError(e) => Err(H2Error::ConnectionError(e).into()),
+        }
     }
 
     fn poll_send_frame(&mut self, frame: Frame) -> Result<(), DispatchErrorKind> {
@@ -273,7 +284,8 @@ impl ConnManager {
             }
             _ => {}
         }
-
+        // TODO Replace with a bounded channel to avoid excessive local memory overhead
+        // when I/O is blocked in the process of uploading large files.
         self.input_tx
             .send(frame)
             .map_err(|_e| DispatchErrorKind::ChannelClosed)
@@ -556,7 +568,7 @@ impl ConnManager {
                 match self.controller.send_message_to_stream(
                     cx,
                     id,
-                    RespMessage::OutputExit(DispatchErrorKind::ChannelClosed),
+                    RespMessage::OutputExit(DispatchErrorKind::H2(H2Error::StreamError(id, code))),
                 ) {
                     Poll::Ready(_) => {
                         // error at the stream level due to early exit of the coroutine in which the

@@ -485,7 +485,7 @@ impl Streams {
         }
 
         match stream.data.poll_read(cx, buf) {
-            Poll::Ready(Some(size)) => {
+            Poll::Ready(Ok(size)) => {
                 if size > 0 {
                     let data_vec = Vec::from(&buf[..size]);
                     Ok(DataReadState::Ready(Box::new(Frame::new(
@@ -496,7 +496,7 @@ impl Streams {
                     Ok(DataReadState::Finish)
                 }
             }
-            Poll::Ready(None) => Err(DispatchErrorKind::H3(H3Error::Connection(
+            Poll::Ready(Err(_)) => Err(DispatchErrorKind::H3(H3Error::Connection(
                 H3ErrorCode::H3InternalError,
             ))),
             Poll::Pending => {

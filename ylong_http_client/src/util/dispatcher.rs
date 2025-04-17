@@ -151,6 +151,7 @@ pub(crate) mod http1 {
     use crate::runtime::Semaphore;
     #[cfg(feature = "tokio_base")]
     use crate::runtime::SemaphorePermit;
+    use crate::util::progress::SpeedController;
 
     impl<S> ConnDispatcher<S> {
         pub(crate) fn http1(io: S) -> Self {
@@ -217,13 +218,18 @@ pub(crate) mod http1 {
 
     /// Handle returned to other threads for I/O operations.
     pub(crate) struct Http1Conn<S> {
+        pub(crate) speed_controller: SpeedController,
         pub(crate) sem: Option<WrappedSemPermit>,
         pub(crate) inner: Arc<Inner<S>>,
     }
 
     impl<S> Http1Conn<S> {
         pub(crate) fn from_inner(inner: Arc<Inner<S>>) -> Self {
-            Self { sem: None, inner }
+            Self {
+                speed_controller: SpeedController::none(),
+                sem: None,
+                inner,
+            }
         }
 
         pub(crate) fn occupy_sem(&mut self, sem: WrappedSemPermit) {
@@ -331,8 +337,10 @@ pub(crate) mod http2 {
         ConnManager, FlowControl, H2StreamState, RecvData, RequestWrapper, SendData,
         StreamEndState, Streams,
     };
+    use crate::util::progress::SpeedController;
     use crate::ErrorKind::Request;
     use crate::{ConnDetail, ErrorKind, HttpClientError};
+
     const DEFAULT_MAX_FRAME_SIZE: usize = 2 << 13;
     const DEFAULT_WINDOW_SIZE: u32 = 65535;
 
@@ -375,6 +383,7 @@ pub(crate) mod http2 {
     }
 
     pub(crate) struct Http2Conn<S> {
+        pub(crate) speed_controller: SpeedController,
         pub(crate) allow_cached_frames: usize,
         // Sends frame to StreamController
         pub(crate) sender: UnboundedSender<ReqMessage>,
@@ -568,6 +577,7 @@ pub(crate) mod http2 {
             detail: ConnDetail,
         ) -> Self {
             Self {
+                speed_controller: SpeedController::none(),
                 allow_cached_frames: allow_cached_num,
                 sender,
                 receiver: RespReceiver::default(),
@@ -720,7 +730,7 @@ pub(crate) mod http2 {
                 Some(ref mut receiver) => {
                     #[cfg(feature = "tokio_base")]
                     match receiver.recv().await {
-                        None => err_from_msg!(Request, "Response Receiver Closed !"),
+                        None => err_from_msg!(Request, "Response Sender Closed !"),
                         Some(message) => match message {
                             RespMessage::Output(frame) => Ok(frame),
                             RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),
@@ -752,7 +762,7 @@ pub(crate) mod http2 {
                 #[cfg(feature = "tokio_base")]
                 match receiver.poll_recv(cx) {
                     Poll::Ready(None) => {
-                        Poll::Ready(err_from_msg!(Request, "Error receive response !"))
+                        Poll::Ready(err_from_msg!(Request, "Response Sender Closed !"))
                     }
                     Poll::Ready(Some(message)) => match message {
                         RespMessage::Output(frame) => Poll::Ready(Ok(frame)),
@@ -849,6 +859,7 @@ pub(crate) mod http3 {
     use crate::util::dispatcher::{ConnDispatcher, Dispatcher};
     use crate::util::h3::io_manager::IOManager;
     use crate::util::h3::stream_manager::StreamManager;
+    use crate::util::progress::SpeedController;
     use crate::ErrorKind::Request;
     use crate::{ConnDetail, ConnInfo, ErrorKind, HttpClientError};
 
@@ -862,6 +873,7 @@ pub(crate) mod http3 {
     }
 
     pub(crate) struct Http3Conn<S> {
+        pub(crate) speed_controller: SpeedController,
         pub(crate) sender: UnboundedSender<ReqMessage>,
         pub(crate) resp_receiver: BoundedReceiver<RespMessage>,
         pub(crate) resp_sender: BoundedSender<RespMessage>,
@@ -961,6 +973,7 @@ pub(crate) mod http3 {
             const CHANNEL_SIZE: usize = 3;
             let (resp_sender, resp_receiver) = bounded_channel(CHANNEL_SIZE);
             Self {
+                speed_controller: SpeedController::none(),
                 sender,
                 resp_sender,
                 resp_receiver,
@@ -987,7 +1000,7 @@ pub(crate) mod http3 {
         pub(crate) async fn recv_resp(&mut self) -> Result<Frame, HttpClientError> {
             #[cfg(feature = "tokio_base")]
             match self.resp_receiver.recv().await {
-                None => err_from_msg!(Request, "Response Receiver Closed !"),
+                None => err_from_msg!(Request, "Response Sender Closed !"),
                 Some(message) => match message {
                     RespMessage::Output(frame) => Ok(frame),
                     RespMessage::OutputExit(e) => Err(dispatch_client_error(e)),

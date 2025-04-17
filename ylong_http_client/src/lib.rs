@@ -83,6 +83,7 @@ pub(crate) mod runtime {
     #[cfg(all(feature = "tokio_base", feature = "async"))]
     pub(crate) use tokio::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+        macros::support::poll_fn,
         net::TcpStream,
         sync::{OwnedSemaphorePermit as SemaphorePermit, Semaphore},
         task::{spawn_blocking, JoinHandle},
@@ -90,6 +91,7 @@ pub(crate) mod runtime {
     };
     #[cfg(feature = "ylong_base")]
     pub(crate) use ylong_runtime::{
+        futures::poll_fn,
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
         net::TcpStream,
         spawn_blocking,
