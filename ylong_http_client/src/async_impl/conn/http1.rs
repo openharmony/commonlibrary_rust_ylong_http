@@ -54,6 +54,7 @@ where
         .ref_mut()
         .time_group_mut()
         .set_transfer_start(Instant::now());
+    conn.running(true);
     encode_request_part(
         message.request.ref_mut(),
         &message.interceptor,
@@ -104,6 +105,7 @@ where
             }
         }
     };
+    conn.running(false);
 
     decode_response(message, part, conn, pre)
 }
