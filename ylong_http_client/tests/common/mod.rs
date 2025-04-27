@@ -19,6 +19,7 @@ mod sync_utils;
 
 use tokio::runtime::Runtime;
 
+#[macro_export]
 macro_rules! define_service_handle {
     (
         HTTP;
