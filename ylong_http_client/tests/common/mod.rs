@@ -19,6 +19,7 @@ mod sync_utils;
 
 use tokio::runtime::Runtime;
 
+#[macro_export]
 macro_rules! define_service_handle {
     (
         HTTP;
@@ -164,6 +165,54 @@ macro_rules! start_http_server {
         let (server_tx, server_rx) = channel::<()>(1);
 
         let tcp_listener = std::net::TcpListener::bind("127.0.0.1:0").expect("server bind port failed !");
+        let addr = tcp_listener.local_addr().expect("get server local address failed!");
+        let port = addr.port();
+        let server = hyper::Server::from_tcp(tcp_listener).expect("build hyper server from tcp listener failed !");
+
+        tokio::spawn(async move {
+            let make_svc =
+                make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn($server_fn)) });
+            server
+                .serve(make_svc)
+                .with_graceful_shutdown(async {
+                    start_tx
+                        .send(())
+                        .await
+                        .expect("Start channel (Client-Half) be closed unexpectedly");
+                    client_rx
+                        .recv()
+                        .await
+                        .expect("Client channel (Client-Half) be closed unexpectedly");
+                })
+                .await
+                .expect("Start server failed");
+            server_tx
+                .send(())
+                .await
+                .expect("Server channel (Client-Half) be closed unexpectedly");
+        });
+
+        HttpHandle {
+            port,
+            server_start: start_rx,
+            client_shutdown: client_tx,
+            server_shutdown: server_rx,
+        }
+    }};
+    (
+        HTTP;
+        Ipv6;
+        $server_fn: ident
+    ) => {{
+        use hyper::service::{make_service_fn, service_fn};
+        use std::convert::Infallible;
+        use tokio::sync::mpsc::channel;
+
+        let (start_tx, start_rx) = channel::<()>(1);
+        let (client_tx, mut client_rx) = channel::<()>(1);
+        let (server_tx, server_rx) = channel::<()>(1);
+
+        let tcp_listener = std::net::TcpListener::bind("::1:0").expect("server bind port failed !");
         let addr = tcp_listener.local_addr().expect("get server local address failed!");
         let port = addr.port();
         let server = hyper::Server::from_tcp(tcp_listener).expect("build hyper server from tcp listener failed !");

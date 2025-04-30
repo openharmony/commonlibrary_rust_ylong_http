@@ -23,7 +23,6 @@ mod qpack;
 // mod octets;
 mod stream;
 
-pub use crate::pseudo::PseudoHeaders;
 pub use decoder::FrameDecoder;
 pub use encoder::FrameEncoder;
 pub use error::{DecodeError, EncodeError, H3Error, H3ErrorCode};
@@ -36,6 +35,8 @@ pub use stream::{
     FrameKind, Frames, StreamMessage, CONTROL_STREAM_TYPE, QPACK_DECODER_STREAM_TYPE,
     QPACK_ENCODER_STREAM_TYPE,
 };
+
+pub use crate::pseudo::PseudoHeaders;
 
 pub(crate) fn is_bidirectional(id: u64) -> bool {
     (id & 0x02) == 0
