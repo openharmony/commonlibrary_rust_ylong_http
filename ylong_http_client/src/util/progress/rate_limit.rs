@@ -324,9 +324,10 @@ impl SpeedLimit {
 
     pub(crate) fn limit_min_speed(&mut self, data_size: usize) -> Result<(), HttpClientError> {
         if let Some(start_time) = self.start.take() {
+            self.min_speed_start.get_or_insert(start_time);
             self.elapsed_time += start_time.elapsed();
             if self.elapsed_time >= self.period {
-                self.check_min_speed(start_time, data_size)?;
+                self.check_min_speed(data_size)?;
             } else {
                 self.period_data += data_size as u64;
             }
@@ -338,15 +339,13 @@ impl SpeedLimit {
         self.timeout = Some(Box::pin(sleep(self.min_speed_interval)));
     }
 
-    fn check_min_speed(
-        &mut self,
-        start_time: Instant,
-        data_size: usize,
-    ) -> Result<(), HttpClientError> {
+    fn check_min_speed(&mut self, data_size: usize) -> Result<(), HttpClientError> {
         self.period_data += data_size as u64;
         // The time it takes to process period_data at the minimum speed limit.
         let limited_time = Duration::from_millis(self.period_data * 1000 / self.rate);
         if self.elapsed_time > limited_time {
+            // self.min_speed_start must be Some because it was assigned before this
+            // function was called.
             if let Some(ref check_start) = self.min_speed_start {
                 let check_elapsed = check_start.elapsed();
                 // If the time at min_speed_limit exceeds min_speed_interval, an error is
@@ -354,8 +353,6 @@ impl SpeedLimit {
                 if check_elapsed > self.min_speed_interval {
                     return err_from_msg!(BodyTransfer, "Below low speed limit");
                 }
-            } else {
-                self.min_speed_start = Some(start_time);
             }
         } else {
             // If the speed exceeds min_speed_limit, min_speed_interval is reset
