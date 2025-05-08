@@ -462,7 +462,7 @@ impl Streams {
             return Err(H2Error::ConnectionError(ErrorCode::IntervalError));
         };
         match stream.data.poll_read(cx, buf) {
-            Poll::Ready(Some(size)) => {
+            Poll::Ready(Ok(size)) => {
                 if size > 0 {
                     stream.send_window.send_data(size as u32);
                     self.flow_control.send_data(size as u32);
@@ -485,7 +485,7 @@ impl Streams {
                     )))
                 }
             }
-            Poll::Ready(None) => Err(H2Error::ConnectionError(ErrorCode::IntervalError)),
+            Poll::Ready(Err(_)) => Err(H2Error::StreamError(id, ErrorCode::IntervalError)),
             Poll::Pending => {
                 self.push_back_pending_send(id);
                 Ok(DataReadState::Pending)
@@ -808,6 +808,7 @@ mod ut_streams {
     use super::*;
     use crate::async_impl::{Body, Request};
     use crate::request::RequestArc;
+    use crate::util::progress::SpeedController;
 
     fn stream_new(state: H2StreamState) -> Stream {
         Stream {
@@ -815,9 +816,10 @@ mod ut_streams {
             recv_window: RecvWindow::new(100),
             state,
             header: None,
-            data: BodyDataRef::new(RequestArc::new(
-                Request::builder().body(Body::empty()).unwrap(),
-            )),
+            data: BodyDataRef::new(
+                RequestArc::new(Request::builder().body(Body::empty()).unwrap()),
+                SpeedController::none(),
+            ),
         }
     }
 
@@ -885,7 +887,8 @@ mod ut_streams {
     /// # Brief
     /// 1. Insert streams with different states and sends go_away with a stream
     ///    id.
-    /// 2. Asserts that only streams with IDs greater than to the go_away ID are closed.
+    /// 2. Asserts that only streams with IDs greater than to the go_away ID are
+    ///    closed.
     #[test]
     fn ut_streams_get_unset_streams() {
         let mut streams = Streams::new(100, 100, FlowControl::new(100, 100));

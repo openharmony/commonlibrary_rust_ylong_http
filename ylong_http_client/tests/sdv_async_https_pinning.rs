@@ -397,7 +397,8 @@ fn sdv_client_public_key_root_pinning() {
             .expect("Runtime block on server shutdown failed");
     }
 
-    // Root certificate pinning strategy, but using the server certificate public key hash
+    // Root certificate pinning strategy, but using the server certificate public
+    // key hash.
     {
         start_server!(
             HTTPS;
