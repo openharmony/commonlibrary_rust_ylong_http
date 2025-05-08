@@ -57,13 +57,14 @@ pub(crate) unsafe fn unified_sk_free(st: STACK) {
     }
 }
 
-/// Retrieves a pointer to a stack element from a stack allocated by OpenSSL or BoringSSL at the specified index.
+/// Retrieves a pointer to a stack element from a stack allocated by OpenSSL or
+/// BoringSSL at the specified index.
 ///
 /// # Safety
 /// - `st` must be a valid pointer to a stack allocated by the same library
 ///   (OpenSSL or BoringSSL) used in this crate.
-/// - `idx` must be a valid index within the bounds of the stack.
-///   if the index is out of range, the function will return `null`.
+/// - `idx` must be a valid index within the bounds of the stack. if the index
+///   is out of range, the function will return `null`.
 pub(crate) unsafe fn unified_sk_value(st: STACK, idx: c_int) -> *mut c_void {
     #[cfg(feature = "c_boringssl")]
     {
@@ -99,8 +100,9 @@ pub(crate) unsafe fn unified_sk_num(st: STACK) -> c_int {
 /// # Safety
 /// - `st` must be a valid pointer to a stack allocated by the same library
 ///   (OpenSSL or BoringSSL) used in this crate.
-/// - The caller must check the return value of this function. If the stack is empty,
-///   the function will return `null`. The caller must handle this case appropriately.
+/// - The caller must check the return value of this function. If the stack is
+///   empty, the function will return `null`. The caller must handle this case
+///   appropriately.
 pub(crate) unsafe fn unified_sk_pop(st: STACK) -> *mut c_void {
     #[cfg(feature = "c_boringssl")]
     {

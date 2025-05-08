@@ -134,9 +134,9 @@ impl PubKeyPinsBuilder {
     /// Sets a tuple of (server, public key digest) for `PubKeyPins`, using
     /// the root certificate pinning strategy.
     /// <div class="warning">
-    /// Ensure that the server returns the complete certificate chain, including the root certificate;
-    /// otherwise, the client's public key pinning validation will fail and return an error.
-    /// </div>
+    /// Ensure that the server returns the complete certificate chain, including
+    /// the root certificate; otherwise, the client's public key pinning
+    /// validation will fail and return an error. </div>
     ///
     /// # Examples
     ///

@@ -46,6 +46,7 @@ pub(crate) mod h3;
 pub(crate) mod information;
 pub(crate) mod interceptor;
 pub(crate) mod monitor;
+pub(crate) mod progress;
 #[cfg(all(test, feature = "ylong_base"))]
 pub(crate) mod test_utils;
 

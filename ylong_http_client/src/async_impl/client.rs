@@ -461,6 +461,55 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the maximum number of bytes per second allowed for data transfer.
+    ///
+    /// By default, there is no limit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().max_speed_limit(5);
+    /// ```
+    pub fn max_speed_limit(mut self, rate: u64) -> Self {
+        self.http.speed_config.set_max_rate(rate);
+        self
+    }
+
+    /// Sets the minimum number of bytes per second allowed for data transfer.
+    ///
+    /// By default, there is no limit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().min_speed_limit(5);
+    /// ```
+    pub fn min_speed_limit(mut self, rate: u64) -> Self {
+        self.http.speed_config.set_min_rate(rate);
+        self
+    }
+
+    /// Sets the maximum time that the speed is allowed to be below
+    /// min_speed_limit, beyond which the abort is executed.
+    ///
+    /// By default, there is no limit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    ///
+    /// let builder = ClientBuilder::new().min_speed_limit(5);
+    /// ```
+    pub fn min_speed_interval(mut self, seconds: u64) -> Self {
+        self.http.speed_config.set_min_speed_interval(seconds);
+        self
+    }
+
     /// Adds a `Interceptor` to the `Client`.
     ///
     /// # Examples

@@ -19,7 +19,6 @@ use core::ops::{Deref, DerefMut, Range};
 use libc::c_int;
 
 use super::ffi::stack::{unified_sk_free, unified_sk_num, unified_sk_pop, unified_sk_value, STACK};
-
 use crate::c_openssl::foreign::{Foreign, ForeignRef, ForeignRefWrapper};
 
 pub(crate) trait Stackof: Foreign {
