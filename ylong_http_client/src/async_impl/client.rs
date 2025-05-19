@@ -161,7 +161,18 @@ impl<C: Connector> Client<C> {
         let mut request = RequestArc::new(request);
         let mut retries = self.config.retry.times().unwrap_or(0);
         loop {
-            let response = self.send_request(request.clone()).await;
+            let response = if let Some(timeout) = self.config.total_timeout.inner() {
+                TimeoutFuture::new(
+                    self.send_request(request.clone()),
+                    timeout,
+                    |response, timeout| {
+                        response.body_mut().set_total_sleep(timeout);
+                    },
+                )
+                .await
+            } else {
+                self.send_request(request.clone()).await
+            };
             if let Err(ref err) = response {
                 if retries > 0 && request.ref_mut().body_mut().reuse().await.is_ok() {
                     self.interceptors.intercept_retry(err)?;
@@ -171,6 +182,24 @@ impl<C: Connector> Client<C> {
             }
             return response;
         }
+    }
+
+    /// Enables a total timeout.
+    ///
+    /// The timeout is applied from when the request starts connection util the
+    /// response body has finished, and only affects subsequent tasks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::Client;
+    /// use ylong_http_client::{HttpClientError, Timeout};
+    ///
+    /// let mut client = Client::new();
+    /// client.total_timeout(Timeout::none());
+    /// ```
+    pub fn total_timeout(&mut self, timeout: Timeout) {
+        self.config.total_timeout = timeout;
     }
 }
 
@@ -220,7 +249,14 @@ impl<C: Connector> Client<C> {
             interceptor: Arc::clone(&self.interceptors),
         };
         if let Some(timeout) = self.config.request_timeout.inner() {
-            TimeoutFuture::new(conn::request(conn, message), timeout).await
+            TimeoutFuture::new(
+                conn::request(conn, message),
+                timeout,
+                |response, timeout| {
+                    response.body_mut().set_request_sleep(timeout);
+                },
+            )
+            .await
         } else {
             conn::request(conn, message).await
         }
@@ -340,9 +376,27 @@ impl ClientBuilder {
         self
     }
 
-    /// Enables a request timeout.
+    /// Enables a total timeout.
     ///
     /// The timeout is applied from when the request starts connection util the
+    /// response body has finished.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ylong_http_client::async_impl::ClientBuilder;
+    /// use ylong_http_client::Timeout;
+    ///
+    /// let builder = ClientBuilder::new().total_timeout(Timeout::none());
+    /// ```
+    pub fn total_timeout(mut self, timeout: Timeout) -> Self {
+        self.client.total_timeout = timeout;
+        self
+    }
+
+    /// Enables a request timeout.
+    ///
+    /// The timeout is applied from when the request is sent util the
     /// response body has finished.
     ///
     /// # Examples

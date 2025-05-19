@@ -20,23 +20,29 @@ use super::Response;
 use crate::error::HttpClientError;
 use crate::runtime::{sleep, Sleep};
 
-pub(crate) struct TimeoutFuture<T> {
+pub(crate) struct TimeoutFuture<T, F> {
     pub(crate) timeout: Option<Pin<Box<Sleep>>>,
     pub(crate) future: T,
+    pub(crate) set_timeout: Option<F>,
 }
 
-impl<T> TimeoutFuture<Pin<Box<T>>> {
-    pub(crate) fn new(future: T, timeout: Duration) -> Self {
+impl<T, F> TimeoutFuture<Pin<Box<T>>, F>
+where
+    F: FnOnce(&mut Response, Option<Pin<Box<Sleep>>>),
+{
+    pub(crate) fn new(future: T, timeout: Duration, set_timeout: F) -> Self {
         Self {
             timeout: Some(Box::pin(sleep(timeout))),
             future: Box::pin(future),
+            set_timeout: Some(set_timeout),
         }
     }
 }
 
-impl<T> Future for TimeoutFuture<T>
+impl<T, F> Future for TimeoutFuture<T, F>
 where
     T: Future<Output = Result<Response, HttpClientError>> + Unpin,
+    F: FnOnce(&mut Response, Option<Pin<Box<Sleep>>>) + Unpin,
 {
     type Output = Result<Response, HttpClientError>;
 
@@ -50,7 +56,9 @@ where
         }
         match Pin::new(&mut this.future).poll(cx) {
             Poll::Ready(Ok(mut response)) => {
-                response.body_mut().set_sleep(this.timeout.take());
+                if let Some(set_timeout) = this.set_timeout.take() {
+                    set_timeout(&mut response, this.timeout.take());
+                }
                 Poll::Ready(Ok(response))
             }
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
@@ -62,7 +70,6 @@ where
 #[cfg(all(test, feature = "ylong_base"))]
 mod ut_timeout {
     use std::sync::Arc;
-
     use ylong_http::response::status::StatusCode;
     use ylong_http::response::{Response, ResponsePart};
     use ylong_http::version::Version;
@@ -72,6 +79,9 @@ mod ut_timeout {
     use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
     use crate::HttpClientError;
+    use std::pin::Pin;
+
+    use crate::runtime::Sleep;
 
     /// UT test cases for `TimeoutFuture`.
     ///
@@ -108,11 +118,21 @@ mod ut_timeout {
         let time_future1 = TimeoutFuture {
             timeout: None,
             future: future1,
+            set_timeout: Some(
+                |response: &mut super::Response, timeout: Option<Pin<Box<Sleep>>>| {
+                    response.body_mut().set_total_sleep(timeout);
+                },
+            ),
         };
 
         let time_future2 = TimeoutFuture {
             timeout: None,
             future: future2,
+            set_timeout: Some(
+                |response: &mut super::Response, timeout: Option<Pin<Box<Sleep>>>| {
+                    response.body_mut().set_request_sleep(timeout);
+                },
+            ),
         };
 
         assert!(ylong_runtime::block_on(time_future1).is_ok());
