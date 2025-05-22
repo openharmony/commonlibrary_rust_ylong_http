@@ -284,183 +284,148 @@ impl Display for StatusCode {
 status_list!(
     /// [`100 Continue`]: https://tools.ietf.org/html/rfc7231#section-6.2.1
     (100, CONTINUE, "Continue"),
-
     /// [`101 Switching Protocols`]: https://tools.ietf.org/html/rfc7231#section-6.2.2
     (101, SWITCHING_PROTOCOLS, "Switching Protocols"),
-
     /// [`102 Processing`]: https://tools.ietf.org/html/rfc2518
     (102, PROCESSING, "Processing"),
-
     /// [`200 OK`]: https://tools.ietf.org/html/rfc7231#section-6.3.1
     (200, OK, "OK"),
-
     /// [`201 Created`]: https://tools.ietf.org/html/rfc7231#section-6.3.2
     (201, CREATED, "Created"),
-
     /// [`202 Accepted`]: https://tools.ietf.org/html/rfc7231#section-6.3.3
     (202, ACCEPTED, "Accepted"),
-
     /// [`203 Non-Authoritative Information`]: https://tools.ietf.org/html/rfc7231#section-6.3.4
-    (203, NON_AUTHORITATIVE_INFORMATION, "Non Authoritative Information"),
-
+    (
+        203,
+        NON_AUTHORITATIVE_INFORMATION,
+        "Non Authoritative Information"
+    ),
     /// [`204 No Content`]: https://tools.ietf.org/html/rfc7231#section-6.3.5
     (204, NO_CONTENT, "No Content"),
-
     /// [`205 Reset Content`]: https://tools.ietf.org/html/rfc7231#section-6.3.6
     (205, RESET_CONTENT, "Reset Content"),
-
     /// [`206 Partial Content`]: https://tools.ietf.org/html/rfc7233#section-4.1
     (206, PARTIAL_CONTENT, "Partial Content"),
-
     /// [`207 Multi-Status`]: https://tools.ietf.org/html/rfc4918
     (207, MULTI_STATUS, "Multi-Status"),
-
     /// [`208 Already Reported`]: https://tools.ietf.org/html/rfc5842
     (208, ALREADY_REPORTED, "Already Reported"),
-
     /// [`226 IM Used`]: https://tools.ietf.org/html/rfc3229
     (226, IM_USED, "IM Used"),
-
     /// [`300 Multiple Choices`]: https://tools.ietf.org/html/rfc7231#section-6.4.1
     (300, MULTIPLE_CHOICES, "Multiple Choices"),
-
     /// [`301 Moved Permanently`]: https://tools.ietf.org/html/rfc7231#section-6.4.2
     (301, MOVED_PERMANENTLY, "Moved Permanently"),
-
     /// [`302 Found`]: https://tools.ietf.org/html/rfc7231#section-6.4.3
     (302, FOUND, "Found"),
-
     /// [`303 See Other`]: https://tools.ietf.org/html/rfc7231#section-6.4.4
     (303, SEE_OTHER, "See Other"),
-
     /// [`304 Not Modified`]: https://tools.ietf.org/html/rfc7232#section-4.1
     (304, NOT_MODIFIED, "Not Modified"),
-
     /// [`305 Use Proxy`]: https://tools.ietf.org/html/rfc7231#section-6.4.5
     (305, USE_PROXY, "Use Proxy"),
-
     /// [`307 Temporary Redirect`]: https://tools.ietf.org/html/rfc7231#section-6.4.7
     (307, TEMPORARY_REDIRECT, "Temporary Redirect"),
-
     /// [`308 Permanent Redirect`]: https://tools.ietf.org/html/rfc7238
     (308, PERMANENT_REDIRECT, "Permanent Redirect"),
-
     /// [`400 Bad Request`]: https://tools.ietf.org/html/rfc7231#section-6.5.1
     (400, BAD_REQUEST, "Bad Request"),
-
     /// [`401 Unauthorized`]: https://tools.ietf.org/html/rfc7235#section-3.1
     (401, UNAUTHORIZED, "Unauthorized"),
-
     /// [`402 Payment Required`]: https://tools.ietf.org/html/rfc7231#section-6.5.2
     (402, PAYMENT_REQUIRED, "Payment Required"),
-
     /// [`403 Forbidden`]: https://tools.ietf.org/html/rfc7231#section-6.5.3
     (403, FORBIDDEN, "Forbidden"),
-
     /// [`404 Not Found`]: https://tools.ietf.org/html/rfc7231#section-6.5.4
     (404, NOT_FOUND, "Not Found"),
-
     /// [`405 Method Not Allowed`]: https://tools.ietf.org/html/rfc7231#section-6.5.5
     (405, METHOD_NOT_ALLOWED, "Method Not Allowed"),
-
     /// [`406 Not Acceptable`]: https://tools.ietf.org/html/rfc7231#section-6.5.6
     (406, NOT_ACCEPTABLE, "Not Acceptable"),
-
     /// [`407 Proxy Authentication Required`]: https://tools.ietf.org/html/rfc7235#section-3.2
-    (407, PROXY_AUTHENTICATION_REQUIRED, "Proxy Authentication Required"),
-
+    (
+        407,
+        PROXY_AUTHENTICATION_REQUIRED,
+        "Proxy Authentication Required"
+    ),
     /// [`408 Request Timeout`]: https://tools.ietf.org/html/rfc7231#section-6.5.7
     (408, REQUEST_TIMEOUT, "Request Timeout"),
-
     /// [`409 Conflict`]: https://tools.ietf.org/html/rfc7231#section-6.5.8
     (409, CONFLICT, "Conflict"),
-
     /// [`410 Gone`]: https://tools.ietf.org/html/rfc7231#section-6.5.9
     (410, GONE, "Gone"),
-
     /// [`411 Length Required`]: https://tools.ietf.org/html/rfc7231#section-6.5.10
     (411, LENGTH_REQUIRED, "Length Required"),
-
     /// [`412 Precondition Failed`]: https://tools.ietf.org/html/rfc7232#section-4.2
     (412, PRECONDITION_FAILED, "Precondition Failed"),
-
     /// [`413 Payload Too Large`]: https://tools.ietf.org/html/rfc7231#section-6.5.11
     (413, PAYLOAD_TOO_LARGE, "Payload Too Large"),
-
     /// [`414 URI Too Long`]: https://tools.ietf.org/html/rfc7231#section-6.5.12
     (414, URI_TOO_LONG, "URI Too Long"),
-
     /// [`415 Unsupported Media Type`]: https://tools.ietf.org/html/rfc7231#section-6.5.13
     (415, UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type"),
-
     /// [`416 Range Not Satisfiable`]: https://tools.ietf.org/html/rfc7233#section-4.4
     (416, RANGE_NOT_SATISFIABLE, "Range Not Satisfiable"),
-
     /// [`417 Expectation Failed`]: https://tools.ietf.org/html/rfc7231#section-6.5.14
     (417, EXPECTATION_FAILED, "Expectation Failed"),
-
     /// [`418 I'm a teapot`]: https://tools.ietf.org/html/rfc2324
     (418, IM_A_TEAPOT, "I'm a teapot"),
-
     /// [`421 Misdirected Request`]: http://tools.ietf.org/html/rfc7540#section-9.1.2
     (421, MISDIRECTED_REQUEST, "Misdirected Request"),
-
     /// [`422 Unprocessable Entity`]: https://tools.ietf.org/html/rfc4918
     (422, UNPROCESSABLE_ENTITY, "Unprocessable Entity"),
-
     /// [`423 Locked`]: https://tools.ietf.org/html/rfc4918
     (423, LOCKED, "Locked"),
-
     /// [`424 Failed Dependency`]: https://tools.ietf.org/html/rfc4918
     (424, FAILED_DEPENDENCY, "Failed Dependency"),
-
     /// [`426 Upgrade Required`]: https://tools.ietf.org/html/rfc7231#section-6.5.15
     (426, UPGRADE_REQUIRED, "Upgrade Required"),
-
     /// [`428 Precondition Required`]: https://tools.ietf.org/html/rfc6585
     (428, PRECONDITION_REQUIRED, "Precondition Required"),
-
     /// [`429 Too Many Requests`]: https://tools.ietf.org/html/rfc6585
     (429, TOO_MANY_REQUESTS, "Too Many Requests"),
-
     /// [`431 Request Header Fields Too Large`]: https://tools.ietf.org/html/rfc6585
-    (431, REQUEST_HEADER_FIELDS_TOO_LARGE, "Request Header Fields Too Large"),
-
+    (
+        431,
+        REQUEST_HEADER_FIELDS_TOO_LARGE,
+        "Request Header Fields Too Large"
+    ),
     /// [`451 Unavailable For Legal Reasons`]: http://tools.ietf.org/html/rfc7725
-    (451, UNAVAILABLE_FOR_LEGAL_REASONS, "Unavailable For Legal Reasons"),
-
+    (
+        451,
+        UNAVAILABLE_FOR_LEGAL_REASONS,
+        "Unavailable For Legal Reasons"
+    ),
     /// [`500 Internal Server Error`]: https://tools.ietf.org/html/rfc7231#section-6.6.1
     (500, INTERNAL_SERVER_ERROR, "Internal Server Error"),
-
     /// [`501 Not Implemented`]: https://tools.ietf.org/html/rfc7231#section-6.6.2
     (501, NOT_IMPLEMENTED, "Not Implemented"),
-
     /// [`502 Bad Gateway`]: https://tools.ietf.org/html/rfc7231#section-6.6.3
     (502, BAD_GATEWAY, "Bad Gateway"),
-
     /// [`503 Service Unavailable`]: https://tools.ietf.org/html/rfc7231#section-6.6.4
     (503, SERVICE_UNAVAILABLE, "Service Unavailable"),
-
     /// [`504 Gateway Timeout`]: https://tools.ietf.org/html/rfc7231#section-6.6.5
     (504, GATEWAY_TIMEOUT, "Gateway Timeout"),
-
     /// [`505 HTTP Version Not Supported`]: https://tools.ietf.org/html/rfc7231#section-6.6.6
-    (505, HTTP_VERSION_NOT_SUPPORTED, "HTTP Version Not Supported"),
-
+    (
+        505,
+        HTTP_VERSION_NOT_SUPPORTED,
+        "HTTP Version Not Supported"
+    ),
     /// [`506 Variant Also Negotiates`]: https://tools.ietf.org/html/rfc2295
     (506, VARIANT_ALSO_NEGOTIATES, "Variant Also Negotiates"),
-
     /// [`507 Insufficient Storage`]: https://tools.ietf.org/html/rfc4918
     (507, INSUFFICIENT_STORAGE, "Insufficient Storage"),
-
     /// [`508 Loop Detected`]: https://tools.ietf.org/html/rfc5842
     (508, LOOP_DETECTED, "Loop Detected"),
-
     /// [`510 Not Extended`]: https://tools.ietf.org/html/rfc2774
     (510, NOT_EXTENDED, "Not Extended"),
-
     /// [`511 Network Authentication Required`]: https://tools.ietf.org/html/rfc6585
-    (511, NETWORK_AUTHENTICATION_REQUIRED, "Network Authentication Required"),
+    (
+        511,
+        NETWORK_AUTHENTICATION_REQUIRED,
+        "Network Authentication Required"
+    ),
 );
 
 #[cfg(test)]

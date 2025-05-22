@@ -65,7 +65,8 @@ const TRAILER_SIZE: usize = 1024;
 /// ```
 pub struct HttpBody {
     kind: Kind,
-    timeout: Option<Pin<Box<Sleep>>>,
+    request_timeout: Option<Pin<Box<Sleep>>>,
+    total_timeout: Option<Pin<Box<Sleep>>>,
 }
 
 type BoxStreamData = Box<dyn StreamData + Sync + Send + Unpin>;
@@ -94,12 +95,17 @@ impl HttpBody {
         };
         Ok(Self {
             kind,
-            timeout: None,
+            request_timeout: None,
+            total_timeout: None,
         })
     }
 
-    pub(crate) fn set_sleep(&mut self, sleep: Option<Pin<Box<Sleep>>>) {
-        self.timeout = sleep;
+    pub(crate) fn set_request_sleep(&mut self, sleep: Option<Pin<Box<Sleep>>>) {
+        self.request_timeout = sleep;
+    }
+
+    pub(crate) fn set_total_sleep(&mut self, sleep: Option<Pin<Box<Sleep>>>) {
+        self.total_timeout = sleep;
     }
 }
 
@@ -115,7 +121,13 @@ impl Body for HttpBody {
             return Poll::Ready(Ok(0));
         }
 
-        if let Some(delay) = self.timeout.as_mut() {
+        if let Some(delay) = self.request_timeout.as_mut() {
+            if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
+                return Poll::Ready(err_from_io!(Timeout, std::io::ErrorKind::TimedOut.into()));
+            }
+        }
+
+        if let Some(delay) = self.total_timeout.as_mut() {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
                 return Poll::Ready(err_from_io!(Timeout, std::io::ErrorKind::TimedOut.into()));
             }
@@ -135,7 +147,13 @@ impl Body for HttpBody {
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<Headers>, Self::Error>> {
         // Get trailer data from io
-        if let Some(delay) = self.timeout.as_mut() {
+        if let Some(delay) = self.request_timeout.as_mut() {
+            if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
+                return Poll::Ready(err_from_msg!(Timeout, "Request timeout"));
+            }
+        }
+
+        if let Some(delay) = self.total_timeout.as_mut() {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
                 return Poll::Ready(err_from_msg!(Timeout, "Request timeout"));
             }

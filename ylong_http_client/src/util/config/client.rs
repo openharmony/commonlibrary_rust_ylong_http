@@ -21,6 +21,7 @@ pub(crate) struct ClientConfig {
     pub(crate) retry: Retry,
     pub(crate) connect_timeout: Timeout,
     pub(crate) request_timeout: Timeout,
+    pub(crate) total_timeout: Timeout,
 }
 
 impl ClientConfig {
@@ -31,6 +32,7 @@ impl ClientConfig {
             retry: Retry::none(),
             connect_timeout: Timeout::none(),
             request_timeout: Timeout::none(),
+            total_timeout: Timeout::none(),
         }
     }
 }
