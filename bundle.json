@@ -41,6 +41,9 @@
             "header_base": [],
             "header_files": []
           }
+        },
+        {
+          "name": "//commonlibrary/rust/ylong_http/ylong_http:ylong_http"
         }
       ],
       "test": [
