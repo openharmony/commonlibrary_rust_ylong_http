@@ -56,7 +56,7 @@ where
         .ref_mut()
         .time_group_mut()
         .set_transfer_start(Instant::now());
-    conn.running(true);
+    let mut guard = conn.cancel_guard();
     encode_request_part(
         message.request.ref_mut(),
         &message.interceptor,
@@ -102,7 +102,9 @@ where
             }
         }
     };
-    conn.running(false);
+    guard.normal_end();
+    // if task cancel occurs, we should shutdown io
+    drop(guard);
 
     decode_response(message, part, conn, pre)
 }
