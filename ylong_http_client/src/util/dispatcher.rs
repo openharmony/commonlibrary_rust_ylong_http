@@ -23,8 +23,6 @@ pub(crate) trait Dispatcher {
 
     #[allow(dead_code)]
     fn is_goaway(&self) -> bool;
-
-    fn is_running(&self) -> bool;
 }
 
 pub(crate) enum ConnDispatcher<S> {
@@ -77,19 +75,6 @@ impl<S> Dispatcher for ConnDispatcher<S> {
 
             #[cfg(feature = "http3")]
             Self::Http3(h3) => h3.is_goaway(),
-        }
-    }
-
-    fn is_running(&self) -> bool {
-        match self {
-            #[cfg(feature = "http1_1")]
-            Self::Http1(h1) => h1.is_running(),
-
-            #[cfg(feature = "http2")]
-            Self::Http2(h2) => h2.is_running(),
-
-            #[cfg(feature = "http3")]
-            Self::Http3(h3) => h3.is_running(),
         }
     }
 }
@@ -173,8 +158,6 @@ pub(crate) mod http1 {
         pub(crate) occupied: AtomicBool,
         // `shutdown` indicates that the connection need to be shut down.
         pub(crate) shutdown: AtomicBool,
-        // `running` indicates that the connection is cancelled during use.
-        pub(crate) running: AtomicBool,
     }
 
     unsafe impl<S> Sync for Inner<S> {}
@@ -186,7 +169,6 @@ pub(crate) mod http1 {
                     io: UnsafeCell::new(io),
                     occupied: AtomicBool::new(false),
                     shutdown: AtomicBool::new(false),
-                    running: AtomicBool::new(false),
                 }),
             }
         }
@@ -209,10 +191,6 @@ pub(crate) mod http1 {
 
         fn is_goaway(&self) -> bool {
             false
-        }
-
-        fn is_running(&self) -> bool {
-            self.inner.running.load(Ordering::Relaxed)
         }
     }
 
@@ -246,14 +224,40 @@ pub(crate) mod http1 {
             self.inner.shutdown.store(true, Ordering::Release);
         }
 
-        pub(crate) fn running(&self, is_run:bool) {
-            self.inner.running.store(is_run, Ordering::Release);
+        pub(crate) fn cancel_guard(&self) -> CancelGuard<S> {
+            CancelGuard {
+                inner: self.inner.clone(),
+                running: true,
+            }
         }
     }
 
     impl<S> Drop for Http1Conn<S> {
         fn drop(&mut self) {
             self.inner.occupied.store(false, Ordering::Release)
+        }
+    }
+
+    /// Http1 cancel guard
+    pub(crate) struct CancelGuard<S> {
+        inner: Arc<Inner<S>>,
+        /// Default true
+        running: bool,
+    }
+
+    impl<S> CancelGuard<S> {
+        pub(crate) fn normal_end(&mut self) {
+            self.running = false
+        }
+    }
+
+    impl<S> Drop for CancelGuard<S> {
+        fn drop(&mut self) {
+            // When a drop occurs, if running is still true, it means a cancel has occurred,
+            // and the IO needs to be shutdown to prevent the reuse of dirty data
+            if self.running {
+                self.inner.shutdown.store(true, Ordering::Release);
+            }
         }
     }
 
@@ -551,10 +555,6 @@ pub(crate) mod http2 {
 
         fn is_goaway(&self) -> bool {
             self.io_goaway.load(Ordering::Relaxed)
-        }
-
-        fn is_running(&self) -> bool {
-            todo!()
         }
     }
 
@@ -1050,10 +1050,6 @@ pub(crate) mod http3 {
 
         fn is_goaway(&self) -> bool {
             self.io_goaway.load(Ordering::Relaxed)
-        }
-
-        fn is_running(&self) -> bool {
-            todo!()
         }
     }
 

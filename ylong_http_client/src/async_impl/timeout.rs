@@ -69,19 +69,19 @@ where
 
 #[cfg(all(test, feature = "ylong_base"))]
 mod ut_timeout {
+    use std::pin::Pin;
     use std::sync::Arc;
+
     use ylong_http::response::status::StatusCode;
     use ylong_http::response::{Response, ResponsePart};
     use ylong_http::version::Version;
 
     use crate::async_impl::timeout::TimeoutFuture;
     use crate::async_impl::HttpBody;
+    use crate::runtime::Sleep;
     use crate::util::interceptor::IdleInterceptor;
     use crate::util::normalizer::BodyLength;
     use crate::HttpClientError;
-    use std::pin::Pin;
-
-    use crate::runtime::Sleep;
 
     /// UT test cases for `TimeoutFuture`.
     ///

@@ -306,16 +306,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
                 let mut data = stream.conn_data();
                 let time_group = take(data.time_group_mut());
 
-                let protocol = if let Some(bytes) = data.negotiate().alpn() {
-                    bytes
-                } else {
-                    let dispatcher = ConnDispatcher::http1(stream);
-                    return Ok(TimeInfoConn::new(
-                        self.dispatch_h1_conn(dispatcher, permit),
-                        time_group,
-                    ));
-                };
-
+                let protocol = data.negotiate().alpn().unwrap_or(b"http/1.1");
                 if protocol == b"http/1.1" {
                     let dispatcher = ConnDispatcher::http1(stream);
                     Ok(TimeInfoConn::new(
@@ -448,8 +439,7 @@ impl<S: AsyncRead + AsyncWrite + ConnInfo + Unpin + Send + Sync + 'static> Conns
         // TODO Distinguish between http2 connections and http1 connections.
         for dispatcher in curr.into_iter() {
             // Discard invalid dispatchers.
-            // Running dispatchers means tcp canceled while read and write.
-            if dispatcher.is_shutdown() || dispatcher.is_running() {
+            if dispatcher.is_shutdown() {
                 continue;
             }
             if conn.is_none() {
