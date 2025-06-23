@@ -27,7 +27,8 @@
     "deps": {
       "components": [
         "ylong_runtime",
-        "openssl"
+        "openssl",
+        "rust_libc"
       ]
     },
     "build": {

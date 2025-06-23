@@ -32,13 +32,11 @@ ohos_rust_shared_library("ylong_http_client_inner") {
   ]
 
   sources = [ "src/lib.rs" ]
-  deps = [
-    "../ylong_http:ylong_http",
-    "//third_party/rust/crates/libc:lib",
-  ]
+  deps = [ "../ylong_http:ylong_http" ]
   external_deps = [
     "openssl:libcrypto_shared",
     "openssl:libssl_shared",
+    "rust_libc:lib",
     "ylong_runtime:ylong_runtime",
   ]
 }
@@ -59,11 +57,11 @@ ohos_rust_unittest("rust_ylong_http_client_test_ut") {
   sources = [ "src/lib.rs" ]
   deps = [
     "../ylong_http:ylong_http",
-    "//third_party/rust/crates/libc:lib",
   ]
   external_deps = [
     "openssl:libcrypto_shared",
     "openssl:libssl_shared",
+    "rust_libc:lib",
     "ylong_runtime:ylong_runtime",
   ]
 }
