@@ -352,11 +352,7 @@ impl Body {
 
     #[cfg(feature = "http2")]
     pub(crate) fn is_empty(&self) -> bool {
-        match self.inner {
-            BodyKind::Empty => true,
-            BodyKind::Slice(ref text) => text.get_ref().len() as u64 == text.position(),
-            _ => false,
-        }
+        matches!(self.inner, BodyKind::Empty)
     }
 
     pub(crate) async fn reuse(&mut self) -> std::io::Result<()> {
@@ -527,47 +523,5 @@ mod ut_client_request {
             encoded,
             "https://www.example.com/data/%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.txt"
         );
-    }
-
-    /// UT test cases for `Body::is_empty`.
-    ///
-    /// # Brief
-    /// 1. Creates a `Body`.
-    /// 2. Checks if result is correct.
-    #[test]
-    #[cfg(feature = "http2")]
-    fn ut_body_empty() {
-        use std::pin::Pin;
-        use std::task::Poll;
-        use ylong_runtime::io::AsyncRead;
-
-        let empty = Body::empty();
-        assert!(empty.is_empty());
-        let empty_slice = Body::slice("");
-        assert!(empty_slice.is_empty());
-        let mut data_slice = Body::slice("hello");
-        assert!(!data_slice.is_empty());
-        ylong_runtime::block_on(async move {
-            let mut container = [0u8; 5];
-            let mut curr = 0;
-            loop {
-                let mut buf = ylong_runtime::io::ReadBuf::new(&mut container[curr..]);
-                let size = ylong_runtime::futures::poll_fn(|cx| {
-                    match Pin::new(&mut data_slice).poll_read(cx, &mut buf) {
-                        Poll::Ready(_) => {
-                            let size = buf.filled().len();
-                            Poll::Ready(size)
-                        }
-                        Poll::Pending => Poll::Pending,
-                    }
-                })
-                .await;
-                curr += size;
-                if curr == 5 {
-                    break;
-                }
-            }
-            assert!(data_slice.is_empty());
-        });
     }
 }
