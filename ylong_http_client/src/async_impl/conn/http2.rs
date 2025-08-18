@@ -55,8 +55,9 @@ where
     let part = message.request.ref_mut().part().clone();
 
     // TODO Implement trailer.
-    let is_end_stream = message.request.ref_mut().body().is_empty();
-    let (flag, payload) = build_headers_payload(part, is_end_stream)
+    let is_body_empty = message.request.ref_mut().body().is_empty();
+    let no_length = message.request.ref_mut().headers().get("content-length").is_none();
+    let (flag, payload) = build_headers_payload(part, is_body_empty && no_length)
         .map_err(|e| HttpClientError::from_error(ErrorKind::Request, e))?;
     let data = BodyDataRef::new(message.request.clone(), conn.speed_controller.clone());
     let stream = RequestWrapper {
