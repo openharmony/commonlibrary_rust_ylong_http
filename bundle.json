@@ -3,8 +3,8 @@
   "version": "4.0",
   "description": "ylong HTTP implementation",
   "publishAs": "code-segment",
-  "homePage": "https://gitee.com/openharmony",
-  "repository": "https://gitee.com/openharmony/commonlibrary_rust_ylong_http",
+  "homePage": "https://gitcode.com/openharmony",
+  "repository": "https://gitcode.com/openharmony/commonlibrary_rust_ylong_http",
   "license": "Apache License 2.0",
   "language": "Rust",
   "segment": {
