@@ -21,6 +21,8 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
+#[cfg(target_os = "linux")]
+use libc::{gid_t, uid_t};
 use ylong_http::request::uri::Uri;
 #[cfg(feature = "http3")]
 use ylong_runtime::net::{ConnectedUdpSocket, UdpSocket};
@@ -108,6 +110,27 @@ async fn tcp_stream(eyeballs: HappyEyeballs) -> Result<TcpStream, HttpClientErro
         })
 }
 
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+async fn tcp_stream_with_owner(
+    eyeballs: HappyEyeballs,
+    uid: uid_t,
+    gid: gid_t,
+) -> Result<TcpStream, HttpClientError> {
+    eyeballs
+        .connect_with_owner(uid, gid)
+        .await
+        .map_err(|e| {
+            if format!("{}", e).contains("failed to lookup address information") {
+                return HttpClientError::from_dns_error(crate::ErrorKind::Connect, e);
+            }
+            HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
+        })
+        .and_then(|stream| match stream.set_nodelay(true) {
+            Ok(()) => Ok(stream),
+            Err(e) => err_from_io!(Connect, e),
+        })
+}
+
 async fn dns_query(
     resolver: Arc<dyn Resolver>,
     addr: &str,
@@ -132,6 +155,18 @@ async fn eyeballs_connect(
     let eyeball_config = EyeBallConfig::new(timeout.inner(), None);
     let happy_eyeballs = HappyEyeballs::new(addrs, eyeball_config);
     tcp_stream(happy_eyeballs).await
+}
+
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+async fn eyeballs_connect_with_owner(
+    addrs: Vec<SocketAddr>,
+    timeout: Timeout,
+    uid: uid_t,
+    gid: gid_t,
+) -> Result<TcpStream, HttpClientError> {
+    let eyeball_config = EyeBallConfig::new(timeout.inner(), None);
+    let happy_eyeballs = HappyEyeballs::new(addrs, eyeball_config);
+    tcp_stream_with_owner(happy_eyeballs, uid, gid).await
 }
 
 #[cfg(feature = "http3")]
@@ -221,18 +256,16 @@ mod tls {
     use std::fmt::{Debug, Display, Formatter};
     use std::io::{Error, ErrorKind, Write};
     use std::time::Instant;
-
     use ylong_http::request::uri::{Scheme, Uri};
-
     use super::{eyeballs_connect, Connector, HttpConnector};
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+    use super::eyeballs_connect_with_owner;
     use crate::async_impl::connector::dns_query;
     use crate::async_impl::connector::stream::HttpStream;
     use crate::async_impl::mix::MixStream;
     #[cfg(feature = "http3")]
     use crate::async_impl::quic::QuicConn;
     use crate::async_impl::ssl_stream::AsyncSslStream;
-    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
-    use crate::config::FchownConfig;
     use crate::runtime::{AsyncReadExt, AsyncWriteExt, TcpStream};
     use crate::util::config::HttpVersion;
     #[cfg(feature = "http2")]
@@ -272,12 +305,21 @@ mod tls {
                     let socket_addrs = dns_query(resolver, addr.as_str()).await?;
                     time_group.set_dns_end(Instant::now());
                     time_group.set_tcp_start(Instant::now());
+                    #[cfg(not(all(
+                        target_os = "linux",
+                        feature = "ylong_base",
+                        feature = "__tls"
+                    )))]
                     let stream = eyeballs_connect(socket_addrs, timeout).await?;
-                    time_group.set_tcp_end(Instant::now());
                     #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
-                    if let Some(fchown) = fchown {
-                        let _ = stream.fchown(fchown.uid, fchown.gid);
-                    }
+                    let stream = if let Some(fchown) = fchown {
+                        eyeballs_connect_with_owner(socket_addrs, timeout, fchown.uid, fchown.gid)
+                            .await?
+                    } else {
+                        eyeballs_connect(socket_addrs, timeout).await?
+                    };
+
+                    time_group.set_tcp_end(Instant::now());
 
                     let local = stream.local_addr().map_err(|e| {
                         HttpClientError::from_io_error(crate::ErrorKind::Connect, e)
@@ -368,37 +410,36 @@ mod tls {
                         let socket_addrs = dns_query(resolver, addr.as_str()).await?;
                         time_group.set_dns_end(Instant::now());
                         time_group.set_tcp_start(Instant::now());
+                        #[cfg(not(all(target_os = "linux", feature = "ylong_base", feature = "__tls")))]
                         let stream = eyeballs_connect(socket_addrs, timeout).await?;
-                        time_group.set_tcp_end(Instant::now());
-                        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
-                        {
-                            https_connect(
-                                config,
-                                addr,
-                                stream,
-                                is_proxy,
-                                (auth, host, port),
-                                fchown,
-                                time_group,
-                            )
-                            .await
-                        }
-                        #[cfg(not(all(
+                        #[cfg(all(
                             target_os = "linux",
                             feature = "ylong_base",
-                            feature = "__tls"
-                        )))]
-                        {
-                            https_connect(
-                                config,
-                                addr,
-                                stream,
-                                is_proxy,
-                                (auth, host, port),
-                                time_group,
+                            feature = "__tls",
+                        ))]
+                        let stream = if let Some(fchown) = fchown {
+                            eyeballs_connect_with_owner(
+                                socket_addrs,
+                                timeout,
+                                fchown.uid,
+                                fchown.gid,
                             )
-                            .await
-                        }
+                            .await?
+                        } else {
+                            eyeballs_connect(socket_addrs, timeout).await?
+                        };
+
+                        time_group.set_tcp_end(Instant::now());
+
+                        https_connect(
+                            config,
+                            addr,
+                            stream,
+                            is_proxy,
+                            (auth, host, port),
+                            time_group,
+                        )
+                        .await
                     })
                 }
             }
@@ -411,16 +452,9 @@ mod tls {
         tcp_stream: TcpStream,
         is_proxy: bool,
         (auth, host, port): (Option<String>, String, u16),
-        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))] fchown: Option<
-            FchownConfig,
-        >,
         mut time_group: TimeGroup,
     ) -> Result<HttpStream<MixStream>, HttpClientError> {
         let mut tcp = tcp_stream;
-        #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
-        if let Some(fchown) = fchown {
-            let _ = tcp.fchown(fchown.uid, fchown.gid);
-        }
         let local = tcp
             .local_addr()
             .map_err(|e| HttpClientError::from_io_error(crate::ErrorKind::Connect, e))?;

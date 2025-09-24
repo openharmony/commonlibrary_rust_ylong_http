@@ -20,6 +20,9 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 
+#[cfg(target_os = "linux")]
+use libc::{gid_t, uid_t};
+
 use crate::async_impl::dns::resolver::ResolvedAddrs;
 use crate::runtime::{Sleep, TcpStream};
 
@@ -114,6 +117,25 @@ impl RemoteAddrs {
         let mut unexpected = None;
         for addr in self.addrs.iter() {
             match connect(addr, self.timeout).await {
+                Ok(stream) => {
+                    return Ok(stream);
+                }
+                Err(e) => {
+                    unexpected = Some(e);
+                }
+            }
+        }
+        match unexpected {
+            None => Err(Error::new(ErrorKind::NotConnected, "Invalid domain")),
+            Some(e) => Err(e),
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+    async fn connect_with_owner(&mut self, uid: uid_t, gid: gid_t) -> Result<TcpStream, io::Error> {
+        let mut unexpected = None;
+        for addr in self.addrs.iter() {
+            match connect_with_owner(addr, self.timeout, uid, gid).await {
                 Ok(stream) => {
                     return Ok(stream);
                 }
@@ -229,6 +251,47 @@ impl HappyEyeballs {
             }
         }
     }
+
+    #[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+    pub(crate) async fn connect_with_owner(
+        mut self,
+        uid: uid_t,
+        gid: gid_t,
+    ) -> io::Result<TcpStream> {
+        match self.delay_addr {
+            None => self.preferred_addr.connect_with_owner(uid, gid).await,
+            Some(mut second_addrs) => {
+                let preferred_fut = self.preferred_addr.connect_with_owner(uid, gid);
+                let second_fut = second_addrs.addrs.connect_with_owner(uid, gid);
+                let delay_fut = second_addrs.delay;
+
+                let (stream, stream_fut) = ylong_runtime::select! {
+                    preferred = preferred_fut => {
+                        (preferred, second_fut)
+                    },
+                    _ = delay_fut => {
+                        let preferred_fut = self.preferred_addr.connect_with_owner(uid, gid);
+                        ylong_runtime::select! {
+                            preferred = preferred_fut => {
+                                let second_fut = second_addrs.addrs.connect_with_owner(uid, gid);
+                                (preferred, second_fut)
+                            },
+                            second = second_fut => {
+                                let preferred_fut = self.preferred_addr.connect_with_owner(uid, gid);
+                                (second, preferred_fut)
+                            },
+                        }
+                    },
+                };
+
+                if stream.is_err() {
+                    stream_fut.await
+                } else {
+                    stream
+                }
+            }
+        }
+    }
 }
 
 fn connect(
@@ -236,6 +299,26 @@ fn connect(
     timeout: Option<Duration>,
 ) -> impl Future<Output = io::Result<TcpStream>> {
     let stream_fut = TcpStream::connect(*addr);
+    async move {
+        match timeout {
+            None => stream_fut.await,
+            Some(duration) => match crate::runtime::timeout(duration, stream_fut).await {
+                Ok(Ok(result)) => Ok(result),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(io::Error::new(ErrorKind::TimedOut, e)),
+            },
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
+fn connect_with_owner(
+    addr: &SocketAddr,
+    timeout: Option<Duration>,
+    uid: uid_t,
+    gid: gid_t,
+) -> impl Future<Output = io::Result<TcpStream>> {
+    let stream_fut = TcpStream::connect_with_owner(*addr, uid, gid);
     async move {
         match timeout {
             None => stream_fut.await,
