@@ -607,4 +607,27 @@ mod ut_hpack_decoder {
         let res = decoder.decode(&buf);
         assert!(res.is_ok());
     }
+
+    /// UT test cases for `HpackDecoder`.
+    ///
+    /// # Brief
+    /// 1. Creates a header buf with access-control-allow-origin `0x94`.
+    /// 2. Calls `HpackDecoder::decode()` function, passing in the specified
+    /// parameters.
+    /// 3. Checks if the test result is correct.
+    #[test]
+    fn ut_decode_index_repr_without_value() {
+        let mut decoder = HpackDecoder::with_max_size(1000, 2000);
+        //access-control-allow-origin without value
+        // access-control-allow-origin
+        // :status 410
+        let buf = [0x94, 0x4E, 0x82, 0x68, 0x20, 0x40];
+        let res = decoder.decode(&buf);
+        assert!(res.is_ok());
+        let (pseudo, header) = decoder.lines.parts.clone().into_parts();
+        assert_eq!(pseudo.status(), Some("410"));
+        assert!(header
+            .get("access-control-allow-origin")
+            .is_some_and(|v| v.to_vec().is_empty()))
+    }
 }

@@ -299,6 +299,7 @@ impl StaticTable {
     /// Tries to get a `Header` and a value by the given index.
     fn header(index: usize) -> Option<(Header, String)> {
         match index {
+            1 => Some((Header::Authority, String::from(""))),
             2 => Some((Header::Method, String::from("GET"))),
             3 => Some((Header::Method, String::from("POST"))),
             4 => Some((Header::Path, String::from("/"))),
@@ -312,9 +313,124 @@ impl StaticTable {
             12 => Some((Header::Status, String::from("400"))),
             13 => Some((Header::Status, String::from("404"))),
             14 => Some((Header::Status, String::from("500"))),
+            15 => Some((
+                Header::Other(String::from("accept-charset")),
+                String::from(""),
+            )),
             16 => Some((
                 Header::Other(String::from("accept-encoding")),
                 String::from("gzip, deflate"),
+            )),
+            17 => Some((
+                Header::Other(String::from("accept-language")),
+                String::from(""),
+            )),
+            18 => Some((
+                Header::Other(String::from("accept-ranges")),
+                String::from(""),
+            )),
+            19 => Some((Header::Other(String::from("accept")), String::from(""))),
+            20 => Some((
+                Header::Other(String::from("access-control-allow-origin")),
+                String::from(""),
+            )),
+            21 => Some((Header::Other(String::from("age")), String::from(""))),
+            22 => Some((Header::Other(String::from("allow")), String::from(""))),
+            23 => Some((
+                Header::Other(String::from("authorization")),
+                String::from(""),
+            )),
+            24 => Some((
+                Header::Other(String::from("cache-control")),
+                String::from(""),
+            )),
+            25 => Some((
+                Header::Other(String::from("content-disposition")),
+                String::from(""),
+            )),
+            26 => Some((
+                Header::Other(String::from("content-encoding")),
+                String::from(""),
+            )),
+            27 => Some((
+                Header::Other(String::from("content-language")),
+                String::from(""),
+            )),
+            28 => Some((
+                Header::Other(String::from("content-length")),
+                String::from(""),
+            )),
+            29 => Some((
+                Header::Other(String::from("content-location")),
+                String::from(""),
+            )),
+            30 => Some((
+                Header::Other(String::from("content-range")),
+                String::from(""),
+            )),
+            31 => Some((
+                Header::Other(String::from("content-type")),
+                String::from(""),
+            )),
+            32 => Some((Header::Other(String::from("cookie")), String::from(""))),
+            33 => Some((Header::Other(String::from("date")), String::from(""))),
+            34 => Some((Header::Other(String::from("etag")), String::from(""))),
+            35 => Some((Header::Other(String::from("expect")), String::from(""))),
+            36 => Some((Header::Other(String::from("expires")), String::from(""))),
+            37 => Some((Header::Other(String::from("from")), String::from(""))),
+            38 => Some((Header::Other(String::from("host")), String::from(""))),
+            39 => Some((Header::Other(String::from("if-match")), String::from(""))),
+            40 => Some((
+                Header::Other(String::from("if-modified-since")),
+                String::from(""),
+            )),
+            41 => Some((
+                Header::Other(String::from("if-none-match")),
+                String::from(""),
+            )),
+            42 => Some((Header::Other(String::from("if-range")), String::from(""))),
+            43 => Some((
+                Header::Other(String::from("if-unmodified-since")),
+                String::from(""),
+            )),
+            44 => Some((
+                Header::Other(String::from("last-modified")),
+                String::from(""),
+            )),
+            45 => Some((Header::Other(String::from("link")), String::from(""))),
+            46 => Some((Header::Other(String::from("location")), String::from(""))),
+            47 => Some((
+                Header::Other(String::from("max-forwards")),
+                String::from(""),
+            )),
+            48 => Some((
+                Header::Other(String::from("proxy-authenticate")),
+                String::from(""),
+            )),
+            49 => Some((
+                Header::Other(String::from("proxy-authorization")),
+                String::from(""),
+            )),
+            50 => Some((Header::Other(String::from("range")), String::from(""))),
+            51 => Some((Header::Other(String::from("referer")), String::from(""))),
+            52 => Some((Header::Other(String::from("refresh")), String::from(""))),
+            53 => Some((Header::Other(String::from("retry-after")), String::from(""))),
+            54 => Some((Header::Other(String::from("server")), String::from(""))),
+            55 => Some((Header::Other(String::from("set-cookie")), String::from(""))),
+            56 => Some((
+                Header::Other(String::from("strict-transport-security")),
+                String::from(""),
+            )),
+            57 => Some((
+                Header::Other(String::from("transfer-encoding")),
+                String::from(""),
+            )),
+            58 => Some((Header::Other(String::from("user-agent")), String::from(""))),
+            59 => Some((Header::Other(String::from("vary")), String::from(""))),
+            60 => Some((Header::Other(String::from("via")), String::from(""))),
+            61 => Some((
+                Header::Other(String::from("www-authenticate")),
+                String::from(""),
             )),
             _ => None,
         }
@@ -557,15 +673,17 @@ mod ut_dynamic_table {
             } else {
                 assert!(StaticTable::header_name(index).is_none())
             }
+            assert!(StaticTable::header_name(0).is_none())
         }
 
         // Checking headers for indices 2 to 19
-        for index in 2..20 {
-            if index < 17 && index != 15 {
+        for index in 1..65 {
+            if index < 62 {
                 assert!(StaticTable::header(index).is_some())
             } else {
                 assert!(StaticTable::header(index).is_none())
             }
+            assert!(StaticTable::header(0).is_none())
         }
     }
 }
