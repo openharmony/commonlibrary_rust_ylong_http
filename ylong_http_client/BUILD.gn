@@ -21,6 +21,15 @@ ohos_rust_shared_library("ylong_http_client_inner") {
   crate_name = "ylong_http_client_inner"
   edition = "2021"
 
+  sanitize = {
+    integer_overflow = true
+    ubsan = true
+    boundary_sanitize = true
+    cfi = true
+    cfi_cross_dso = true
+    debug = false
+  }
+  
   features = [
     "async",
     "c_openssl_3_0",
