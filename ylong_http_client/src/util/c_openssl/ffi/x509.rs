@@ -36,9 +36,9 @@ extern "C" {
 
     pub(crate) fn EVP_DigestFinal_ex(
         ctx: *mut EVP_MD_CTX,
-        buf: *const c_uchar,
-        start: *const c_uint,
-    );
+        buf: *mut c_uchar,
+        out_len: *mut c_uint,
+    ) -> c_int;
 }
 
 pub(crate) enum C_X509 {}
@@ -149,5 +149,5 @@ extern "C" {
 
     pub(crate) fn X509_PUBKEY_free(x509: *mut X509_PUBKEY);
 
-    pub(crate) fn i2d_X509_PUBKEY(pubkey: *const X509_PUBKEY, buf: *mut *const c_uchar) -> c_int;
+    pub(crate) fn i2d_X509_PUBKEY(pubkey: *const X509_PUBKEY, buf: *mut *mut c_uchar) -> c_int;
 }

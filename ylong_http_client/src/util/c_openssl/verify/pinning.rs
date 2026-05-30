@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use libc::c_int;
+use libc::{c_int, c_uint};
 use ylong_http::request::uri::Uri;
 
 use crate::util::c_openssl::error::ErrorStack;
@@ -24,6 +24,9 @@ use crate::util::c_openssl::ffi::x509::{
 use crate::util::c_openssl::ssl::{InternalError, SslError, SslErrorCode};
 use crate::ErrorKind::Build;
 use crate::HttpClientError;
+
+/// OpenSSL EVP digest functions convention: 1 for success, 0 for failure.
+const EVP_DIGEST_SUCCESS: c_int = 1;
 
 /// A structure that serves Certificate and Public Key Pinning.
 /// The map key is server authority(host:port), value is Base64(sha256(Server's
@@ -248,20 +251,31 @@ pub(crate) unsafe fn sha256_digest(
             internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
-    let init = EVP_DigestInit(md_ctx, EVP_sha256());
-    if init == 0 {
+    if EVP_DigestInit(md_ctx, EVP_sha256()) != EVP_DIGEST_SUCCESS {
         EVP_MD_CTX_free(md_ctx);
         return Err(SslError {
             code: SslErrorCode::SSL,
             internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
-    EVP_DigestUpdate(md_ctx, pub_key.as_ptr(), len);
+    if EVP_DigestUpdate(md_ctx, pub_key.as_ptr(), len) != EVP_DIGEST_SUCCESS {
+        EVP_MD_CTX_free(md_ctx);
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
+        });
+    }
 
-    let start = 0;
-    EVP_DigestFinal_ex(md_ctx, digest.as_mut_ptr(), &start);
-
+    let mut out_len: c_uint = 0;
+    let final_ret = EVP_DigestFinal_ex(md_ctx, digest.as_mut_ptr(), &mut out_len);
     EVP_MD_CTX_free(md_ctx);
+
+    if final_ret != EVP_DIGEST_SUCCESS {
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
+        });
+    }
 
     Ok(())
 }
