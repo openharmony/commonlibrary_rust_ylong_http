@@ -112,9 +112,9 @@ impl SslRef {
         unsafe { SSL_get_rbio(self.as_ptr()) }
     }
 
-    pub(crate) fn read(&mut self, buf: &[u8]) -> c_int {
+    pub(crate) fn read(&mut self, buf: &mut [u8]) -> c_int {
         let len = cmp::min(c_int::MAX as usize, buf.len()) as c_int;
-        unsafe { SSL_read(self.as_ptr(), buf.as_ptr() as *mut c_void, len) }
+        unsafe { SSL_read(self.as_ptr(), buf.as_mut_ptr() as *mut c_void, len) }
     }
 
     pub(crate) fn write(&mut self, buf: &[u8]) -> c_int {
