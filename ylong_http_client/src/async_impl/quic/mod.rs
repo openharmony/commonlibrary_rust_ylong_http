@@ -100,6 +100,12 @@ impl QuicConn {
                 false,
             ) as *mut quiche::Connection
         };
+        if conn.is_null() {
+            return Err(HttpClientError::from_str(
+                ErrorKind::Connect,
+                "Quic connect error",
+            ));
+        }
         let mut conn = QuicConn {
             inner: unsafe { *Box::from_raw(conn) },
         };
