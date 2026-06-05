@@ -305,6 +305,13 @@ pub(crate) fn verify_server_cert(ssl: *const SSL, pinned_key: &str) -> Result<()
 
 fn verify_pinned_pubkey(pinned_key: &str, certificate: *mut C_X509) -> Result<(), SslError> {
     let pubkey = unsafe { X509_get_X509_PUBKEY(certificate) };
+    if pubkey.is_null() {
+        unsafe { X509_free(certificate) };
+        return Err(SslError {
+            code: SslErrorCode::SSL,
+            internal: Some(InternalError::Ssl(ErrorStack::get())),
+        });
+    }
     // Get the length of the serialized data
     let buf_size = unsafe { i2d_X509_PUBKEY(pubkey, ptr::null_mut()) };
 
@@ -315,9 +322,10 @@ fn verify_pinned_pubkey(pinned_key: &str, certificate: *mut C_X509) -> Result<()
             internal: Some(InternalError::Ssl(ErrorStack::get())),
         });
     }
-    let key = vec![0u8; buf_size as usize];
+    let mut key = vec![0u8; buf_size as usize];
+    let mut key_ptr = key.as_mut_ptr();
     // The actual serialization
-    let serialized_data_size = unsafe { i2d_X509_PUBKEY(pubkey, &mut key.as_ptr()) };
+    let serialized_data_size = unsafe { i2d_X509_PUBKEY(pubkey, &mut key_ptr) };
 
     if buf_size != serialized_data_size || serialized_data_size <= 0 {
         unsafe { X509_free(certificate) };
