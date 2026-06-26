@@ -18,6 +18,7 @@ const TLS1_1_VERSION: c_int = 0x302;
 const TLS1_2_VERSION: c_int = 0x303;
 const TLS1_3_VERSION: c_int = 0x304;
 
+#[derive(Clone, Copy)]
 pub(crate) struct SslVersion(pub c_int);
 
 impl SslVersion {

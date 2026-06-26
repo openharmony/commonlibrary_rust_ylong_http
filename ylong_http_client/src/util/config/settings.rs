@@ -448,6 +448,204 @@ impl ProxyBuilder {
         self
     }
 
+    /// Sets a CA certificate file used to verify the HTTPS proxy server.
+    ///
+    /// This option is applied only to the TLS connection between the client and
+    /// an `https://` proxy. It does not change the TLS verification settings of
+    /// the final HTTPS origin server. Use `ClientBuilder::tls_ca_file` for
+    /// origin-server TLS verification.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_ca_file(mut self, path: &str) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.proxy_ca_file(path);
+            proxy
+        });
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_ca_file(mut self, _path: &str) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Sets the client certificate and private key used for HTTPS proxy mTLS.
+    ///
+    /// The identity is sent to the proxy server during the proxy TLS
+    /// handshake. It is independent from the certificate configuration used for
+    /// the final HTTPS origin server.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_identity(
+        mut self,
+        cert_path: &str,
+        key_path: &str,
+        file_type: crate::TlsFileType,
+    ) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.proxy_identity(cert_path, key_path, file_type);
+            proxy
+        });
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_identity<T>(mut self, _cert_path: &str, _key_path: &str, _file_type: T) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Sets the cipher list used by the HTTPS proxy TLS connection.
+    ///
+    /// This controls the TLS handshake with an `https://` proxy only. It does
+    /// not change the cipher configuration used when connecting to the final
+    /// HTTPS origin server.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_cipher_list(mut self, list: &str) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.proxy_cipher_list(list);
+            proxy
+        });
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_cipher_list(mut self, _list: &str) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Sets the minimum TLS version used by the HTTPS proxy TLS connection.
+    ///
+    /// This option limits the TLS version negotiated with an `https://` proxy
+    /// only. Use the client TLS version settings for the final HTTPS origin
+    /// server.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_min_tls_version(mut self, version: crate::TlsVersion) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.proxy_min_tls_version(version);
+            proxy
+        });
+        self
+    }
+
+    /// Alias of `proxy_min_tls_version`.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_min_proto_version(self, version: crate::TlsVersion) -> Self {
+        self.proxy_min_tls_version(version)
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_min_tls_version<T>(mut self, _version: T) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_min_proto_version<T>(self, version: T) -> Self {
+        self.proxy_min_tls_version(version)
+    }
+
+    /// Sets the maximum TLS version used by the HTTPS proxy TLS connection.
+    ///
+    /// This option limits the TLS version negotiated with an `https://` proxy
+    /// only. Use the client TLS version settings for the final HTTPS origin
+    /// server.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_max_tls_version(mut self, version: crate::TlsVersion) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.proxy_max_tls_version(version);
+            proxy
+        });
+        self
+    }
+
+    /// Alias of `proxy_max_tls_version`.
+    #[cfg(feature = "__tls")]
+    pub fn proxy_max_proto_version(self, version: crate::TlsVersion) -> Self {
+        self.proxy_max_tls_version(version)
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_max_tls_version<T>(mut self, _version: T) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn proxy_max_proto_version<T>(self, version: T) -> Self {
+        self.proxy_max_tls_version(version)
+    }
+
+    /// Controls certificate verification for the HTTPS proxy TLS connection.
+    ///
+    /// When enabled, invalid proxy server certificates are accepted for the
+    /// TLS connection to an `https://` proxy. This option does not affect the
+    /// certificate verification of the final HTTPS origin server.
+    #[cfg(feature = "__tls")]
+    pub fn danger_accept_invalid_proxy_certs(mut self, accept: bool) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.danger_accept_invalid_proxy_certs(accept);
+            proxy
+        });
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn danger_accept_invalid_proxy_certs(mut self, _accept: bool) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
+    /// Controls hostname verification for the HTTPS proxy TLS connection.
+    ///
+    /// When enabled, proxy certificate host-name mismatches are accepted for
+    /// the TLS connection to an `https://` proxy. This option does not affect
+    /// host-name verification of the final HTTPS origin server.
+    #[cfg(feature = "__tls")]
+    pub fn danger_accept_invalid_proxy_hostnames(mut self, accept: bool) -> Self {
+        self.inner = self.inner.map(|mut proxy| {
+            proxy.danger_accept_invalid_proxy_hostnames(accept);
+            proxy
+        });
+        self
+    }
+
+    /// Returns an error when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    pub fn danger_accept_invalid_proxy_hostnames(mut self, _accept: bool) -> Self {
+        self.inner = Err(HttpClientError::from_str(
+            crate::ErrorKind::Build,
+            "TLS is not enabled",
+        ));
+        self
+    }
+
     /// Constructs a `Proxy`.
     ///
     /// # Examples

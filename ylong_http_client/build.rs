@@ -20,6 +20,9 @@
 use std::env;
 // todo: check if needed
 fn main() {
+    println!("cargo:rerun-if-env-changed=OPENSSL_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=OPENSSL_INCLUDE_DIR");
+
     let lib_dir = env::var("OPENSSL_LIB_DIR");
     let include_dir = env::var("OPENSSL_INCLUDE_DIR");
 

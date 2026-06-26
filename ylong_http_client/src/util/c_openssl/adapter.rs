@@ -47,6 +47,7 @@ pub struct TlsConfigBuilder {
     certs_list: Vec<Cert>,
     pins: Option<PubKeyPins>,
     paths_list: Vec<String>,
+    private_key: Option<(String, SslFiletype)>,
 }
 
 impl TlsConfigBuilder {
@@ -68,6 +69,7 @@ impl TlsConfigBuilder {
             certs_list: vec![],
             pins: None,
             paths_list: vec![],
+            private_key: None,
         }
     }
 
@@ -193,6 +195,18 @@ impl TlsConfigBuilder {
         self.inner = self
             .inner
             .and_then(|mut builder| builder.set_certificate_chain_file(path).map(|_| builder));
+        self
+    }
+
+    /// Loads a private key from a file.
+    ///
+    /// This is typically used together with `certificate_file` or
+    /// `certificate_chain_file` for client-certificate authentication.
+    pub fn private_key_file<T: AsRef<Path>>(mut self, path: T, file_type: TlsFileType) -> Self {
+        self.private_key = Some((
+            path.as_ref().to_string_lossy().to_string(),
+            file_type.into_inner(),
+        ));
         self
     }
 
@@ -379,6 +393,15 @@ impl TlsConfigBuilder {
             });
         }
 
+        if let Some((key_path, file_type)) = self.private_key {
+            self.inner = self.inner.and_then(|mut builder| {
+                builder
+                    .set_private_key_file(key_path, file_type)
+                    .and_then(|_| builder.check_private_key())
+                    .map(|_| builder)
+            });
+        }
+
         let ctx = self
             .inner
             .map(|builder| builder.build())
@@ -487,6 +510,7 @@ impl TlsSsl {
 ///
 /// let version = TlsVersion::TLS_1_2;
 /// ```
+#[derive(Clone, Copy)]
 pub struct TlsVersion(SslVersion);
 
 impl TlsVersion {
@@ -513,6 +537,7 @@ impl TlsVersion {
 ///
 /// let file_type = TlsFileType::PEM;
 /// ```
+#[derive(Clone, Copy)]
 pub struct TlsFileType(SslFiletype);
 
 impl TlsFileType {
