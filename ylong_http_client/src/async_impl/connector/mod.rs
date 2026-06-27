@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 use libc::{gid_t, uid_t};
 use ylong_http::request::uri::Uri;
 #[cfg(feature = "http3")]

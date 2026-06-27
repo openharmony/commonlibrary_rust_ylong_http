@@ -655,8 +655,24 @@ impl ProxyBuilder {
     ///
     /// let proxy = Proxy::all("http://proxy.example.com").build();
     /// ```
+    #[cfg(feature = "__tls")]
     pub fn build(self) -> Result<Proxy, HttpClientError> {
         Ok(Proxy(self.inner?))
+    }
+
+    /// Constructs a `Proxy`.
+    ///
+    /// Returns an error if an HTTPS proxy URL is used without TLS support.
+    #[cfg(not(feature = "__tls"))]
+    pub fn build(self) -> Result<Proxy, HttpClientError> {
+        let proxy = self.inner?;
+        if proxy.is_https_proxy() {
+            return Err(HttpClientError::from_str(
+                crate::ErrorKind::Build,
+                "HTTPS proxy requires TLS support",
+            ));
+        }
+        Ok(Proxy(proxy))
     }
 }
 
@@ -810,5 +826,18 @@ mod ut_settings {
         let proxy = Proxy::https("http://127.0.0.1:6789").build().unwrap();
         let uri = Uri::from_bytes(b"https://127.0.0.1:3456").unwrap();
         assert!(proxy.inner().is_intercepted(&uri));
+    }
+
+    /// UT test cases for HTTPS proxy without TLS support.
+    ///
+    /// # Brief
+    /// 1. Creates a `Proxy` with an HTTPS proxy URL.
+    /// 2. Checks that building it fails when TLS is disabled.
+    #[cfg(not(feature = "__tls"))]
+    #[test]
+    fn ut_proxy_https_url_requires_tls() {
+        assert!(Proxy::all("https://127.0.0.1:6789").build().is_err());
+        assert!(Proxy::http("https://127.0.0.1:6789").build().is_err());
+        assert!(Proxy::https("https://127.0.0.1:6789").build().is_err());
     }
 }

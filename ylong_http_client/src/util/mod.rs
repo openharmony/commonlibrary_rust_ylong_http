@@ -24,7 +24,7 @@ pub(crate) mod config;
 pub(crate) mod normalizer;
 pub(crate) mod pool;
 pub(crate) mod proxy;
-#[cfg(feature = "async")]
+#[cfg(all(feature = "async", feature = "__tls"))]
 pub(crate) mod proxy_tunnel;
 pub(crate) mod redirect;
 

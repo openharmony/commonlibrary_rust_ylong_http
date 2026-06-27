@@ -20,7 +20,7 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "ylong_base", feature = "__tls"))]
 use libc::{gid_t, uid_t};
 
 use crate::async_impl::dns::resolver::ResolvedAddrs;
