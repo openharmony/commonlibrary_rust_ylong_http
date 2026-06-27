@@ -26,6 +26,8 @@ pub enum MixStream {
     Http(TcpStream),
     /// An SSL-wrapped HTTP stream.
     Https(AsyncSslStream<TcpStream>),
+    /// A double TLS stream: TLS to an HTTPS proxy, then TLS to the origin.
+    HttpsProxy(AsyncSslStream<AsyncSslStream<TcpStream>>),
     #[cfg(feature = "http3")]
     /// A Udp connection
     Udp(ConnectedUdpSocket),
@@ -41,6 +43,7 @@ impl AsyncRead for MixStream {
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_read(cx, buf),
             MixStream::Https(s) => Pin::new(s).poll_read(cx, buf),
+            MixStream::HttpsProxy(s) => Pin::new(s).poll_read(cx, buf),
             #[cfg(feature = "http3")]
             MixStream::Udp(s) => Pin::new(s).poll_recv(cx, buf),
         }
@@ -57,6 +60,7 @@ impl AsyncWrite for MixStream {
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_write(ctx, buf),
             MixStream::Https(s) => Pin::new(s).poll_write(ctx, buf),
+            MixStream::HttpsProxy(s) => Pin::new(s).poll_write(ctx, buf),
             #[cfg(feature = "http3")]
             MixStream::Udp(s) => Pin::new(s).poll_send(ctx, buf),
         }
@@ -66,6 +70,7 @@ impl AsyncWrite for MixStream {
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_flush(ctx),
             MixStream::Https(s) => Pin::new(s).poll_flush(ctx),
+            MixStream::HttpsProxy(s) => Pin::new(s).poll_flush(ctx),
             #[cfg(feature = "http3")]
             MixStream::Udp(_) => Poll::Ready(Ok(())),
         }
@@ -75,6 +80,7 @@ impl AsyncWrite for MixStream {
         match &mut *self {
             MixStream::Http(s) => Pin::new(s).poll_shutdown(ctx),
             MixStream::Https(s) => Pin::new(s).poll_shutdown(ctx),
+            MixStream::HttpsProxy(s) => Pin::new(s).poll_shutdown(ctx),
             #[cfg(feature = "http3")]
             MixStream::Udp(_) => Poll::Ready(Ok(())),
         }

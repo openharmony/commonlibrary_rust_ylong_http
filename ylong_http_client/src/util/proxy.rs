@@ -21,6 +21,8 @@ use ylong_http::request::uri::{Authority, Scheme, Uri};
 
 use crate::error::HttpClientError;
 use crate::util::base64::encode;
+#[cfg(feature = "__tls")]
+use crate::util::config::{ProxyIdentity, ProxyTlsConfig};
 use crate::util::normalizer::UriFormatter;
 
 /// `Proxies` is responsible for managing a list of proxies.
@@ -51,6 +53,8 @@ impl Proxies {
 pub(crate) struct Proxy {
     pub(crate) intercept: Intercept,
     pub(crate) no_proxy: Option<NoProxy>,
+    #[cfg(feature = "__tls")]
+    pub(crate) tls_config: ProxyTlsConfig,
 }
 
 impl Proxy {
@@ -58,6 +62,8 @@ impl Proxy {
         Self {
             intercept,
             no_proxy: None,
+            #[cfg(feature = "__tls")]
+            tls_config: ProxyTlsConfig::default(),
         }
     }
 
@@ -89,6 +95,50 @@ impl Proxy {
 
     pub(crate) fn no_proxy(&mut self, no_proxy: &str) {
         self.no_proxy = NoProxy::from_str(no_proxy);
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn proxy_ca_file(&mut self, path: &str) {
+        self.tls_config.ca_file = Some(path.to_string());
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn proxy_identity(
+        &mut self,
+        cert_path: &str,
+        key_path: &str,
+        file_type: crate::TlsFileType,
+    ) {
+        self.tls_config.identity = Some(ProxyIdentity::new(cert_path, key_path, file_type));
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn proxy_cipher_list(&mut self, cipher_list: &str) {
+        self.tls_config.cipher_list = Some(cipher_list.to_string());
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn proxy_min_tls_version(&mut self, version: crate::TlsVersion) {
+        self.tls_config.min_version = Some(version);
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn proxy_max_tls_version(&mut self, version: crate::TlsVersion) {
+        self.tls_config.max_version = Some(version);
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn danger_accept_invalid_proxy_certs(&mut self, accept: bool) {
+        self.tls_config.accept_invalid_certs = accept;
+    }
+
+    #[cfg(feature = "__tls")]
+    pub(crate) fn danger_accept_invalid_proxy_hostnames(&mut self, accept: bool) {
+        self.tls_config.accept_invalid_hostnames = accept;
+    }
+
+    pub(crate) fn is_https_proxy(&self) -> bool {
+        *self.intercept.proxy_info().scheme() == Scheme::HTTPS
     }
 
     pub(crate) fn via_proxy(&self, uri: &Uri) -> Uri {

@@ -75,6 +75,19 @@ extern "C" {
         cert_chain_file: *const c_char,
     ) -> c_int;
 
+    /// Loads the first private key stored in file into ctx.
+    /// The formatting type of the key must be specified from the known
+    /// types SSL_FILETYPE_PEM, SSL_FILETYPE_ASN1.
+    pub(crate) fn SSL_CTX_use_PrivateKey_file(
+        ctx: *mut SSL_CTX,
+        private_key_file: *const c_char,
+        file_type: c_int,
+    ) -> c_int;
+
+    /// Checks the consistency of a private key with the corresponding
+    /// certificate loaded into ctx.
+    pub(crate) fn SSL_CTX_check_private_key(ctx: *const SSL_CTX) -> c_int;
+
     /// Client sets the list of protocols available to be negotiated.
     pub(crate) fn SSL_CTX_set_alpn_protos(
         ctx: *mut SSL_CTX,
